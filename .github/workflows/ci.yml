@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      # esbuild and workerd fetch platform binaries in postinstall; npm 11 blocks
+      # install scripts unless they are explicitly allowed.
+      - run: npm ci --foreground-scripts
+
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+      # The Worker and the SPA are one artifact, so a broken build is a broken deploy.
+      - run: npm run build

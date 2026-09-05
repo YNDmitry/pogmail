@@ -1,0 +1,6 @@
+# Cloudflare API auth used at runtime for domain and mailbox provisioning.
+CF_ACCOUNT_ID=
+CF_TOKEN=
+
+# 32+ random bytes, base64. Reserved for signed-token use; sessions are DB-backed.
+SESSION_SECRET=

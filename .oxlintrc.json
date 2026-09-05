@@ -1,0 +1,36 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": [
+		"typescript",
+		"react",
+		"unicorn",
+		"import"
+	],
+	"categories": {
+		"correctness": "error",
+		"suspicious": "warn",
+		"perf": "warn"
+	},
+	"ignorePatterns": [
+		"dist",
+		".wrangler",
+		"drizzle",
+		"src/client/routeTree.gen.ts",
+		"src/worker/worker-configuration.d.ts",
+		"src/client/components/motion/**",
+		"src/client/components/ui/**",
+		"src/client/lib/ease.ts",
+		"src/client/lib/touch.ts",
+		"src/client/lib/text-shimmer.ts",
+		"src/client/lib/presence-gate.tsx",
+		"src/client/lib/hooks/**"
+	],
+	"rules": {
+		"no-unused-vars": "off",
+		"typescript/no-explicit-any": "warn",
+		"react/react-in-jsx-scope": "off",
+		"import/no-unassigned-import": "off",
+		"typescript/triple-slash-reference": "off",
+		"no-await-in-loop": "off"
+	}
+}

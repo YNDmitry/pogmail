@@ -1,0 +1,1597 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/onest';
+@import '@fontsource-variable/jetbrains-mono';
+
+@custom-variant dark (&:is(.dark, .dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Brand geometry (Brandbook §9) — tightened for compact dashboard surfaces. */
+  --radius-control: 0.375rem;
+  --radius-card: 0.5rem;
+  --radius-dialog: 0.75rem;
+  --radius-hero: 0.75rem;
+  --radius-pill: 9999px;
+
+  /* Brand typography (Brandbook §8) wired into Tailwind's font-sans/font-mono. */
+  --font-sans: 'Onest Variable', 'Onest', Inter, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Pogpin Coral scale (Brandbook §3) exposed as Tailwind color utilities. */
+  --color-pogpin-brand-50: var(--pogpin-brand-50);
+  --color-pogpin-brand-100: var(--pogpin-brand-100);
+  --color-pogpin-brand-200: var(--pogpin-brand-200);
+  --color-pogpin-brand-300: var(--pogpin-brand-300);
+  --color-pogpin-brand-400: var(--pogpin-brand-400);
+  --color-pogpin-brand-500: var(--pogpin-brand-500);
+  --color-pogpin-brand-600: var(--pogpin-brand-600);
+  --color-pogpin-brand-700: var(--pogpin-brand-700);
+  --color-pogpin-brand-800: var(--pogpin-brand-800);
+  --color-pogpin-brand-900: var(--pogpin-brand-900);
+  --color-pogpin-brand: var(--pogpin-brand);
+  --color-pogpin-brand-foreground: var(--pogpin-brand-foreground);
+  --color-pogpin-success: var(--pogpin-success);
+  --color-pogpin-warning: var(--pogpin-warning);
+  --color-pogpin-info: var(--pogpin-info);
+  --color-pogpin-danger: var(--pogpin-danger);
+
+  /* Tracking scale (Brandbook §8) — also usable as tracking-* utilities. */
+  --tracking-display: -0.045em;
+  --tracking-heading: -0.03em;
+  --tracking-body: -0.012em;
+  --tracking-label: -0.005em;
+  --tracking-caps: 0.06em;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  /* Telegram-like motion: short travel, fast response, soft deceleration. */
+  --motion-fast: 120ms;
+  --motion-medium: 180ms;
+  --motion-slow: 240ms;
+  --motion-exit: 100ms;
+  --motion-ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+
+  /* ── Pogpin brand tokens (Brandbook §11) ──────────────────────────────
+     Theme-independent: the coral scale and semantic statuses are the same
+     in light and dark; only the neutral surfaces below the fold differ. */
+  --pogpin-brand-50: rgb(255 241 239);
+  --pogpin-brand-100: rgb(255 217 213);
+  --pogpin-brand-200: rgb(255 180 174);
+  --pogpin-brand-300: rgb(255 139 131);
+  --pogpin-brand-400: rgb(255 116 108);
+  --pogpin-brand-500: rgb(255 94 87);
+  --pogpin-brand-600: rgb(234 75 69);
+  --pogpin-brand-700: rgb(199 61 57);
+  --pogpin-brand-800: rgb(157 52 50);
+  --pogpin-brand-900: rgb(112 43 42);
+
+  --pogpin-brand: var(--pogpin-brand-500);
+  --pogpin-brand-hover: var(--pogpin-brand-400);
+  --pogpin-brand-active: var(--pogpin-brand-600);
+  --pogpin-brand-foreground: rgb(24 11 10);
+
+  --pogpin-brand-surface: rgb(255 94 87 / 0.1);
+  --pogpin-brand-surface-hover: rgb(255 94 87 / 0.14);
+  --pogpin-brand-surface-strong: rgb(255 94 87 / 0.18);
+  --pogpin-brand-border: rgb(255 94 87 / 0.28);
+  --pogpin-brand-border-strong: rgb(255 94 87 / 0.46);
+  --pogpin-brand-ring: rgb(255 94 87 / 0.55);
+  --pogpin-brand-glow: rgb(255 94 87 / 0.16);
+
+  --pogpin-brand-gradient: linear-gradient(
+    135deg,
+    rgb(255 129 120) 0%,
+    rgb(255 94 87) 48%,
+    rgb(223 64 61) 100%
+  );
+
+  /* Semantic statuses (Brandbook §5) — coral never doubles as an error. */
+  --pogpin-success: rgb(54 201 143);
+  --pogpin-warning: rgb(244 184 96);
+  --pogpin-info: rgb(110 168 255);
+  --pogpin-danger: rgb(240 79 101);
+
+  --pogpin-success-surface: rgb(54 201 143 / 0.1);
+  --pogpin-warning-surface: rgb(244 184 96 / 0.1);
+  --pogpin-info-surface: rgb(110 168 255 / 0.1);
+  --pogpin-danger-surface: rgb(240 79 101 / 0.1);
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: var(--pogpin-brand-500);
+  --primary-foreground: var(--pogpin-brand-foreground);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: var(--pogpin-brand-surface);
+  --accent-foreground: var(--pogpin-brand-700);
+  --destructive: var(--pogpin-danger);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: var(--pogpin-brand-ring);
+  --chart-1: var(--pogpin-brand-500);
+  --chart-2: var(--pogpin-info);
+  --chart-3: var(--pogpin-success);
+  --chart-4: var(--pogpin-warning);
+  --chart-5: var(--pogpin-danger);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: var(--pogpin-brand-500);
+  --sidebar-primary-foreground: var(--pogpin-brand-foreground);
+  --sidebar-accent: var(--pogpin-brand-surface);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: var(--pogpin-brand-ring);
+  /* Light shell surfaces: white panels on a faint grey shell, dark ink text.
+     The `.dark` block below carries the cool blue-tinted dark equivalents. */
+  --pogpin-shell-hero-outer: rgb(245 245 247);
+  --pogpin-shell-hero-inner: rgb(255 255 255);
+  --pogpin-shell-hero-glow:
+    radial-gradient(circle at top right, rgb(0 0 0 / 0.02), transparent 30%),
+    radial-gradient(circle at bottom left, rgb(0 0 0 / 0.014), transparent 38%);
+  --pogpin-shell-panel: rgb(255 255 255);
+  --pogpin-shell-panel-alt: rgb(250 250 251);
+  --pogpin-shell-panel-hover: rgb(244 244 246);
+  --pogpin-shell-panel-dashed: rgb(0 0 0 / 0.02);
+  --pogpin-shell-field: rgb(255 255 255);
+  --pogpin-shell-tabs-active: rgb(255 255 255);
+  --pogpin-shell-accent-surface: linear-gradient(180deg, rgb(0 0 0 / 0.02), rgb(0 0 0 / 0.01));
+  --pogpin-shell-border: rgb(0 0 0 / 0.1);
+  --pogpin-shell-border-soft: rgb(0 0 0 / 0.07);
+  --pogpin-shell-border-strong: rgb(0 0 0 / 0.14);
+  --pogpin-shell-fill-soft: rgb(0 0 0 / 0.03);
+  --pogpin-shell-fill-strong: rgb(0 0 0 / 0.06);
+  --pogpin-shell-text: rgb(17 18 22);
+  --pogpin-shell-text-soft: rgb(60 62 70);
+  --pogpin-shell-text-muted: rgb(107 109 118);
+  --pogpin-shell-icon-muted: rgb(130 132 140);
+  --pogpin-shell-button-solid: var(--pogpin-brand-500);
+  --pogpin-shell-button-solid-hover: var(--pogpin-brand-400);
+  --pogpin-shell-button-solid-active: var(--pogpin-brand-600);
+  --pogpin-shell-button-solid-text: var(--pogpin-brand-foreground);
+  /* Inverse CTA is dark-on-light here (mirrors the dark theme's white CTA). */
+  --pogpin-shell-button-inverse: rgb(17 18 22);
+  --pogpin-shell-button-inverse-hover: rgb(38 40 46);
+  --pogpin-shell-button-inverse-text: rgb(248 250 252);
+  --pogpin-scrollbar-thumb: rgb(0 0 0 / 0.15);
+  --pogpin-scrollbar-thumb-hover: rgb(0 0 0 / 0.25);
+  --pogpin-auth-bg: rgb(6 7 9);
+  --pogpin-auth-surface: rgb(14 15 18 / 0.9);
+  --pogpin-auth-surface-strong: rgb(22 24 28 / 0.96);
+  --pogpin-auth-field: rgb(18 20 24 / 0.96);
+  --pogpin-auth-border: rgb(255 255 255 / 0.07);
+  --pogpin-auth-border-strong: rgb(255 255 255 / 0.12);
+  --pogpin-auth-text: rgb(250 250 250);
+  --pogpin-auth-copy: rgb(163 163 163);
+  --pogpin-auth-muted: rgb(115 115 115);
+  --pogpin-shell-shadow:
+    0 0.5rem 1.5rem -0.5rem rgb(15 23 42 / 0.1), 0 0.125rem 0.375rem rgb(15 23 42 / 0.06);
+  --pogpin-shell-shadow-strong:
+    0 1.5rem 3rem -1rem rgb(15 23 42 / 0.18), 0 0.25rem 0.75rem -0.25rem rgb(15 23 42 / 0.1);
+  --pogpin-shell-menu-shadow: drop-shadow(0 1.125rem 1.75rem rgb(15 23 42 / 0.12))
+    drop-shadow(0 0.1875rem 0.5rem rgb(15 23 42 / 0.08));
+}
+
+.dark {
+  /* Semantic shadcn tokens are aligned to the cool blue-tinted POGPIN
+     dark palette (`--pogpin-shell-*`) so both families render as one
+     cohesive surface system instead of mixing neutral grey with blue. */
+  --background: rgb(9 10 12);
+  --foreground: rgb(245 245 247);
+  --card: rgb(15 16 19);
+  --card-foreground: rgb(245 245 247);
+  --popover: rgb(17 18 22);
+  --popover-foreground: rgb(245 245 247);
+  --primary: var(--pogpin-brand-500);
+  --primary-foreground: var(--pogpin-brand-foreground);
+  --secondary: rgb(21 22 26);
+  --secondary-foreground: rgb(237 238 242);
+  --muted: rgb(21 22 26);
+  --muted-foreground: rgb(146 148 157);
+  --accent: var(--pogpin-brand-surface);
+  --accent-foreground: var(--pogpin-brand-400);
+  --destructive: var(--pogpin-danger);
+  --border: rgb(255 255 255 / 0.08);
+  --input: rgb(255 255 255 / 0.1);
+  --ring: var(--pogpin-brand-ring);
+  --chart-1: var(--pogpin-brand-500);
+  --chart-2: var(--pogpin-info);
+  --chart-3: var(--pogpin-success);
+  --chart-4: var(--pogpin-warning);
+  --chart-5: var(--pogpin-danger);
+  --sidebar: rgb(12 13 16);
+  --sidebar-foreground: rgb(215 216 221);
+  --sidebar-primary: var(--pogpin-brand-500);
+  --sidebar-primary-foreground: var(--pogpin-brand-foreground);
+  --sidebar-accent: var(--pogpin-brand-surface);
+  --sidebar-accent-foreground: rgb(245 245 247);
+  --sidebar-border: rgb(255 255 255 / 0.07);
+  --sidebar-ring: var(--pogpin-brand-ring);
+  --pogpin-shell-hero-outer: rgb(9 10 12);
+  --pogpin-shell-hero-inner: rgb(13 14 17);
+  --pogpin-shell-hero-glow:
+    radial-gradient(circle at top right, rgb(255 255 255 / 0.018), transparent 30%),
+    radial-gradient(circle at bottom left, rgb(255 255 255 / 0.01), transparent 38%);
+  --pogpin-shell-panel: rgb(12 13 16);
+  --pogpin-shell-panel-alt: rgb(15 16 19);
+  --pogpin-shell-panel-hover: rgb(18 19 23);
+  --pogpin-shell-panel-dashed: rgb(255 255 255 / 0.02);
+  --pogpin-shell-field: rgb(15 16 19);
+  --pogpin-shell-tabs-active: rgb(21 22 26);
+  --pogpin-shell-accent-surface: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0.02),
+    rgb(255 255 255 / 0.01)
+  );
+  --pogpin-shell-border: rgb(255 255 255 / 0.08);
+  --pogpin-shell-border-soft: rgb(255 255 255 / 0.06);
+  --pogpin-shell-border-strong: rgb(255 255 255 / 0.1);
+  --pogpin-shell-fill-soft: rgb(255 255 255 / 0.03);
+  --pogpin-shell-fill-strong: rgb(255 255 255 / 0.06);
+  --pogpin-shell-text: rgb(245 245 247);
+  --pogpin-shell-text-soft: rgb(215 216 221);
+  --pogpin-shell-text-muted: rgb(146 148 157);
+  --pogpin-shell-icon-muted: rgb(116 118 128);
+  --pogpin-shell-button-solid: var(--pogpin-brand-500);
+  --pogpin-shell-button-solid-hover: var(--pogpin-brand-400);
+  --pogpin-shell-button-solid-active: var(--pogpin-brand-600);
+  --pogpin-shell-button-solid-text: var(--pogpin-brand-foreground);
+  /* White CTA kept as a distinct "inverse" variant (Brandbook §14). */
+  --pogpin-shell-button-inverse: rgb(248 250 252);
+  --pogpin-shell-button-inverse-hover: rgb(226 232 240);
+  --pogpin-shell-button-inverse-text: rgb(11 17 27);
+  --pogpin-scrollbar-thumb: rgb(255 255 255 / 0.1);
+  --pogpin-scrollbar-thumb-hover: rgb(255 255 255 / 0.2);
+  --pogpin-auth-bg: rgb(6 7 9);
+  --pogpin-auth-surface: rgb(14 15 18 / 0.9);
+  --pogpin-auth-surface-strong: rgb(22 24 28 / 0.96);
+  --pogpin-auth-field: rgb(18 20 24 / 0.96);
+  --pogpin-auth-border: rgb(255 255 255 / 0.07);
+  --pogpin-auth-border-strong: rgb(255 255 255 / 0.12);
+  --pogpin-auth-text: rgb(250 250 250);
+  --pogpin-auth-copy: rgb(163 163 163);
+  --pogpin-auth-muted: rgb(115 115 115);
+  --pogpin-shell-shadow: 0 0.75rem 2rem rgb(0 0 0 / 0.24);
+  --pogpin-shell-shadow-strong: 0 1rem 2.4rem rgb(0 0 0 / 0.28);
+  --pogpin-shell-menu-shadow: drop-shadow(0 0.625rem 1.5rem rgb(0 0 0 / 0.3))
+    drop-shadow(0 0.125rem 0.375rem rgb(0 0 0 / 0.2));
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply text-foreground;
+  }
+
+  /* Custom scrollbar matching the dark UI: thin, translucent, rounded.
+     The transparent border + padding-box clip keeps the thumb slim while
+     preserving a comfortable hit area. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--pogpin-scrollbar-thumb) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--pogpin-scrollbar-thumb);
+    background-clip: padding-box;
+    border: 3px solid transparent;
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--pogpin-scrollbar-thumb-hover);
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+@keyframes pogpin-caret-blink {
+  0%,
+  70%,
+  100% {
+    opacity: 1;
+  }
+  20%,
+  50% {
+    opacity: 0;
+  }
+}
+
+.pogpin-otp-caret {
+  animation: pogpin-caret-blink 1.2s ease-out infinite;
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pogpin-skeleton-shimmer {
+  0% {
+    transform: translate3d(-120%, 0, 0);
+  }
+  100% {
+    transform: translate3d(120%, 0, 0);
+  }
+}
+
+@keyframes pogpin-skeleton-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pogpin-content-reveal {
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  .pogpin-shell-text {
+    color: var(--pogpin-shell-text);
+  }
+
+  .pogpin-shell-text-soft {
+    color: var(--pogpin-shell-text-soft);
+  }
+
+  .pogpin-shell-copy {
+    color: var(--pogpin-shell-text-muted);
+  }
+
+  .pogpin-shell-hero {
+    overflow: hidden;
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-hero-outer);
+  }
+
+  .pogpin-shell-hero-inner {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-hero-inner);
+  }
+
+  .pogpin-shell-hero-inner::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: var(--pogpin-shell-hero-glow);
+  }
+
+  .pogpin-shell-panel {
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-panel);
+  }
+
+  .pogpin-shell-panel-alt {
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-panel-alt);
+  }
+
+  .pogpin-shell-panel-dashed {
+    border: 1px dashed var(--pogpin-shell-border);
+    background: var(--pogpin-shell-panel-dashed);
+  }
+
+  .pogpin-shell-field {
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-field);
+    color: var(--pogpin-shell-text);
+  }
+
+  .pogpin-shell-tabs {
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-panel);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .pogpin-shell-tab-trigger {
+    border: 1px solid transparent;
+  }
+
+  .pogpin-shell-tab-trigger[data-state='active'] {
+    color: var(--pogpin-brand-300);
+    box-shadow: none;
+  }
+
+  .pogpin-shell-tab-trigger > [data-slot='tabs-indicator'] {
+    border-color: var(--pogpin-brand-border);
+    background: var(--pogpin-brand-surface);
+    box-shadow: none;
+  }
+
+  .pogpin-shell-chip {
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-fill-soft);
+    color: var(--pogpin-shell-text-muted);
+  }
+
+  .pogpin-shell-icon-box {
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-panel-alt);
+    color: var(--pogpin-shell-text);
+    box-shadow: var(--pogpin-shell-shadow);
+  }
+
+  .pogpin-shell-route-tab {
+    border: 1px solid var(--pogpin-shell-border-soft);
+    background: var(--pogpin-shell-panel-alt);
+    transition:
+      border-color var(--motion-medium) var(--motion-ease-out),
+      background-color var(--motion-medium) var(--motion-ease-out),
+      box-shadow var(--motion-medium) var(--motion-ease-out),
+      transform var(--motion-medium) var(--motion-ease-out);
+  }
+
+  .pogpin-shell-route-tab:hover {
+    border-color: var(--pogpin-shell-border-strong);
+    background: var(--pogpin-shell-panel-hover);
+  }
+
+  .pogpin-shell-route-tab-active {
+    border-color: var(--pogpin-brand-border);
+    background: var(--pogpin-brand-surface);
+    box-shadow: none;
+  }
+
+  .pogpin-shell-route-tab-active:hover {
+    border-color: var(--pogpin-brand-border-strong);
+    background: var(--pogpin-brand-surface-hover);
+  }
+
+  .pogpin-shell-route-tab-icon {
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-fill-soft);
+    color: var(--pogpin-shell-text-soft);
+  }
+
+  .pogpin-shell-route-tab-active .pogpin-shell-route-tab-icon {
+    border-color: var(--pogpin-brand-border);
+    background: var(--pogpin-brand-surface-strong);
+    color: var(--pogpin-brand-400);
+  }
+
+  .pogpin-shell-route-tab-active .pogpin-shell-route-tab-arrow {
+    color: var(--pogpin-shell-text-soft);
+  }
+
+  /* Primary CTA — coral fill, dark text, restrained glow (Brandbook §13). */
+  .pogpin-shell-button-solid {
+    border: 1px solid rgb(255 255 255 / 0.08);
+    background: var(--pogpin-shell-button-solid);
+    color: var(--pogpin-shell-button-solid-text);
+    box-shadow:
+      0 0 0 1px rgb(255 94 87 / 0.08),
+      0 0.5rem 1.5rem rgb(255 94 87 / 0.1);
+    transition:
+      background-color var(--motion-fast) var(--motion-ease-out),
+      box-shadow var(--motion-fast) var(--motion-ease-out),
+      transform var(--motion-fast) var(--motion-ease-out);
+  }
+
+  .pogpin-shell-button-solid:hover {
+    background: var(--pogpin-shell-button-solid-hover);
+    box-shadow:
+      0 0 0 1px rgb(255 94 87 / 0.14),
+      0 0.75rem 2rem rgb(255 94 87 / 0.16);
+  }
+
+  .pogpin-shell-button-solid:active {
+    background: var(--pogpin-shell-button-solid-active);
+    transform: translateY(1px) scale(0.99);
+  }
+
+  /* Inverse CTA — white surface for OAuth / pricing / coral blocks (§14). */
+  .pogpin-shell-button-inverse {
+    border: 1px solid transparent;
+    background: var(--pogpin-shell-button-inverse);
+    color: var(--pogpin-shell-button-inverse-text);
+  }
+
+  .pogpin-shell-button-inverse:hover {
+    background: var(--pogpin-shell-button-inverse-hover);
+  }
+
+  .pogpin-shell-button-outline {
+    border: 1px solid var(--pogpin-shell-border);
+    background: transparent;
+    color: var(--pogpin-shell-text-soft);
+    box-shadow: none;
+  }
+
+  .pogpin-shell-button-outline:hover {
+    background: var(--pogpin-shell-fill-soft);
+    color: var(--pogpin-shell-text);
+  }
+
+  .pogpin-shell-stat-card {
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-panel-alt);
+  }
+
+  .pogpin-shell-stat-card-soft {
+    border: 1px solid var(--pogpin-shell-border-soft);
+    background: var(--pogpin-shell-fill-soft);
+  }
+
+  .pogpin-shell-icon-surface {
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-panel-alt);
+    color: var(--pogpin-shell-text);
+  }
+
+  .pogpin-shell-toggle {
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-fill-strong);
+  }
+
+  .pogpin-shell-toggle-option {
+    color: var(--pogpin-shell-text-muted);
+  }
+
+  .pogpin-shell-toggle-option:hover {
+    color: var(--pogpin-shell-text);
+  }
+
+  .pogpin-shell-toggle-option-active {
+    background: var(--pogpin-shell-button-solid);
+    color: var(--pogpin-shell-button-solid-text);
+  }
+
+  .pogpin-shell-selection-card {
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-panel);
+  }
+
+  .pogpin-shell-selection-card:hover {
+    border-color: var(--pogpin-shell-border-strong);
+    background: var(--pogpin-shell-panel-hover);
+  }
+
+  .pogpin-shell-selection-card-active {
+    border: 1px solid var(--pogpin-brand-border);
+    background: var(--pogpin-brand-surface);
+  }
+
+  .pogpin-shell-selection-card-active:hover {
+    border-color: var(--pogpin-brand-border-strong);
+    background: var(--pogpin-brand-surface-hover);
+  }
+
+  .pogpin-shell-dialog {
+    border: 1px solid var(--pogpin-shell-border);
+    background: var(--pogpin-shell-panel);
+    color: var(--pogpin-shell-text-soft);
+    box-shadow: var(--pogpin-shell-shadow-strong);
+  }
+
+  .pogpin-shell-dialog-section {
+    border-color: var(--pogpin-shell-border-soft);
+  }
+
+  .pogpin-shell-code-block {
+    border: 1px solid var(--pogpin-shell-border-soft);
+    background: var(--pogpin-shell-panel-alt);
+    color: var(--pogpin-shell-text-soft);
+  }
+
+  .pogpin-auth-text {
+    color: var(--pogpin-auth-text);
+  }
+
+  .pogpin-auth-copy {
+    color: var(--pogpin-auth-copy);
+  }
+
+  .pogpin-auth-muted {
+    color: var(--pogpin-auth-muted);
+  }
+
+  .pogpin-auth-input {
+    border: 1px solid var(--pogpin-auth-border);
+    background: var(--pogpin-auth-field);
+    color: var(--pogpin-auth-text);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.015);
+  }
+
+  .pogpin-auth-input::placeholder {
+    color: var(--pogpin-auth-muted);
+  }
+
+  .pogpin-auth-input[aria-invalid='true']::placeholder {
+    color: rgb(254 202 202 / 0.85);
+  }
+
+  .pogpin-shell-field:focus-visible {
+    border-color: var(--pogpin-brand-border-strong);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.015),
+      0 0 0 0.1875rem var(--pogpin-brand-surface);
+  }
+
+  /* The auth screens carry both a coral focus border and a danger invalid
+     border on the same field, so focus needs a ring that reads as a ring —
+     a hairline alone was ambiguous with the error state. */
+  .pogpin-auth-input:focus-visible {
+    border-color: var(--pogpin-brand-500);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.015),
+      0 0 0 0.1875rem var(--pogpin-brand-surface-strong);
+  }
+
+  /* Errors use the semantic danger token, never coral (Brandbook §5): on this
+     screen the primary CTA *is* coral, so a coral-ish invalid border would read
+     as brand, not as a problem. */
+  .pogpin-auth-input[aria-invalid='true'] {
+    border-color: rgb(240 79 101 / 0.55);
+  }
+
+  .pogpin-auth-input[aria-invalid='true']:focus-visible {
+    border-color: var(--pogpin-danger);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.015),
+      0 0 0 0.1875rem var(--pogpin-danger-surface);
+  }
+
+  /* ── Auth card ────────────────────────────────────────────────────────
+     The panel the auth surface tokens were written for. `--pogpin-auth-surface`
+     is deliberately translucent, so the aurora behind it stays readable as
+     depth rather than as noise. */
+  .pogpin-auth-card {
+    border: 1px solid var(--pogpin-auth-border);
+    border-radius: 1rem;
+    background: var(--pogpin-auth-surface);
+    backdrop-filter: blur(1.5rem) saturate(120%);
+    -webkit-backdrop-filter: blur(1.5rem) saturate(120%);
+    box-shadow: 0 1.5rem 3rem -0.75rem rgb(0 0 0 / 0.6);
+  }
+
+  .pogpin-auth-card-inner {
+    border-radius: inherit;
+    background: linear-gradient(180deg, rgb(255 255 255 / 0.035), transparent 45%);
+  }
+
+  /* Bare text buttons and links on the auth surface (mode switch, forgot
+     password, resend, legal) — shadcn's Button owns its own focus ring, these
+     do not. */
+  .pogpin-auth-link {
+    border-radius: 0.375rem;
+    outline: none;
+    transition: color var(--motion-fast) var(--motion-ease-out);
+  }
+
+  .pogpin-auth-link:focus-visible {
+    box-shadow:
+      0 0 0 0.125rem var(--pogpin-auth-bg),
+      0 0 0 0.25rem var(--pogpin-brand-border-strong);
+  }
+
+  /* Pin marker — the one place the full coral gradient + glow is on (§13). */
+  .pogpin-pin-marker {
+    border: 1px solid rgb(255 255 255 / 0.18);
+    background: var(--pogpin-brand-gradient);
+    color: var(--pogpin-brand-foreground);
+    box-shadow:
+      0 0 0 0.25rem rgb(255 94 87 / 0.1),
+      0 0.75rem 2rem var(--pogpin-brand-glow);
+  }
+
+  .pogpin-unread-dot {
+    background: var(--pogpin-brand-500);
+    box-shadow: 0 0 0.75rem var(--pogpin-brand-glow);
+  }
+
+  /* ── Auth backdrop (login / reset) ────────────────────────────────────
+     Soft coral aurora + faint grid, masked to keep the card legible. */
+  .pogpin-auth-aurora {
+    background:
+      radial-gradient(40rem 40rem at 18% 12%, rgb(255 94 87 / 0.16), transparent 60%),
+      radial-gradient(34rem 34rem at 86% 88%, rgb(255 116 108 / 0.12), transparent 62%),
+      radial-gradient(28rem 28rem at 70% 20%, rgb(199 61 57 / 0.1), transparent 64%);
+    filter: blur(20px) saturate(115%);
+    will-change: transform, opacity;
+    animation: pogpin-auth-drift 22s ease-in-out infinite alternate;
+  }
+
+  .pogpin-auth-grid {
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 0.022) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.022) 1px, transparent 1px);
+    background-size: 3.5rem 3.5rem;
+    mask-image: radial-gradient(60% 55% at 50% 38%, black, transparent 78%);
+    -webkit-mask-image: radial-gradient(60% 55% at 50% 38%, black, transparent 78%);
+  }
+
+  @keyframes pogpin-auth-drift {
+    0% {
+      transform: translate3d(-2%, -1%, 0) scale(1);
+      opacity: 0.85;
+    }
+    100% {
+      transform: translate3d(2%, 2%, 0) scale(1.08);
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pogpin-auth-aurora {
+      animation: none;
+    }
+  }
+
+  /* Custom stickers render small and inline (Slack/Telegram style), overriding
+     the full-width styling that pasted screenshot images get. The comment HTML
+     sanitizer only allows a class attribute for sizing, so this is class-based. */
+  img.pogpin-sticker {
+    display: inline-block !important;
+    width: auto !important;
+    max-width: 9rem !important;
+    max-height: 7rem !important;
+    margin: 0.25rem 0 !important;
+    border-radius: 0.6rem;
+    object-fit: contain !important;
+    cursor: default;
+  }
+
+  .pogpin-skeleton {
+    isolation: isolate;
+  }
+
+  .pogpin-skeleton::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      108deg,
+      transparent 12%,
+      rgb(255 255 255 / 0.025) 36%,
+      rgb(255 255 255 / 0.075) 50%,
+      rgb(255 255 255 / 0.025) 64%,
+      transparent 88%
+    );
+    animation: pogpin-skeleton-shimmer 1.15s var(--motion-ease-out) infinite;
+  }
+
+  .account-menu-item {
+    cursor: pointer;
+    border-radius: 0.375rem;
+    padding: 0.375rem 0.5rem;
+    color: var(--muted-foreground);
+    font-size: 0.78rem;
+    line-height: 1rem;
+  }
+
+  .account-menu-item:hover,
+  .account-menu-item:focus-visible,
+  .account-menu-item[data-highlighted] {
+    background: rgb(255 255 255 / 0.05);
+    color: var(--foreground);
+  }
+
+  .shell-hover-trigger {
+    isolation: isolate;
+    cursor: pointer;
+  }
+
+  .shell-hover-icon {
+    transform-origin: center;
+    will-change: transform, filter;
+    transition:
+      color var(--motion-medium) var(--motion-ease-out),
+      filter var(--motion-medium) var(--motion-ease-out);
+  }
+
+  .shell-active-icon {
+    color: rgb(244 244 245);
+    filter: none;
+  }
+
+  .shell-hover-trigger:hover .shell-hover-icon,
+  .shell-hover-trigger:focus-visible .shell-hover-icon,
+  .shell-hover-trigger[data-state='open'] .shell-hover-icon {
+    filter: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .shell-hover-trigger:hover .shell-hover-icon,
+    .shell-hover-trigger:focus-visible .shell-hover-icon,
+    .shell-hover-trigger[data-state='open'] .shell-hover-icon,
+    .shell-active-icon,
+    .shell-hover-trigger:hover .shell-active-icon,
+    .shell-hover-trigger:focus-visible .shell-active-icon {
+      animation: none;
+    }
+  }
+}
+
+/* Shared motion behavior for Radix surfaces and native controls. */
+:is([data-slot='dialog-overlay'], [data-slot='sheet-overlay']) {
+  --tw-animation-duration: var(--motion-fast);
+  --tw-ease: var(--motion-ease-out);
+}
+
+:is([data-slot='dialog-overlay'], [data-slot='sheet-overlay'])[data-state='closed'] {
+  --tw-animation-duration: var(--motion-exit);
+  --tw-ease: var(--motion-ease-in);
+}
+
+[data-slot='dialog-content'] {
+  --tw-animation-duration: var(--motion-medium);
+  --tw-ease: var(--motion-ease-out);
+  --tw-enter-scale: 0.98;
+  --tw-exit-scale: 0.98;
+}
+
+[data-slot='sheet-content'] {
+  --tw-animation-duration: var(--motion-slow);
+  --tw-ease: var(--motion-ease-out);
+}
+
+[data-slot='sheet-content'][data-state='closed'] {
+  --tw-animation-duration: var(--motion-medium);
+  --tw-ease: var(--motion-ease-in);
+}
+
+[data-side][data-state] {
+  --tw-animation-duration: var(--motion-fast);
+  --tw-ease: var(--motion-ease-out);
+  --tw-enter-scale: 0.98;
+  --tw-exit-scale: 0.98;
+}
+
+[data-side][data-state='closed'] {
+  --tw-animation-duration: var(--motion-exit);
+  --tw-ease: var(--motion-ease-in);
+}
+
+[data-side='bottom'] {
+  --tw-enter-translate-y: -4px;
+  --tw-exit-translate-y: -2px;
+}
+
+[data-side='top'] {
+  --tw-enter-translate-y: 4px;
+  --tw-exit-translate-y: 2px;
+}
+
+[data-side='left'] {
+  --tw-enter-translate-x: 4px;
+  --tw-exit-translate-x: 2px;
+}
+
+[data-side='right'] {
+  --tw-enter-translate-x: -4px;
+  --tw-exit-translate-x: -2px;
+}
+
+/* Opt-in morph reveal for menus that hang off a card-sized trigger (the sidebar
+   account card and workspace switcher). The panel is laid out at full size and
+   clipped to the corner nearest its trigger, then unclips as one surface, so it
+   reads as the trigger growing rather than a separate box sliding in. Radix
+   already exposes data-side/data-align, so no extra JS is needed and the menu
+   keeps its focus management, Escape handling and collision flipping.
+
+   Selectors carry both data attributes to outrank the component's own
+   `data-[state=open]:animate-in` utilities, which would otherwise fight this. */
+.pogpin-menu-morph {
+  /* Roughly the trigger's short side: the clip starts at about the size of the
+     thing you clicked. */
+  --morph-size: 2.5rem;
+  --morph-radius: 0.75rem;
+  /* Collapsed inset sides; overridden per side/align below. Default top-left. */
+  --morph-top: 0px;
+  --morph-right: calc(100% - var(--morph-size));
+  --morph-bottom: calc(100% - var(--morph-size));
+  --morph-left: 0px;
+  /* Direction the rows travel from, so they arrive out of the anchored corner
+     rather than against it. Flipped by the bottom-anchored rules below. */
+  --morph-shift: -5px;
+  --morph-stagger-delay: 55ms;
+  --morph-stagger-step: 18ms;
+}
+
+/* Horizontal anchor: the trigger's side wins, falling back to align when the
+   panel sits above or below it. */
+.pogpin-menu-morph[data-side='right'] {
+  --morph-left: 0px;
+  --morph-right: calc(100% - var(--morph-size));
+}
+
+.pogpin-menu-morph[data-side='left'] {
+  --morph-left: calc(100% - var(--morph-size));
+  --morph-right: 0px;
+}
+
+.pogpin-menu-morph:is([data-side='top'], [data-side='bottom'])[data-align='start'] {
+  --morph-left: 0px;
+  --morph-right: calc(100% - var(--morph-size));
+}
+
+.pogpin-menu-morph:is([data-side='top'], [data-side='bottom'])[data-align='end'] {
+  --morph-left: calc(100% - var(--morph-size));
+  --morph-right: 0px;
+}
+
+.pogpin-menu-morph:is([data-side='top'], [data-side='bottom'])[data-align='center'] {
+  --morph-left: calc((100% - var(--morph-size)) / 2);
+  --morph-right: calc((100% - var(--morph-size)) / 2);
+}
+
+/* Vertical anchor: mirror of the above. */
+.pogpin-menu-morph[data-side='bottom'] {
+  --morph-top: 0px;
+  --morph-bottom: calc(100% - var(--morph-size));
+}
+
+.pogpin-menu-morph[data-side='top'] {
+  --morph-top: calc(100% - var(--morph-size));
+  --morph-bottom: 0px;
+  --morph-shift: 5px;
+}
+
+.pogpin-menu-morph:is([data-side='left'], [data-side='right'])[data-align='start'] {
+  --morph-top: 0px;
+  --morph-bottom: calc(100% - var(--morph-size));
+}
+
+.pogpin-menu-morph:is([data-side='left'], [data-side='right'])[data-align='end'] {
+  --morph-top: calc(100% - var(--morph-size));
+  --morph-bottom: 0px;
+  --morph-shift: 5px;
+}
+
+.pogpin-menu-morph:is([data-side='left'], [data-side='right'])[data-align='center'] {
+  --morph-top: calc((100% - var(--morph-size)) / 2);
+  --morph-bottom: calc((100% - var(--morph-size)) / 2);
+}
+
+/* clip-path also clips box-shadow, which would leave the panel flat mid-morph.
+   drop-shadow follows the clipped shape instead, keeping it one solid surface. */
+.pogpin-menu-morph[data-side] {
+  box-shadow: none;
+  filter: var(--pogpin-shell-menu-shadow);
+}
+
+/* `backwards` rather than `both`: neither the clip nor the scale may persist on
+   the open panel — the clip would keep cutting off the drop shadow, and a held
+   transform would blur the text on fractional pixels. */
+.pogpin-menu-morph[data-side][data-state='open'] {
+  animation: pogpin-menu-morph-in var(--motion-slow) var(--motion-ease-out) backwards;
+}
+
+/* Rows arrive one after another out of the anchored corner. The cascade is what
+   sells the panel as unfolding rather than appearing; it is capped at eight rows
+   so a long workspace list still finishes in one beat. */
+.pogpin-menu-morph[data-side][data-state='open'] > * {
+  animation: pogpin-menu-morph-row var(--motion-fast) var(--motion-ease-out)
+    calc(var(--morph-stagger-delay) + 7 * var(--morph-stagger-step)) backwards;
+}
+
+.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(1) {
+  animation-delay: var(--morph-stagger-delay);
+}
+
+.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(2) {
+  animation-delay: calc(var(--morph-stagger-delay) + var(--morph-stagger-step));
+}
+
+.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(3) {
+  animation-delay: calc(var(--morph-stagger-delay) + 2 * var(--morph-stagger-step));
+}
+
+.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(4) {
+  animation-delay: calc(var(--morph-stagger-delay) + 3 * var(--morph-stagger-step));
+}
+
+.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(5) {
+  animation-delay: calc(var(--morph-stagger-delay) + 4 * var(--morph-stagger-step));
+}
+
+.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(6) {
+  animation-delay: calc(var(--morph-stagger-delay) + 5 * var(--morph-stagger-step));
+}
+
+.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(7) {
+  animation-delay: calc(var(--morph-stagger-delay) + 6 * var(--morph-stagger-step));
+}
+
+/* Closing collapses back through the clip would read slow; a plain exit fade at
+   the exit token keeps dismissal immediate. */
+.pogpin-menu-morph[data-side][data-state='closed'] {
+  animation: pogpin-menu-morph-out var(--motion-exit) var(--motion-ease-in) both;
+}
+
+/* The clip and the scale share the trigger's corner as their origin (Radix
+   publishes it as --radix-*-content-transform-origin, already wired up by the
+   component's `origin-*` class), so the panel grows out of what you clicked
+   instead of merely uncovering itself. */
+@keyframes pogpin-menu-morph-in {
+  from {
+    clip-path: inset(
+      var(--morph-top) var(--morph-right) var(--morph-bottom) var(--morph-left) round
+        var(--morph-radius)
+    );
+    transform: scale(0.9);
+    opacity: 0;
+  }
+
+  35% {
+    opacity: 1;
+  }
+
+  to {
+    clip-path: inset(0 0 0 0 round var(--morph-radius));
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes pogpin-menu-morph-row {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--morph-shift), 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes pogpin-menu-morph-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+:where(button, nav a[href], [role='menuitem'], [role='option']) {
+  transition-duration: var(--motion-fast);
+  transition-timing-function: var(--motion-ease-out);
+}
+
+[data-sonner-toaster] [data-sonner-toast] {
+  display: flex;
+  width: var(--width);
+  align-items: center;
+  gap: 0.75rem;
+  overflow: hidden;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.875rem;
+  background: color-mix(in srgb, var(--card) 95%, transparent);
+  color: var(--card-foreground);
+  box-shadow:
+    0 20px 48px -24px rgb(0 0 0 / 0.38),
+    0 6px 18px -10px rgb(0 0 0 / 0.22);
+  backdrop-filter: blur(16px);
+  transition:
+    transform var(--motion-medium) var(--motion-ease-out),
+    opacity var(--motion-medium) var(--motion-ease-out),
+    height var(--motion-medium) var(--motion-ease-out),
+    box-shadow var(--motion-fast) var(--motion-ease-out);
+  will-change: transform, opacity;
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-mounted='false'][data-y-position='bottom'] {
+  --y: translateY(4px);
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-mounted='false'][data-y-position='top'] {
+  --y: translateY(-4px);
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-icon] {
+  position: relative;
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  color: var(--muted-foreground);
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type='success'] [data-icon] {
+  background: var(--pogpin-success-surface);
+  color: var(--pogpin-success);
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type='info'] [data-icon],
+[data-sonner-toaster] [data-sonner-toast][data-type='loading'] [data-icon] {
+  background: var(--pogpin-info-surface);
+  color: var(--pogpin-info);
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type='warning'] [data-icon] {
+  background: var(--pogpin-warning-surface);
+  color: var(--pogpin-warning);
+}
+
+[data-sonner-toaster] [data-sonner-toast][data-type='error'] [data-icon] {
+  background: var(--pogpin-danger-surface);
+  color: var(--pogpin-danger);
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-content] {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 0.125rem;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-title] {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-description] {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* The title is clamped to one line so a long message cannot dominate the
+   corner, which leaves messages like "DNS record not found yet — check ..."
+   unreadable. Hover (or keyboard focus) reveals the whole thing.
+
+   Sonner re-measures a toast only when its content changes, never on hover, so
+   the stack offsets below stay at the collapsed heights and the growing toast
+   overlaps its neighbours rather than pushing them. Raising its z-index above
+   the rest of the stack is what makes that overlap read as intended: the
+   expanded toast sits on top, opaque, and the others stay put. */
+[data-sonner-toaster] [data-sonner-toast]:is(:hover, :focus-within) {
+  z-index: calc(var(--z-index) + 100);
+}
+
+[data-sonner-toaster] [data-sonner-toast]:is(:hover, :focus-within) [data-title] {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+[data-sonner-toaster] [data-sonner-toast]:is(:hover, :focus-within) [data-description] {
+  display: block;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  position: static;
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+  order: 4;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transform: none;
+  transition:
+    background-color var(--motion-fast) var(--motion-ease-out),
+    color var(--motion-fast) var(--motion-ease-out);
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-close-button]:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+}
+
+[data-sonner-toaster] [data-sonner-toast] :is([data-action], [data-cancel]) {
+  display: inline-flex;
+  min-height: 1.75rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+[data-sonner-toaster]
+  [data-sonner-toast]
+  :is([data-close-button], [data-action], [data-cancel]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+[data-sonner-toaster] [data-sonner-toast] > * {
+  transition-duration: var(--motion-medium);
+  transition-timing-function: var(--motion-ease-out);
+}
+
+@keyframes pogpin-content-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :where(button:not(:disabled), nav a[href], [role='menuitem'], [role='option']):active {
+    scale: 0.97;
+    transition-duration: 60ms;
+  }
+
+  [data-slot='tabs-content'][data-state='active'] {
+    animation: pogpin-content-enter var(--motion-medium) var(--motion-ease-out) both;
+  }
+
+  .pogpin-skeleton {
+    animation: pogpin-skeleton-enter var(--motion-fast) var(--motion-ease-out) var(--motion-fast)
+      backwards;
+  }
+
+  .pogpin-content-reveal {
+    animation: pogpin-content-reveal var(--motion-medium) var(--motion-ease-out) both;
+  }
+
+  /* Entrance for the public reader: low distance, compositor-only, tokenized. */
+  .pogpin-public-enter {
+    animation: pogpin-public-enter var(--motion-medium) var(--motion-ease-out) both;
+  }
+}
+
+/*
+ * pdf.js text layer. The spans sit invisibly on top of the rendered canvas so
+ * the text can be selected and searched; pdf.js positions them itself from the
+ * `--scale-factor` the viewer sets on this container.
+ */
+.pogpin-pdf-text-layer {
+  text-align: initial;
+  overflow: clip;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+}
+
+.pogpin-pdf-text-layer span,
+.pogpin-pdf-text-layer br {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0 0;
+}
+
+.pogpin-pdf-text-layer span.markedContent {
+  top: 0;
+  height: 0;
+}
+
+.pogpin-pdf-text-layer ::selection {
+  background: var(--pogpin-brand-surface);
+}
+
+@keyframes pogpin-public-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .pogpin-skeleton {
+    animation-delay: 0ms !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Pogmail bridge.
+
+   The palette above is Pogpin's, verbatim. Pogmail's own markup speaks an
+   older vocabulary — `ground`, `panel`, `seam`, `ink`, `accent` — so those
+   names are re-pointed at the Pogpin tokens rather than re-spelled in every
+   file. Each alias resolves through a var that already flips with `.dark`,
+   so there is exactly one definition per role and no second theme block.
+   ───────────────────────────────────────────────────────────────────────── */
+@theme inline {
+  --color-ground: var(--background);
+  --color-panel: var(--pogpin-shell-panel);
+  --color-recess: var(--pogpin-shell-panel-alt);
+  --color-seam: var(--pogpin-shell-border);
+  --color-seam-strong: var(--pogpin-shell-border-strong);
+
+  --color-ink: var(--pogpin-shell-text);
+  --color-ink-2: var(--pogpin-shell-text-soft);
+  --color-ink-3: var(--pogpin-shell-text-muted);
+
+  --color-ok: var(--pogpin-success);
+  --color-ok-soft: var(--pogpin-success-surface);
+  --color-wait: var(--pogpin-warning);
+  --color-wait-soft: var(--pogpin-warning-surface);
+  --color-fail: var(--pogpin-danger);
+  --color-fail-soft: var(--pogpin-danger-surface);
+
+  --shadow-lift: var(--pogpin-shell-shadow-strong);
+
+  /* Pogpin geometry: controls are 6px, surfaces 8px. Nothing is a pill but a
+     tag or a badge. */
+  --radius-panel: var(--radius-card);
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html {
+    background: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--background);
+    letter-spacing: var(--tracking-body);
+    font-synthesis-weight: none;
+  }
+
+  /*
+   * Machine-assigned values — addresses, hostnames, DNS records, Message-IDs,
+   * key prefixes, byte counts, timings. Read a character at a time and copied
+   * into other tools, so they take the mono face and locked-width figures.
+   */
+  code,
+  kbd,
+  samp,
+  .machine {
+    font-family: var(--font-mono);
+    font-size: 0.925em;
+    letter-spacing: -0.006em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Prose a person wrote is not machine data. */
+  .prose-body {
+    font-variant-numeric: normal;
+    max-width: 68ch;
+  }
+
+  ::selection {
+    background: var(--pogpin-brand-surface-strong);
+    color: var(--pogpin-shell-text);
+  }
+}
+
+/* Headings carry their own weight; nothing sits above them announcing them. */
+@utility display {
+  font-weight: 600;
+  letter-spacing: var(--tracking-heading);
+  text-wrap: balance;
+}
+
+/* Column and field labels only. Never a line above a heading. */
+@utility field-label {
+  font-size: 0.6875rem;
+  font-weight: 560;
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--pogpin-shell-text-muted);
+}
+
+/*
+ * A scroller that must not spend width on a scrollbar — the icon rail is 68px
+ * wide and the 10px thumb is a sixth of it.
+ */
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
+/* The selected row wears the brand surface, not a bar down its side. */
+@utility selected-row {
+  background: var(--pogpin-brand-surface);
+}
+
+/*
+ * The authored moment: the instance draws its own mark. It happens once, when
+ * the identity resolves, and it is the only entrance animation in the product.
+ */
+@keyframes mark-draw {
+  from {
+    stroke-dashoffset: 210;
+    opacity: 0;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+.mark-draw path {
+  stroke-dasharray: 210;
+  animation: mark-draw 820ms var(--ease-out-quint) backwards;
+  animation-delay: calc(var(--i, 0) * 55ms);
+}
+
+/*
+ * Page transitions. Only the content region is named `page`, so the sidebar is
+ * never part of the snapshot and cannot flicker against an identical copy of
+ * itself. The root pair is stilled for the same reason — except while beUI's
+ * theme toggle is running its own root reveal, which stamps `data-beui-vt`.
+ */
+@keyframes page-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html:not([data-beui-vt])::view-transition-old(root),
+  html:not([data-beui-vt])::view-transition-new(root) {
+    animation: none;
+  }
+
+  ::view-transition-old(page) {
+    animation: page-out 110ms var(--ease-out-quint) both;
+  }
+
+  ::view-transition-new(page) {
+    animation: page-in 240ms var(--ease-out-quint) both;
+  }
+
+  /*
+   * Chrome inside the content region — a section heading and its tabs — carries
+   * a name of its own, which lifts it out of the `page` snapshot into a separate
+   * group. Stilling that group is what keeps a tab switch to the panel the tab
+   * controls, instead of sliding the control, the title and the whole screen
+   * with it.
+   */
+  ::view-transition-group(section-nav),
+  ::view-transition-group(section-heading) {
+    animation: none;
+  }
+
+  /*
+   * The outgoing copy is dropped rather than left un-animated: an old snapshot
+   * with no animation stays painted for the whole transition, which is how a
+   * section's tabs ended up hanging over the screen you moved to. The incoming
+   * copy takes its place immediately, so a tab switch — where both sides are
+   * identical — still reads as perfectly still.
+   */
+  ::view-transition-old(section-nav),
+  ::view-transition-old(section-heading) {
+    animation: none;
+    opacity: 0;
+  }
+
+  ::view-transition-new(section-nav),
+  ::view-transition-new(section-heading) {
+    animation: none;
+    mix-blend-mode: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mark-draw path {
+    animation: none;
+    stroke-dasharray: none;
+  }
+}

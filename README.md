@@ -81,7 +81,13 @@ the push it makes is what deploys.
 The GitHub App behind the Deploy button cannot push `.github/workflows`, so your
 copy arrives without the workflow. The first update writes it for you: give the
 token `Actions: write`, `Contents: write` and `Workflows: write` on that
-repository. It is forwarded to GitHub and never stored.
+repository.
+
+Repository and token are asked for once and kept in `update_settings`, so later
+updates are a single button. The token is encrypted with AES-GCM under a key
+derived from `CF_TOKEN`, the secret this deployment already has, and the API never
+returns it. Rotating `CF_TOKEN` therefore makes the stored GitHub token
+unreadable — Pogmail says so and asks for it again rather than failing obscurely.
 
 If you cannot sign in — a fresh installation that never got past `/setup`, say —
 add `.github/workflows/deploy-update.yml` from here by hand, then run it from

@@ -6,7 +6,10 @@
  * former, and `cloudflare:test` hands tests the latter.
  */
 interface PogmailSecrets {
-	/** Cloudflare API token used for domain and mailbox provisioning. */
+	/**
+	 * Cloudflare API token used for domain and mailbox provisioning. It doubles as
+	 * the key material the stored GitHub update token is encrypted under.
+	 */
 	CF_TOKEN: string;
 	/**
 	 * Overrides the Worker name Email Routing rules point at. Only needed when the

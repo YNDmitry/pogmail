@@ -29,6 +29,13 @@
       "when": 1788610269731,
       "tag": "0003_pogmail",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788793287664,
+      "tag": "0004_update_settings",
+      "breakpoints": true
     }
   ]
 }

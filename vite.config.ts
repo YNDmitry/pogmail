@@ -36,10 +36,26 @@ function workerName(): string {
 	}
 }
 
+/**
+ * The repository this build came from, offered as the default when the operator
+ * sets up updates. Workers Builds checks the repository out with its origin
+ * intact, so the remote is the least error-prone place to learn the name.
+ */
+function repository(): string {
+	if (process.env.GITHUB_REPOSITORY) return process.env.GITHUB_REPOSITORY;
+	try {
+		const remote = execSync("git config --get remote.origin.url", { encoding: "utf8" }).trim();
+		return remote.replace(/^.*github\.com[:/]/, "").replace(/\.git$/, "");
+	} catch {
+		return "";
+	}
+}
+
 export default defineConfig({
 	define: {
 		__BUILD_COMMIT__: JSON.stringify(buildCommit()),
 		__WORKER_NAME__: JSON.stringify(workerName()),
+		__REPOSITORY__: JSON.stringify(repository()),
 	},
 	plugins: [
 		tanstackRouter({

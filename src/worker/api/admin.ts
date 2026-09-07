@@ -2,9 +2,11 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { domains, mailboxes, messages, users } from "@/db/schema";
+import type { Database } from "@/db";
+import { domains, mailboxes, messages, SINGLETON_ID, updateSettings, users } from "@/db/schema";
 import { audit } from "../audit";
-import { BUILD_COMMIT, UPSTREAM_REPOSITORY } from "../build";
+import { BUILD_COMMIT, BUILD_REPOSITORY, UPSTREAM_REPOSITORY } from "../build";
+import { decryptSecret, encryptSecret } from "../auth/secrets";
 import { requireAdmin } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
 import { parseBody } from "./_util";
@@ -16,13 +18,29 @@ import updateWorkflowSource from "../../../.github/workflows/deploy-update.yml?r
 /** GitHub Actions workflow that merges upstream and applies D1 migrations. */
 const UPDATE_WORKFLOW = "deploy-update.yml";
 
-type UpdateInput = z.infer<typeof updateInput>;
+/** What a GitHub call needs; assembled from the request and the stored settings. */
+type UpdateInput = { repository: string; ref: string; token: string };
 
+const REPOSITORY = /^[\w.-]+\/[\w.-]+$/;
+
+/**
+ * Every field is optional: an installation that saved its credentials updates with
+ * an empty body, and anything sent here replaces what was saved.
+ */
 const updateInput = z.object({
 	/** `owner/repo` of the installation, e.g. `you/pogmail`. */
-	repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
-	ref: z.string().max(120).default("main"),
-	token: z.string().min(1),
+	repository: z.string().regex(REPOSITORY).optional(),
+	ref: z.string().max(120).optional(),
+	token: z.string().min(1).optional(),
+	/** Keep the credentials for next time. Off means this run only. */
+	remember: z.boolean().default(true),
+});
+
+const updateConfigInput = z.object({
+	repository: z.string().regex(REPOSITORY).nullable().optional(),
+	branch: z.string().max(120).optional(),
+	/** Omitted leaves the stored token alone; `null` forgets it. */
+	token: z.string().min(1).nullable().optional(),
 });
 
 
@@ -71,6 +89,17 @@ async function installWorkflow(input: UpdateInput): Promise<Response> {
 			branch: input.ref,
 		}),
 	});
+}
+
+/** Upserts the singleton row, so an installation cannot race two of them. */
+async function saveUpdateSettings(
+	db: Database,
+	values: Partial<typeof updateSettings.$inferInsert>,
+): Promise<void> {
+	await db
+		.insert(updateSettings)
+		.values({ id: SINGLETON_ID, ...values })
+		.onConflictDoUpdate({ target: updateSettings.id, set: { ...values, updatedAt: new Date() } });
 }
 
 /**
@@ -161,8 +190,88 @@ export const adminRoutes = new Hono<AppBindings>()
 	 * merges upstream and applies migrations. The workflow itself does not deploy —
 	 * but where Workers Builds watches that repository, its push does.
 	 */
+	/**
+	 * What this installation knows about updating itself. The token is never sent
+	 * back — only whether one is held, so the form can stop asking for it.
+	 */
+	.get("/update/config", async (c) => {
+		const saved = await c.get("db").select().from(updateSettings).get();
+
+		return c.json({
+			repository: saved?.repository ?? BUILD_REPOSITORY,
+			branch: saved?.branch ?? "main",
+			hasToken: Boolean(saved?.githubToken),
+			/** Without `CF_TOKEN` there is no key to encrypt a token under, so none is kept. */
+			canRemember: Boolean(c.env.CF_TOKEN),
+			/** Where the running build came from, offered when nothing is saved yet. */
+			detectedRepository: BUILD_REPOSITORY,
+			lastDispatchAt: saved?.lastDispatchAt ?? null,
+		});
+	})
+
+	.put("/update/config", async (c) => {
+		const input = await parseBody(c, updateConfigInput);
+
+		if (input.token && !c.env.CF_TOKEN) {
+			throw new HTTPException(409, {
+				message:
+					"Set the CF_TOKEN secret before storing a GitHub token: it is the key the token is encrypted under.",
+			});
+		}
+
+		const token =
+			input.token === undefined || input.token === null
+				? input.token
+				: await encryptSecret(c.env, input.token);
+
+		await saveUpdateSettings(c.get("db"), {
+			...(input.repository !== undefined ? { repository: input.repository } : {}),
+			...(input.branch !== undefined ? { branch: input.branch } : {}),
+			...(token !== undefined ? { githubToken: token } : {}),
+		});
+
+		audit(c, { action: "admin.update_config", metadata: { repository: input.repository ?? null } });
+		return c.json({ ok: true });
+	})
+
+	/**
+	 * Dispatches the update workflow in the user's own installation repository, which
+	 * merges upstream and applies migrations. The workflow itself does not deploy —
+	 * but where Workers Builds watches that repository, its push does.
+	 *
+	 * Credentials come from `update_settings` unless the request carries its own, so
+	 * the operator types them once instead of at every update.
+	 */
 	.post("/update", async (c) => {
-		const input = await parseBody(c, updateInput);
+		const body = await parseBody(c, updateInput);
+		const saved = await c.get("db").select().from(updateSettings).get();
+
+		const repository = body.repository ?? saved?.repository ?? BUILD_REPOSITORY;
+		const ref = body.ref ?? saved?.branch ?? "main";
+
+		let token = body.token;
+		if (!token && saved?.githubToken) {
+			token = (await decryptSecret(c.env, saved.githubToken)) ?? undefined;
+			if (!token) {
+				throw new HTTPException(409, {
+					message:
+						"The stored GitHub token could not be decrypted — CF_TOKEN has changed since it was saved. Enter the token again.",
+				});
+			}
+		}
+
+		if (!repository) {
+			throw new HTTPException(400, {
+				message: "Set the repository this installation was deployed from before updating.",
+			});
+		}
+		if (!token) {
+			throw new HTTPException(400, {
+				message: "Set a GitHub token with Actions, Contents and Workflows write access before updating.",
+			});
+		}
+
+		const input: UpdateInput = { repository, ref, token };
 
 		let installed = false;
 		let response = await dispatchWorkflow(input);
@@ -175,9 +284,9 @@ export const adminRoutes = new Hono<AppBindings>()
 			if (workflow?.status === 404) {
 				const write = await installWorkflow(input);
 				if (!write.ok) {
-					const body = await write.text();
+					const failure = await write.text();
 					throw new HTTPException(502, {
-						message: `${UPDATE_WORKFLOW} is missing from ${input.repository} and could not be added (${write.status}): ${body.slice(0, 160)}. The token needs Contents: write and Workflows: write.`,
+						message: `${UPDATE_WORKFLOW} is missing from ${input.repository} and could not be added (${write.status}): ${failure.slice(0, 160)}. The token needs Contents: write and Workflows: write.`,
 					});
 				}
 
@@ -205,14 +314,24 @@ export const adminRoutes = new Hono<AppBindings>()
 				});
 			}
 
-			const body = await response.text();
+			const failure = await response.text();
 			throw new HTTPException(502, {
-				message: `GitHub rejected the dispatch (${response.status}): ${body.slice(0, 200)}`,
+				message: `GitHub rejected the dispatch (${response.status}): ${failure.slice(0, 200)}`,
 			});
 		}
 
+		// Only a dispatch GitHub accepted is worth remembering: storing credentials
+		// that just failed would hand the next run the same broken pair. The token is
+		// kept only if there is a `CF_TOKEN` to seal it with — never in the clear.
+		const remembered = body.remember && Boolean(c.env.CF_TOKEN);
+		await saveUpdateSettings(c.get("db"), {
+			lastDispatchAt: new Date(),
+			...(body.remember ? { repository, branch: ref } : {}),
+			...(remembered ? { githubToken: await encryptSecret(c.env, token) } : {}),
+		});
+
 		audit(c, { action: "admin.update_dispatch", metadata: { repository: input.repository } });
-		return c.json({ ok: true, workflow: UPDATE_WORKFLOW, installed });
+		return c.json({ ok: true, workflow: UPDATE_WORKFLOW, installed, remembered });
 	})
 
 	/** Drops sessions for one user; used when an account looks compromised. */

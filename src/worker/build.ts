@@ -7,6 +7,7 @@
  */
 declare const __BUILD_COMMIT__: string;
 declare const __WORKER_NAME__: string;
+declare const __REPOSITORY__: string;
 
 /** Null when the build had no git context at all (a bare tarball, or vitest). */
 export const BUILD_COMMIT: string | null =
@@ -23,3 +24,11 @@ export const WORKER_NAME: string =
 
 /** Where an installation looks for new code. Matches `deploy-update.yml`'s default. */
 export const UPSTREAM_REPOSITORY = "YNDmitry/pogmail";
+
+/**
+ * `owner/repo` this build was made from, read from the git remote at build time.
+ * Only a default for the update form — the operator's saved value wins, because a
+ * build made outside their own copy would otherwise point updates at someone else's.
+ */
+export const BUILD_REPOSITORY: string | null =
+	typeof __REPOSITORY__ === "string" && __REPOSITORY__ !== "" ? __REPOSITORY__ : null;

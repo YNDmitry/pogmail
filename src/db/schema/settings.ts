@@ -19,6 +19,23 @@ export const appSettings = sqliteTable("app_settings", {
 	...timestamps(),
 });
 
+/**
+ * How this installation updates itself: which repository holds it, and the GitHub
+ * token allowed to run the update workflow there. Stored so the operator types it
+ * once rather than at every update — the token is admin-only, never leaves the
+ * Worker, and is deliberately narrow: a fine-grained token on that one repository.
+ */
+export const updateSettings = sqliteTable("update_settings", {
+	id: id(),
+	/** `owner/repo` of the installation. */
+	repository: text("repository"),
+	branch: text("branch").notNull().default("main"),
+	/** Written and read only by the update endpoint; the API never returns it. */
+	githubToken: text("github_token"),
+	lastDispatchAt: integer("last_dispatch_at", { mode: "timestamp_ms" }),
+	...timestamps(),
+});
+
 export const BACKUP_SCHEDULES = ["daily", "weekly", "monthly"] as const;
 export type BackupSchedule = (typeof BACKUP_SCHEDULES)[number];
 

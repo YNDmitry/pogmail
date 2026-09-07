@@ -37,7 +37,8 @@
 			{
 				"allow": [
 					"__BUILD_COMMIT__",
-					"__WORKER_NAME__"
+					"__WORKER_NAME__",
+					"__REPOSITORY__"
 				]
 			}
 		]

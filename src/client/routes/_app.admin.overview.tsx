@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/client/components/app/button";
 import { Modal } from "@/client/components/app/modal";
 import { Card, Field, Tag } from "@/client/components/app/primitives";
@@ -23,6 +23,16 @@ type OverviewData = {
 	messages: number;
 	storageBytes: number;
 	messagesByStatus: Record<string, number>;
+};
+
+type UpdateConfig = {
+	repository: string | null;
+	branch: string;
+	hasToken: boolean;
+	/** False when `CF_TOKEN` is unset: a token can be used, but not stored. */
+	canRemember: boolean;
+	detectedRepository: string | null;
+	lastDispatchAt: string | null;
 };
 
 type VersionData = {
@@ -169,10 +179,15 @@ function Overview() {
  * loud rather than leave an instance quietly a year old. Applying the update is
  * still a decision — the workflow merges upstream, and on an installation wired
  * to Workers Builds that merge is also a deploy.
+ *
+ * Credentials are asked for once and kept by the Worker, so the usual update is
+ * one button; the form comes back only to change them.
  */
 function Version() {
 	const toast = useToast();
-	const [dispatching, setDispatching] = useState(false);
+	const client = useQueryClient();
+	const [editing, setEditing] = useState(false);
+	const [running, setRunning] = useState(false);
 
 	const version = useQuery({
 		queryKey: qk.adminVersion,
@@ -181,61 +196,103 @@ function Version() {
 		staleTime: 60 * 60 * 1000,
 	});
 
+	const config = useQuery({
+		queryKey: qk.adminUpdateConfig,
+		queryFn: () => api.get<UpdateConfig>("/api/admin/update/config"),
+	});
+
 	const data = version.data;
+	const settings = config.data;
 	const behind = data?.behind === true;
+	const ready = Boolean(settings?.hasToken && settings.repository);
+
+	async function dispatch(body: Record<string, unknown>) {
+		setRunning(true);
+		try {
+			const result = await api.post<{ installed: boolean; remembered: boolean }>(
+				"/api/admin/update",
+				body,
+			);
+			toast.ok(
+				"Update started",
+				result.installed
+					? "The workflow was missing and has been added to your repository. Watch it under Actions."
+					: !result.remembered && settings?.canRemember === false
+						? "Watch it under Actions. The token was not kept: set the CF_TOKEN secret to store it encrypted."
+						: "Watch it under Actions in your repository.",
+			);
+			setEditing(false);
+			await client.invalidateQueries({ queryKey: qk.adminUpdateConfig });
+		} catch (error) {
+			toast.fail("Could not start the update", String(error));
+		} finally {
+			setRunning(false);
+		}
+	}
 
 	return (
 		<Card className="p-6">
 			<Modal
-				open={dispatching}
-				onClose={() => setDispatching(false)}
-				title="Update this installation"
-				description="Runs the Update workflow in your copy of the repository: it merges upstream and applies pending D1 migrations."
+				open={editing}
+				onClose={() => setEditing(false)}
+				title={ready ? "Update credentials" : "Set up updates"}
+				description="Pogmail runs the Update workflow in your copy of the repository: it merges upstream and applies pending D1 migrations. If the workflow is not there, it is added first."
 			>
 				<form
 					className="space-y-4"
-					onSubmit={async (event) => {
+					onSubmit={(event) => {
 						event.preventDefault();
 						const form = new FormData(event.currentTarget);
+						const token = String(form.get("token"));
 
-						try {
-							const result = await api.post<{ installed: boolean }>("/api/admin/update", {
-								repository: String(form.get("repository")),
-								ref: String(form.get("ref")) || "main",
-								token: String(form.get("token")),
-							});
-							toast.ok(
-								"Update started",
-								result.installed
-									? "The workflow was missing and has been added to your repository. Watch it under Actions."
-									: "Watch it under Actions in your repository.",
-							);
-							setDispatching(false);
-						} catch (error) {
-							toast.fail("Could not start the update", String(error));
-						}
+						void dispatch({
+							repository: String(form.get("repository")),
+							ref: String(form.get("ref")) || "main",
+							// An unchanged token is left out, so the stored one stays in place.
+							...(token ? { token } : {}),
+						});
 					}}
 				>
 					<Field label="Your repository" hint="The copy the Deploy button made, as owner/repo.">
-						<Input name="repository" required placeholder="you/pogmail" autoComplete="off" />
+						<Input
+							name="repository"
+							required
+							defaultValue={settings?.repository ?? settings?.detectedRepository ?? ""}
+							placeholder="you/pogmail"
+							autoComplete="off"
+						/>
 					</Field>
 
 					<Field label="Branch" hint="The branch the workflow runs on.">
-						<Input name="ref" defaultValue="main" required autoComplete="off" />
+						<Input name="ref" defaultValue={settings?.branch ?? "main"} required autoComplete="off" />
 					</Field>
 
 					<Field
 						label="GitHub token"
-						hint="A fine-grained token on that repository with Actions: write, plus Contents: write and Workflows: write — a copy made by the Deploy button has no workflow file, and the first update writes it. Forwarded to GitHub, never stored."
+						hint={
+							settings?.hasToken
+								? "A token is stored, encrypted under CF_TOKEN. Leave this empty to keep it, or paste a new one to replace it."
+								: settings?.canRemember === false
+									? "A fine-grained token on that repository with Actions: write, Contents: write and Workflows: write. Without the CF_TOKEN secret it is used for this run only, never stored."
+									: "A fine-grained token on that repository with Actions: write, Contents: write and Workflows: write — a copy made by the Deploy button has no workflow file, and the first update writes it. Stored encrypted under CF_TOKEN."
+						}
 					>
-						<Input name="token" type="password" required autoComplete="off" />
+						<Input
+							name="token"
+							type="password"
+							required={!settings?.hasToken}
+							autoComplete="off"
+							placeholder={settings?.hasToken ? "Unchanged" : undefined}
+						/>
 					</Field>
 
 					<div className="flex justify-end gap-2 pt-2">
-						<Button type="button" variant="secondary" onClick={() => setDispatching(false)}>
+						<Button type="button" variant="secondary" onClick={() => setEditing(false)}>
 							Cancel
 						</Button>
-						<Button type="submit">Run update</Button>
+						<Button type="submit" disabled={running}>
+							{running ? "Starting…" : "Save and update"}
+						</Button>
 					</div>
 				</form>
 			</Modal>
@@ -283,6 +340,19 @@ function Version() {
 						)}
 					</dd>
 				</div>
+				<div className="flex items-baseline justify-between gap-6 py-3">
+					<dt className="text-sm text-ink-2">Updates from</dt>
+					<dd className="flex items-baseline gap-3">
+						<span className="machine text-sm text-ink">{settings?.repository ?? "not set"}</span>
+						<button
+							type="button"
+							className="text-xs text-ink-3 underline underline-offset-2 hover:text-ink-2"
+							onClick={() => setEditing(true)}
+						>
+							{ready ? "Change" : "Set up"}
+						</button>
+					</dd>
+				</div>
 			</dl>
 
 			{behind && data?.upstream ? (
@@ -291,11 +361,18 @@ function Version() {
 						{data.upstream.subject}{" "}
 						<span className="text-ink-3">· {fullDate(data.upstream.committedAt)}</span>
 					</p>
-					<Button size="sm" onClick={() => setDispatching(true)}>
-						Update
+					<Button
+						size="sm"
+						disabled={running}
+						// With credentials saved this is the whole interaction; without them
+						// the form opens instead of failing on an empty request.
+						onClick={() => (ready ? void dispatch({}) : setEditing(true))}
+					>
+						{running ? "Starting…" : "Update"}
 					</Button>
 				</div>
 			) : null}
 		</Card>
 	);
+
 }

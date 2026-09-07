@@ -22,7 +22,7 @@
 	"cloudflare": {
 		"bindings": {
 			"CF_TOKEN": {
-				"description": "Runtime Cloudflare API token used to configure DNS and Email Routing. Create it with Zone Read, DNS Edit, Email Routing Edit, Email Sending Edit, and Email Routing Rules Write permissions for the domains you will connect."
+				"description": "Open [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens), choose **Create Token → Create Custom Token**, then add: **Zone / Zone / Read**, **Zone / DNS / Edit**, **Zone / Zone Settings / Edit**, and **Zone / Email Routing Rules / Edit**. Limit Zone Resources to the domains Pogmail will manage. Paste only the token value here, without `Bearer`."
 			}
 		}
 	},

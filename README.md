@@ -61,9 +61,11 @@ Workflow. Enter `CF_TOKEN`, deploy, then open `/setup` on the new Worker URL to
 create the first admin.
 
 `CF_TOKEN` is a runtime token, separate from the credential Cloudflare uses for
-the deployment. Give it `Zone:Read`, `DNS:Edit`, `Email Routing:Edit`,
-`Email Sending:Edit` and `Email Routing Rules:Edit` for the domains Pogmail will
-host. Pogmail discovers the account and zones through this token.
+the deployment. Create a [custom API token](https://dash.cloudflare.com/profile/api-tokens)
+with `Zone / Zone / Read`, `Zone / DNS / Edit`, `Zone / Zone Settings / Edit`
+and `Zone / Email Routing Rules / Edit`. Limit its Zone Resources to the domains
+Pogmail will manage. Paste the token value without the `Bearer` prefix; Pogmail
+discovers the account and zones through it.
 
 For a manual deployment:
 

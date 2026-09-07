@@ -31,6 +31,14 @@
 		"react/react-in-jsx-scope": "off",
 		"import/no-unassigned-import": "off",
 		"typescript/triple-slash-reference": "off",
-		"no-await-in-loop": "off"
+		"no-await-in-loop": "off",
+		"no-underscore-dangle": [
+			"warn",
+			{
+				"allow": [
+					"__BUILD_COMMIT__"
+				]
+			}
+		]
 	}
 }

@@ -1,8 +1,13 @@
 name: Update
 
-# Dispatched from Administration → Overview in a running instance. Merges the
-# upstream default branch into this installation and applies D1 migrations.
-# It deliberately does not deploy: you decide when new code goes live.
+# Dispatched from Administration → Overview in a running instance, or run by hand
+# from the Actions tab — which is the way in when the instance itself is broken
+# enough that you cannot sign in. Merges the upstream default branch into this
+# installation and applies D1 migrations.
+#
+# It runs no deploy step of its own, but an installation created by the Deploy to
+# Cloudflare button has Workers Builds watching this repository, so the push this
+# job makes is what ships the new code.
 on:
   workflow_dispatch:
     inputs:

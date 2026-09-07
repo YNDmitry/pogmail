@@ -31,4 +31,5 @@ export const qk = {
 	activity: ["activity"] as const,
 	backups: ["backups"] as const,
 	adminOverview: ["admin", "overview"] as const,
+	adminVersion: ["admin", "version"] as const,
 };

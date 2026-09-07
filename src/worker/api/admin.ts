@@ -4,6 +4,7 @@ import { count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { domains, mailboxes, messages, users } from "@/db/schema";
 import { audit } from "../audit";
+import { BUILD_COMMIT, UPSTREAM_REPOSITORY } from "../build";
 import { requireAdmin } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
 import { parseBody } from "./_util";
@@ -48,8 +49,49 @@ export const adminRoutes = new Hono<AppBindings>()
 	})
 
 	/**
-	 * Dispatches the update workflow in the user's own installation repository. This
-	 * merges upstream and applies migrations; it does not build or deploy.
+	 * Compares the commit this Worker was built from against upstream's default
+	 * branch. GitHub allows 60 unauthenticated calls an hour per address and
+	 * Cloudflare's egress is shared, so the call is cached for an hour and every
+	 * failure degrades to `upstream: null` — an instance that cannot reach GitHub
+	 * still renders its own version.
+	 */
+	.get("/version", async (c) => {
+		const response = await fetch(
+			`https://api.github.com/repos/${UPSTREAM_REPOSITORY}/commits/HEAD`,
+			{
+				headers: { accept: "application/vnd.github+json", "user-agent": "pogmail" },
+				cf: { cacheTtl: 3600, cacheEverything: true },
+			},
+		).catch(() => null);
+
+		const upstream =
+			response?.ok === true
+				? ((await response.json()) as {
+						sha: string;
+						html_url: string;
+						commit: { message: string; committer: { date: string } };
+					})
+				: null;
+
+		return c.json({
+			repository: UPSTREAM_REPOSITORY,
+			commit: BUILD_COMMIT,
+			upstream: upstream && {
+				commit: upstream.sha,
+				url: upstream.html_url,
+				// Only the subject line: a merge commit body is pages long.
+				subject: upstream.commit.message.split("\n")[0] ?? "",
+				committedAt: upstream.commit.committer.date,
+			},
+			// Null, not false, when either side is unknown: "cannot tell" is not "current".
+			behind: BUILD_COMMIT && upstream ? BUILD_COMMIT !== upstream.sha : null,
+		});
+	})
+
+	/**
+	 * Dispatches the update workflow in the user's own installation repository, which
+	 * merges upstream and applies migrations. The workflow itself does not deploy —
+	 * but where Workers Builds watches that repository, its push does.
 	 */
 	.post("/update", async (c) => {
 		const input = await parseBody(c, updateInput);

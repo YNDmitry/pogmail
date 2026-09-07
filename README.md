@@ -67,6 +67,22 @@ and `Zone / Email Routing Rules / Edit`. Limit its Zone Resources to the domains
 Pogmail will manage. Paste the token value without the `Bearer` prefix; Pogmail
 discovers the account and zones through it.
 
+## Updating
+
+The Deploy button makes a **copy** of this repository in your own account, not a
+fork that tracks it, so upstream commits never arrive on their own. Administration
+→ Overview compares the commit your Worker was built from against this repository
+and offers to run the **Update** workflow in your copy: it merges upstream and
+applies pending D1 migrations, and because Workers Builds watches your repository,
+the push it makes is what deploys.
+
+The workflow needs a fine-grained GitHub token with `Actions: write` on your copy.
+It is forwarded to GitHub and never stored.
+
+If you cannot sign in — a fresh installation that never got past `/setup`, say —
+run the same workflow by hand: your repository → **Actions** → **Update** → **Run
+workflow**.
+
 For a manual deployment:
 
 ```bash

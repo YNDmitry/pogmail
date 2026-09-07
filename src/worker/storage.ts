@@ -38,6 +38,27 @@ export async function putUpload(
 	return key;
 }
 
+/**
+ * Stores the untouched MIME of an inbound message.
+ *
+ * `EmailMessage.raw` is a plain `ReadableStream` of unknown length, and R2 refuses
+ * one — "Provided readable stream must have a known length" — so the bytes go
+ * through a `FixedLengthStream` carrying `rawSize`. Piping rather than buffering
+ * keeps a 25 MB message off the Worker's heap; the pipe is deliberately not
+ * awaited before the `put`, because `put` is what drains the readable half.
+ */
+export async function putRawMessage(
+	env: Env,
+	key: string,
+	raw: ReadableStream,
+	size: number,
+): Promise<void> {
+	const sized = new FixedLengthStream(size);
+	const pumped = raw.pipeTo(sized.writable);
+	await env.MAIL_BUCKET.put(key, sized.readable);
+	await pumped;
+}
+
 export async function deleteObject(env: Env, key: string): Promise<void> {
 	await env.MAIL_BUCKET.delete(key);
 }

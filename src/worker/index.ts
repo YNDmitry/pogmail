@@ -20,6 +20,7 @@ import {
   type QueuePayload,
 } from "./email/types";
 import { runDelivery } from "./email/webhooks";
+import { putRawMessage } from "./storage";
 
 export { RealtimeHub } from "./realtime/hub";
 export { DatabaseBackupWorkflow } from "./backups/workflow";
@@ -83,7 +84,7 @@ export default {
 
     // Store the untouched MIME first: the queue job must be replayable.
     const rawKey = `raw/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.eml`;
-    await env.MAIL_BUCKET.put(rawKey, message.raw);
+    await putRawMessage(env, rawKey, message.raw, message.rawSize);
 
     const job: InboundQueueMessage = {
       kind: "inbound",

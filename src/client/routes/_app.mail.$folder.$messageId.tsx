@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import {
 	Archive,
@@ -106,10 +106,7 @@ function Reader() {
 			"read_only",
 	);
 
-	const older = useMemo(
-		() => (thread.data ?? []).filter((item) => item.id !== messageId),
-		[thread.data, messageId],
-	);
+	const hasThread = (thread.data?.length ?? 0) > 1;
 
 	if (message.isPending) {
 		return (
@@ -121,6 +118,9 @@ function Reader() {
 
 	if (!message.data) return null;
 	const mail = message.data;
+	const threadPosition = (thread.data?.findIndex((item) => item.id === mail.id) ?? -1) + 1;
+	const isLatest = threadPosition > 0 && threadPosition === thread.data?.length;
+	const title = conversations ? (thread.data?.[0]?.subject ?? mail.subject) : mail.subject;
 
 	function move(status: MessageStatus, done: string) {
 		patch.mutate(
@@ -140,7 +140,7 @@ function Reader() {
 			<header className="space-y-4">
 				<div className="flex flex-wrap items-start justify-between gap-3">
 					<h1 className="display min-w-0 flex-1 text-xl leading-snug text-ink">
-						{mail.subject || "(no subject)"}
+						{title || "(no subject)"}
 					</h1>
 
 					<div className="flex shrink-0 items-center gap-1">
@@ -172,6 +172,14 @@ function Reader() {
 						)}
 					</div>
 				</div>
+
+				{conversations && hasThread ? (
+					<p className="text-xs text-muted-foreground">
+						{isLatest
+							? `Viewing latest message · ${thread.data?.length} in thread`
+							: `Viewing message ${threadPosition} of ${thread.data?.length} · latest is below`}
+					</p>
+				) : null}
 
 				<div className="flex items-start gap-3 border-b border-seam pb-4">
 					<span
@@ -279,6 +287,59 @@ function Reader() {
 				</div>
 			</header>
 
+			{!conversations && hasThread ? (
+				<section aria-labelledby="thread-heading" className="space-y-2">
+					<div className="flex items-baseline justify-between gap-3">
+						<h2 id="thread-heading" className="text-sm font-medium text-foreground">
+							Thread
+						</h2>
+						<span className="text-xs text-muted-foreground">
+							{thread.data?.length} messages · latest at top
+						</span>
+					</div>
+
+					<ol className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+						{(thread.data ?? []).toReversed().map((item, index) => {
+							const current = item.id === mail.id;
+							return (
+								<li key={item.id}>
+									<Link
+										to="/mail/$folder/$messageId"
+										params={{ folder, messageId: item.id }}
+										aria-current={current ? "page" : undefined}
+										className={cn(
+											"grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 px-3 py-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+											current ? "selected-row" : "hover:bg-[var(--pogpin-shell-fill-soft)]",
+										)}
+									>
+										<span className="flex min-w-0 items-baseline gap-2">
+											<span className="truncate font-medium text-foreground">
+												{senderLabel(item.fromName, item.fromAddress)}
+											</span>
+											{index === 0 ? (
+												<span className="shrink-0 text-[0.6875rem] text-muted-foreground">Latest</span>
+											) : null}
+											{current ? (
+												<span className="shrink-0 text-[0.6875rem] font-medium text-primary">Open</span>
+											) : null}
+										</span>
+										<time
+											dateTime={item.receivedAt}
+											className="machine shrink-0 text-[0.6875rem] text-muted-foreground"
+										>
+											{fullDate(item.receivedAt)}
+										</time>
+										<span className="col-span-2 mt-0.5 truncate text-xs text-muted-foreground">
+											{item.snippet || "No preview"}
+										</span>
+									</Link>
+								</li>
+							);
+						})}
+					</ol>
+				</section>
+			) : null}
+
 			{mail.attachments.length > 0 ? (
 				<section className="space-y-2">
 					<h2 className="field-label">
@@ -317,49 +378,34 @@ function Reader() {
 				</a>
 			</footer>
 
-			{older.length > 0 ? (
-				conversations ? (
-					/*
-					 * Read as a conversation, the thread is the page: the messages either
-					 * side of this one are laid out in order, mine on the right and theirs
-					 * on the left, so a back-and-forth reads as one.
-					 */
-					<section className="space-y-3">
-						<h2 className="field-label">{thread.data?.length ?? 0} messages in this conversation</h2>
-						<ol className="space-y-2">
-							{(thread.data ?? []).map((item) => (
-								<li key={item.id}>
-									<ThreadBubble
-										item={item}
-										folder={folder}
-										current={item.id === mail.id}
-										outbound={item.direction === "outbound"}
-									/>
-								</li>
-							))}
-						</ol>
-					</section>
-				) : (
-					<section className="space-y-2">
-						<h2 className="field-label">Earlier in this thread</h2>
-						<ul className="divide-y divide-border rounded-lg border border-border bg-card">
-							{older.map((item) => (
-								<li key={item.id}>
-									<Link
-										to="/mail/$folder/$messageId"
-										params={{ folder, messageId: item.id }}
-										className="block px-3 py-2 text-sm transition-colors hover:bg-[var(--pogpin-shell-fill-soft)]"
-									>
-										<span className="font-medium">
-											{senderLabel(item.fromName, item.fromAddress)}
-										</span>
-										<span className="ml-2 text-muted-foreground">{item.snippet}</span>
-									</Link>
-								</li>
-							))}
-						</ul>
-					</section>
-				)
+			{conversations && hasThread ? (
+				/*
+				 * Read as a conversation, the thread is the page: the messages either
+				 * side of this one are laid out in order, mine on the right and theirs
+				 * on the left, so a back-and-forth reads as one.
+				 */
+				<section aria-labelledby="conversation-thread-heading" className="space-y-2">
+					<div className="flex items-baseline justify-between gap-3">
+						<h2 id="conversation-thread-heading" className="text-sm font-medium text-foreground">
+							Thread
+						</h2>
+						<span className="text-xs text-muted-foreground">
+							{thread.data?.length ?? 0} messages · oldest → latest
+						</span>
+					</div>
+					<ol className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+						{(thread.data ?? []).map((item, index, items) => (
+							<li key={item.id}>
+								<ThreadRow
+									item={item}
+									folder={folder}
+									current={item.id === mail.id}
+									latest={index === items.length - 1}
+								/>
+							</li>
+						))}
+					</ol>
+				</section>
 			) : null}
 
 			<Modal
@@ -474,58 +520,48 @@ function IconAction({
 	);
 }
 
-/**
- * One message inside a conversation.
- *
- * Outbound sits right and inbound left, which is the only convention people
- * already read without being told. The message being read is opened; the rest
- * are one line each and a click away, because a thread of thirty is not a wall
- * of thirty bodies.
- */
-function ThreadBubble({
+/** A stable row in the thread timeline; only its state changes when another message opens. */
+function ThreadRow({
 	item,
 	folder,
 	current,
-	outbound,
+	latest,
 }: {
 	item: MessageSummary;
 	folder: string;
 	current: boolean;
-	outbound: boolean;
+	latest: boolean;
 }) {
 	return (
-		<div className={cn("flex", outbound ? "justify-end" : "justify-start")}>
-			<Link
-				to="/mail/$folder/$messageId"
-				params={{ folder, messageId: item.id }}
-				className={cn(
-					"block max-w-[85%] min-w-0 rounded-xl border px-3 py-2 transition-colors",
-					outbound
-						? "border-[var(--pogpin-brand-border)] bg-accent"
-						: "border-border bg-[var(--pogpin-shell-panel-alt)]",
-					current
-						? "ring-1 ring-[var(--pogpin-brand-border)] ring-inset"
-						: "hover:border-[var(--pogpin-shell-border-strong)]",
-				)}
-			>
-				<span className="flex items-baseline gap-2">
-					<span className="truncate text-[0.8125rem] font-medium text-foreground">
-						{senderLabel(item.fromName, item.fromAddress)}
-					</span>
-					<Machine className="ml-auto shrink-0 text-[0.6875rem]">
-						{fullDate(item.receivedAt)}
-					</Machine>
+		<Link
+			to="/mail/$folder/$messageId"
+			params={{ folder, messageId: item.id }}
+			aria-current={current ? "page" : undefined}
+			className={cn(
+				"block min-w-0 px-3 py-2.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+				current ? "selected-row" : "hover:bg-[var(--pogpin-shell-fill-soft)]",
+			)}
+		>
+			<span className="flex min-w-0 items-baseline gap-2">
+				<span className="truncate text-[0.8125rem] font-medium text-foreground">
+					{senderLabel(item.fromName, item.fromAddress)}
 				</span>
-
-				<span
-					className={cn(
-						"mt-1 block text-sm text-[var(--pogpin-shell-text-soft)]",
-						current ? "" : "truncate",
-					)}
-				>
-					{current ? "Open below" : item.snippet}
+				<span className="shrink-0 text-[0.6875rem] text-muted-foreground">
+					{item.direction === "outbound" ? "Sent" : "Received"}
 				</span>
-			</Link>
-		</div>
+				{latest ? (
+					<span className="shrink-0 text-[0.6875rem] font-medium text-muted-foreground">Latest</span>
+				) : null}
+				{current ? (
+					<span className="shrink-0 text-[0.6875rem] font-medium text-primary">Open above</span>
+				) : null}
+				<Machine className="ml-auto shrink-0 text-[0.6875rem]">
+					{fullDate(item.receivedAt)}
+				</Machine>
+			</span>
+			<span className="mt-1 block truncate text-sm text-[var(--pogpin-shell-text-soft)]">
+				{item.snippet || "No preview"}
+			</span>
+		</Link>
 	);
 }

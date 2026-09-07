@@ -346,7 +346,7 @@ CREATE TABLE `webhooks` (
 CREATE INDEX `webhooks_mailbox_idx` ON `webhooks` (`mailbox_id`,`enabled`);--> statement-breakpoint
 CREATE TABLE `app_settings` (
 	`id` text PRIMARY KEY NOT NULL,
-	`app_name` text DEFAULT 'Postbox' NOT NULL,
+	`app_name` text DEFAULT 'Pogmail' NOT NULL,
 	`icon_key` text,
 	`accent_color` text,
 	`allow_registration` integer DEFAULT false NOT NULL,

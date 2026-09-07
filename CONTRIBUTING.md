@@ -3,12 +3,10 @@
 ## Getting set up
 
 ```bash
-npm install
+bun install
 cp .dev.vars.example .dev.vars
-
-npx wrangler d1 create postbox   # paste database_id into wrangler.jsonc
-npm run db:migrate:local
-npm run dev
+bun run db:migrate:local
+bun run dev
 ```
 
 Then create the first admin at `http://localhost:5173/setup`.
@@ -16,12 +14,12 @@ Then create the first admin at `http://localhost:5173/setup`.
 ## Before opening a pull request
 
 ```bash
-npm run check   # tsc --noEmit for both programs, then oxlint
-npm test        # vitest against a real workerd runtime
+bun run check   # tsc --noEmit for both programs, then oxlint
+bun run test    # vitest against a real workerd runtime
 ```
 
-`npm run build` does not typecheck — Vite strips types without checking them, so
-`npm run check` is the gate.
+`bun run build` does not typecheck — Vite strips types without checking them, so
+`bun run check` is the gate.
 
 ## Things worth knowing
 
@@ -42,7 +40,7 @@ swallow mail addressed to a real mailbox. `mailbox` rules run after delivery and
 only pick a folder. `test/routing.test.ts` pins this; please keep it passing.
 
 **Migrations have one source of truth**: `drizzle/migrations/`. Run
-`npm run db:generate` after changing `src/db/schema/`. `0001_message_search.sql`
+`bun run db:generate` after changing `src/db/schema/`. `0001_message_search.sql`
 is hand-written because drizzle-kit cannot express FTS5 virtual tables.
 
 ## Style

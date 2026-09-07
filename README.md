@@ -4,6 +4,8 @@ Self-hosted email for domains you already own, running entirely on Cloudflare.
 Receive, route, read, search and send mail; manage domains, mailboxes, sharing,
 filters and webhooks — from one Worker and one `wrangler deploy`.
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/YNDmitry/pogmail)
+
 AGPL-3.0. Every feature is in the box: there is no paid tier, and nothing is
 gated behind a licence key.
 
@@ -41,12 +43,10 @@ gated behind a licence key.
 ## Getting started
 
 ```bash
-npm install
+bun install
 cp .dev.vars.example .dev.vars      # CF_TOKEN, CF_ACCOUNT_ID, SESSION_SECRET
-
-npx wrangler d1 create postbox      # paste database_id into wrangler.jsonc
-npm run db:migrate:local
-npm run dev
+bun run db:migrate:local
+bun run dev
 ```
 
 Open `http://localhost:5173/setup` and create the admin account. Sign-up for
@@ -55,41 +55,44 @@ you want it.
 
 ## Deploying
 
+Click **Deploy to Cloudflare** above and keep the Worker name as `pogmail`.
+Cloudflare creates and binds D1, R2, Queues, the Durable Object and the backup
+Workflow. Enter the three requested secrets, deploy, then open `/setup` on the
+new Worker URL to create the first admin.
+
+`CF_TOKEN` is a runtime token, separate from the credential Cloudflare uses for
+the deployment. Give it `Zone:Read`, `DNS:Edit`, `Email Routing:Edit`,
+`Email Sending:Edit` and `Email Routing Rules:Edit` for the domains Pogmail will
+host. `CF_ACCOUNT_ID` is the account that owns those domains. Generate
+`SESSION_SECRET` with `openssl rand -base64 32`.
+
+For a manual deployment:
+
 ```bash
-npx wrangler d1 create postbox      # database_id → wrangler.jsonc
-npx wrangler r2 bucket create postbox-mail
-npx wrangler queues create postbox-inbound
-npx wrangler queues create postbox-outbound
-npx wrangler queues create postbox-dlq
-
-npx wrangler secret put CF_TOKEN
-npx wrangler secret put CF_ACCOUNT_ID
-npx wrangler secret put SESSION_SECRET
-
-npm run db:migrate:remote
-npm run deploy
+bun install
+bun x wrangler login
+bun x wrangler secret put CF_TOKEN
+bun x wrangler secret put CF_ACCOUNT_ID
+bun x wrangler secret put SESSION_SECRET
+bun run deploy
 ```
 
-The Worker `name` in `wrangler.jsonc` and the `CF_EMAIL_WORKER_NAME` var must
-match: Cloudflare Email Routing addresses the Worker by literal name.
-
-`CF_TOKEN` needs `Zone:Read`, `DNS:Edit` and `Email Routing:Edit` on the zones
-you plan to host mail for. Pogmail turns Email Routing on, adds the MX and TXT
-records Cloudflare asks for, and points the catch-all at the Worker.
+`bun run deploy` builds and deploys the app, then applies pending D1 migrations. The Worker name and `CF_EMAIL_WORKER_NAME` in `wrangler.jsonc` must
+match because Email Routing addresses the Worker by literal name.
 
 ## Commands
 
 ```bash
-npm run dev            # vite dev, real bindings via miniflare
-npm run check          # typecheck both programs, then lint
-npm test               # vitest under workerd
-npm run build          # SPA + Worker into dist/
-npm run deploy         # build, then wrangler deploy
+bun run dev            # vite dev, real bindings via miniflare
+bun run check          # typecheck both programs, then lint
+bun run test           # vitest under workerd
+bun run build          # SPA + Worker into dist/
+bun run deploy         # build, deploy, then migrate D1
 
-npm run db:generate    # drizzle-kit generate
-npm run db:migrate:local
-npm run db:migrate:remote
-npm run cf-typegen     # regenerate worker-configuration.d.ts
+bun run db:generate    # drizzle-kit generate
+bun run db:migrate:local
+bun run db:migrate:remote
+bun run cf-typegen     # regenerate worker-configuration.d.ts
 ```
 
 ## API
@@ -107,6 +110,6 @@ only as a SHA-256 hash. Create them under Settings → API keys.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). In short: `npm run check && npm test`
+See [CONTRIBUTING.md](CONTRIBUTING.md). In short: `bun run check && bun run test`
 before opening a pull request, and keep `test/routing.test.ts` green — it pins
 the phase order that stops a catch-all rule from swallowing real mail.

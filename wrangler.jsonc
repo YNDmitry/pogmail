@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "postbox",
+  "name": "pogmail",
   "main": "./src/worker/index.ts",
   "compatibility_date": "2026-08-22",
   "compatibility_flags": ["nodejs_compat"],
@@ -13,57 +13,50 @@
   },
   "vars": {
     "APP_NAME": "Pogmail",
-    "CF_EMAIL_WORKER_NAME": "postbox"
+    "CF_EMAIL_WORKER_NAME": "pogmail"
   },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "postbox",
-      "database_id": "PLACEHOLDER_RUN_WRANGLER_D1_CREATE",
+      "database_name": "pogmail",
       "migrations_dir": "drizzle/migrations"
-    },
-    {
-      "binding": "postbox",
-      "database_name": "postbox",
-      "database_id": "83debcd5-2518-4838-8f9e-182533da9224",
-      "remote": true
     }
   ],
   "r2_buckets": [
     {
       "binding": "MAIL_BUCKET",
-      "bucket_name": "postbox-mail"
+      "bucket_name": "pogmail"
     }
   ],
   "queues": {
     "producers": [
       {
         "binding": "INBOUND_QUEUE",
-        "queue": "postbox-inbound"
+        "queue": "pogmail-inbound"
       },
       {
         "binding": "OUTBOUND_QUEUE",
-        "queue": "postbox-outbound"
+        "queue": "pogmail-outbound"
       }
     ],
     "consumers": [
       {
-        "queue": "postbox-inbound",
+        "queue": "pogmail-inbound",
         "max_batch_size": 10,
         "max_retries": 5,
-        "dead_letter_queue": "postbox-dlq"
+        "dead_letter_queue": "pogmail-dlq"
       },
       {
-        "queue": "postbox-outbound",
+        "queue": "pogmail-outbound",
         "max_batch_size": 10,
         "max_retries": 5,
-        "dead_letter_queue": "postbox-dlq"
+        "dead_letter_queue": "pogmail-dlq"
       }
     ]
   },
   "workflows": [
     {
-      "name": "postbox-backup",
+      "name": "pogmail-backup",
       "binding": "BACKUP_WORKFLOW",
       "class_name": "DatabaseBackupWorkflow"
     }

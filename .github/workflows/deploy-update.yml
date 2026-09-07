@@ -9,7 +9,7 @@ on:
       upstream:
         description: Upstream repository to merge from
         required: false
-        default: https://github.com/YNDmitry/postbox.git
+        default: https://github.com/YNDmitry/pogmail.git
 
 jobs:
   update:
@@ -23,7 +23,7 @@ jobs:
 
       - name: Merge upstream
         run: |
-          git config user.name "postbox-update"
+          git config user.name "pogmail-update"
           git config user.email "noreply@users.noreply.github.com"
           git remote add upstream "${{ inputs.upstream }}" || git remote set-url upstream "${{ inputs.upstream }}"
           git fetch upstream

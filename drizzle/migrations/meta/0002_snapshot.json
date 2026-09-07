@@ -88,16 +88,12 @@
       "indexes": {
         "api_keys_token_unq": {
           "name": "api_keys_token_unq",
-          "columns": [
-            "token_hash"
-          ],
+          "columns": ["token_hash"],
           "isUnique": true
         },
         "api_keys_user_idx": {
           "name": "api_keys_user_idx",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -106,12 +102,8 @@
           "name": "api_keys_user_id_users_id_fk",
           "tableFrom": "api_keys",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -190,25 +182,17 @@
       "indexes": {
         "audit_logs_actor_idx": {
           "name": "audit_logs_actor_idx",
-          "columns": [
-            "actor_user_id",
-            "created_at"
-          ],
+          "columns": ["actor_user_id", "created_at"],
           "isUnique": false
         },
         "audit_logs_action_idx": {
           "name": "audit_logs_action_idx",
-          "columns": [
-            "action",
-            "created_at"
-          ],
+          "columns": ["action", "created_at"],
           "isUnique": false
         },
         "audit_logs_created_idx": {
           "name": "audit_logs_created_idx",
-          "columns": [
-            "created_at"
-          ],
+          "columns": ["created_at"],
           "isUnique": false
         }
       },
@@ -217,12 +201,8 @@
           "name": "audit_logs_actor_user_id_users_id_fk",
           "tableFrom": "audit_logs",
           "tableTo": "users",
-          "columnsFrom": [
-            "actor_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["actor_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -230,12 +210,8 @@
           "name": "audit_logs_target_user_id_users_id_fk",
           "tableFrom": "audit_logs",
           "tableTo": "users",
-          "columnsFrom": [
-            "target_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["target_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -300,17 +276,12 @@
       "indexes": {
         "sessions_token_unq": {
           "name": "sessions_token_unq",
-          "columns": [
-            "token_hash"
-          ],
+          "columns": ["token_hash"],
           "isUnique": true
         },
         "sessions_user_idx": {
           "name": "sessions_user_idx",
-          "columns": [
-            "user_id",
-            "expires_at"
-          ],
+          "columns": ["user_id", "expires_at"],
           "isUnique": false
         }
       },
@@ -319,12 +290,8 @@
           "name": "sessions_user_id_users_id_fk",
           "tableFrom": "sessions",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -442,9 +409,7 @@
       "indexes": {
         "users_email_unq": {
           "name": "users_email_unq",
-          "columns": [
-            "email"
-          ],
+          "columns": ["email"],
           "isUnique": true
         }
       },
@@ -453,12 +418,8 @@
           "name": "users_created_by_user_id_users_id_fk",
           "tableFrom": "users",
           "tableTo": "users",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -530,9 +491,7 @@
       "indexes": {
         "domain_records_domain_idx": {
           "name": "domain_records_domain_idx",
-          "columns": [
-            "domain_id"
-          ],
+          "columns": ["domain_id"],
           "isUnique": false
         }
       },
@@ -541,12 +500,8 @@
           "name": "domain_records_domain_id_domains_id_fk",
           "tableFrom": "domain_records",
           "tableTo": "domains",
-          "columnsFrom": [
-            "domain_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["domain_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -656,16 +611,12 @@
       "indexes": {
         "domains_hostname_unq": {
           "name": "domains_hostname_unq",
-          "columns": [
-            "hostname"
-          ],
+          "columns": ["hostname"],
           "isUnique": true
         },
         "domains_user_idx": {
           "name": "domains_user_idx",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -674,12 +625,8 @@
           "name": "domains_user_id_users_id_fk",
           "tableFrom": "domains",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -723,17 +670,12 @@
       "indexes": {
         "auto_reply_deliveries_unq": {
           "name": "auto_reply_deliveries_unq",
-          "columns": [
-            "mailbox_id",
-            "recipient"
-          ],
+          "columns": ["mailbox_id", "recipient"],
           "isUnique": true
         },
         "auto_reply_deliveries_sent_idx": {
           "name": "auto_reply_deliveries_sent_idx",
-          "columns": [
-            "sent_at"
-          ],
+          "columns": ["sent_at"],
           "isUnique": false
         }
       },
@@ -742,12 +684,8 @@
           "name": "auto_reply_deliveries_mailbox_id_mailboxes_id_fk",
           "tableFrom": "auto_reply_deliveries",
           "tableTo": "mailboxes",
-          "columnsFrom": [
-            "mailbox_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["mailbox_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -813,10 +751,7 @@
       "indexes": {
         "folders_name_unq": {
           "name": "folders_name_unq",
-          "columns": [
-            "mailbox_id",
-            "name"
-          ],
+          "columns": ["mailbox_id", "name"],
           "isUnique": true
         }
       },
@@ -825,12 +760,8 @@
           "name": "folders_mailbox_id_mailboxes_id_fk",
           "tableFrom": "folders",
           "tableTo": "mailboxes",
-          "columnsFrom": [
-            "mailbox_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["mailbox_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -896,17 +827,12 @@
       "indexes": {
         "mailbox_access_unq": {
           "name": "mailbox_access_unq",
-          "columns": [
-            "mailbox_id",
-            "user_id"
-          ],
+          "columns": ["mailbox_id", "user_id"],
           "isUnique": true
         },
         "mailbox_access_user_idx": {
           "name": "mailbox_access_user_idx",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -915,12 +841,8 @@
           "name": "mailbox_access_mailbox_id_mailboxes_id_fk",
           "tableFrom": "mailbox_access",
           "tableTo": "mailboxes",
-          "columnsFrom": [
-            "mailbox_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["mailbox_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -928,12 +850,8 @@
           "name": "mailbox_access_user_id_users_id_fk",
           "tableFrom": "mailbox_access",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -941,12 +859,8 @@
           "name": "mailbox_access_created_by_user_id_users_id_fk",
           "tableFrom": "mailbox_access",
           "tableTo": "users",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1004,17 +918,12 @@
       "indexes": {
         "mailbox_aliases_address_unq": {
           "name": "mailbox_aliases_address_unq",
-          "columns": [
-            "domain_id",
-            "local_part"
-          ],
+          "columns": ["domain_id", "local_part"],
           "isUnique": true
         },
         "mailbox_aliases_mailbox_idx": {
           "name": "mailbox_aliases_mailbox_idx",
-          "columns": [
-            "mailbox_id"
-          ],
+          "columns": ["mailbox_id"],
           "isUnique": false
         }
       },
@@ -1023,12 +932,8 @@
           "name": "mailbox_aliases_mailbox_id_mailboxes_id_fk",
           "tableFrom": "mailbox_aliases",
           "tableTo": "mailboxes",
-          "columnsFrom": [
-            "mailbox_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["mailbox_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1036,12 +941,8 @@
           "name": "mailbox_aliases_domain_id_domains_id_fk",
           "tableFrom": "mailbox_aliases",
           "tableTo": "domains",
-          "columnsFrom": [
-            "domain_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["domain_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1175,17 +1076,12 @@
       "indexes": {
         "mailboxes_address_unq": {
           "name": "mailboxes_address_unq",
-          "columns": [
-            "domain_id",
-            "local_part"
-          ],
+          "columns": ["domain_id", "local_part"],
           "isUnique": true
         },
         "mailboxes_user_idx": {
           "name": "mailboxes_user_idx",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -1194,12 +1090,8 @@
           "name": "mailboxes_user_id_users_id_fk",
           "tableFrom": "mailboxes",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1207,12 +1099,8 @@
           "name": "mailboxes_domain_id_domains_id_fk",
           "tableFrom": "mailboxes",
           "tableTo": "domains",
-          "columnsFrom": [
-            "domain_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["domain_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1323,10 +1211,7 @@
       "indexes": {
         "calendar_events_user_starts_idx": {
           "name": "calendar_events_user_starts_idx",
-          "columns": [
-            "user_id",
-            "starts_at"
-          ],
+          "columns": ["user_id", "starts_at"],
           "isUnique": false
         }
       },
@@ -1335,12 +1220,8 @@
           "name": "calendar_events_user_id_users_id_fk",
           "tableFrom": "calendar_events",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1348,12 +1229,8 @@
           "name": "calendar_events_mailbox_id_mailboxes_id_fk",
           "tableFrom": "calendar_events",
           "tableTo": "mailboxes",
-          "columnsFrom": [
-            "mailbox_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["mailbox_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -1361,12 +1238,8 @@
           "name": "calendar_events_message_id_messages_id_fk",
           "tableFrom": "calendar_events",
           "tableTo": "messages",
-          "columnsFrom": [
-            "message_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["message_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1455,17 +1328,12 @@
       "indexes": {
         "contacts_email_unq": {
           "name": "contacts_email_unq",
-          "columns": [
-            "user_id",
-            "email"
-          ],
+          "columns": ["user_id", "email"],
           "isUnique": true
         },
         "contacts_blocked_idx": {
           "name": "contacts_blocked_idx",
-          "columns": [
-            "blocked"
-          ],
+          "columns": ["blocked"],
           "isUnique": false
         }
       },
@@ -1474,12 +1342,8 @@
           "name": "contacts_user_id_users_id_fk",
           "tableFrom": "contacts",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1553,9 +1417,7 @@
       "indexes": {
         "email_templates_user_idx": {
           "name": "email_templates_user_idx",
-          "columns": [
-            "user_id"
-          ],
+          "columns": ["user_id"],
           "isUnique": false
         }
       },
@@ -1564,12 +1426,8 @@
           "name": "email_templates_user_id_users_id_fk",
           "tableFrom": "email_templates",
           "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1656,16 +1514,12 @@
       "indexes": {
         "message_attachments_message_idx": {
           "name": "message_attachments_message_idx",
-          "columns": [
-            "message_id"
-          ],
+          "columns": ["message_id"],
           "isUnique": false
         },
         "message_attachments_key_unq": {
           "name": "message_attachments_key_unq",
-          "columns": [
-            "r2_key"
-          ],
+          "columns": ["r2_key"],
           "isUnique": true
         }
       },
@@ -1674,12 +1528,8 @@
           "name": "message_attachments_message_id_messages_id_fk",
           "tableFrom": "message_attachments",
           "tableTo": "messages",
-          "columnsFrom": [
-            "message_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["message_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1902,52 +1752,32 @@
       "indexes": {
         "messages_folder_idx": {
           "name": "messages_folder_idx",
-          "columns": [
-            "mailbox_id",
-            "status",
-            "received_at"
-          ],
+          "columns": ["mailbox_id", "status", "received_at"],
           "isUnique": false
         },
         "messages_thread_idx": {
           "name": "messages_thread_idx",
-          "columns": [
-            "mailbox_id",
-            "thread_id",
-            "received_at"
-          ],
+          "columns": ["mailbox_id", "thread_id", "received_at"],
           "isUnique": false
         },
         "messages_starred_idx": {
           "name": "messages_starred_idx",
-          "columns": [
-            "mailbox_id",
-            "starred",
-            "received_at"
-          ],
+          "columns": ["mailbox_id", "starred", "received_at"],
           "isUnique": false
         },
         "messages_custom_folder_idx": {
           "name": "messages_custom_folder_idx",
-          "columns": [
-            "folder_id",
-            "received_at"
-          ],
+          "columns": ["folder_id", "received_at"],
           "isUnique": false
         },
         "messages_snoozed_idx": {
           "name": "messages_snoozed_idx",
-          "columns": [
-            "snoozed_until"
-          ],
+          "columns": ["snoozed_until"],
           "isUnique": false
         },
         "messages_dedupe_unq": {
           "name": "messages_dedupe_unq",
-          "columns": [
-            "mailbox_id",
-            "message_id"
-          ],
+          "columns": ["mailbox_id", "message_id"],
           "isUnique": true
         }
       },
@@ -1956,12 +1786,8 @@
           "name": "messages_mailbox_id_mailboxes_id_fk",
           "tableFrom": "messages",
           "tableTo": "mailboxes",
-          "columnsFrom": [
-            "mailbox_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["mailbox_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -1969,12 +1795,8 @@
           "name": "messages_author_user_id_users_id_fk",
           "tableFrom": "messages",
           "tableTo": "users",
-          "columnsFrom": [
-            "author_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["author_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -1982,12 +1804,8 @@
           "name": "messages_folder_id_folders_id_fk",
           "tableFrom": "messages",
           "tableTo": "folders",
-          "columnsFrom": [
-            "folder_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["folder_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -2068,10 +1886,7 @@
       "indexes": {
         "outbound_jobs_status_idx": {
           "name": "outbound_jobs_status_idx",
-          "columns": [
-            "status",
-            "created_at"
-          ],
+          "columns": ["status", "created_at"],
           "isUnique": false
         }
       },
@@ -2080,12 +1895,8 @@
           "name": "outbound_jobs_message_id_messages_id_fk",
           "tableFrom": "outbound_jobs",
           "tableTo": "messages",
-          "columnsFrom": [
-            "message_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["message_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2225,22 +2036,12 @@
       "indexes": {
         "routing_rules_domain_idx": {
           "name": "routing_rules_domain_idx",
-          "columns": [
-            "scope",
-            "domain_id",
-            "enabled",
-            "priority"
-          ],
+          "columns": ["scope", "domain_id", "enabled", "priority"],
           "isUnique": false
         },
         "routing_rules_mailbox_idx": {
           "name": "routing_rules_mailbox_idx",
-          "columns": [
-            "scope",
-            "mailbox_id",
-            "enabled",
-            "priority"
-          ],
+          "columns": ["scope", "mailbox_id", "enabled", "priority"],
           "isUnique": false
         }
       },
@@ -2249,12 +2050,8 @@
           "name": "routing_rules_domain_id_domains_id_fk",
           "tableFrom": "routing_rules",
           "tableTo": "domains",
-          "columnsFrom": [
-            "domain_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["domain_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -2262,12 +2059,8 @@
           "name": "routing_rules_mailbox_id_mailboxes_id_fk",
           "tableFrom": "routing_rules",
           "tableTo": "mailboxes",
-          "columnsFrom": [
-            "mailbox_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["mailbox_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2369,18 +2162,12 @@
       "indexes": {
         "webhook_deliveries_webhook_idx": {
           "name": "webhook_deliveries_webhook_idx",
-          "columns": [
-            "webhook_id",
-            "created_at"
-          ],
+          "columns": ["webhook_id", "created_at"],
           "isUnique": false
         },
         "webhook_deliveries_retry_idx": {
           "name": "webhook_deliveries_retry_idx",
-          "columns": [
-            "status",
-            "next_retry_at"
-          ],
+          "columns": ["status", "next_retry_at"],
           "isUnique": false
         }
       },
@@ -2389,12 +2176,8 @@
           "name": "webhook_deliveries_webhook_id_webhooks_id_fk",
           "tableFrom": "webhook_deliveries",
           "tableTo": "webhooks",
-          "columnsFrom": [
-            "webhook_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["webhook_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2475,10 +2258,7 @@
       "indexes": {
         "webhooks_mailbox_idx": {
           "name": "webhooks_mailbox_idx",
-          "columns": [
-            "mailbox_id",
-            "enabled"
-          ],
+          "columns": ["mailbox_id", "enabled"],
           "isUnique": false
         }
       },
@@ -2487,12 +2267,8 @@
           "name": "webhooks_mailbox_id_mailboxes_id_fk",
           "tableFrom": "webhooks",
           "tableTo": "mailboxes",
-          "columnsFrom": [
-            "mailbox_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["mailbox_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -2517,7 +2293,7 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
-          "default": "'Postbox'"
+          "default": "'Pogmail'"
         },
         "icon_key": {
           "name": "icon_key",
@@ -2731,16 +2507,12 @@
       "indexes": {
         "backups_created_idx": {
           "name": "backups_created_idx",
-          "columns": [
-            "created_at"
-          ],
+          "columns": ["created_at"],
           "isUnique": false
         },
         "backups_status_idx": {
           "name": "backups_status_idx",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         }
       },
@@ -2749,12 +2521,8 @@
           "name": "backups_created_by_user_id_users_id_fk",
           "tableFrom": "backups",
           "tableTo": "users",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["created_by_user_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }

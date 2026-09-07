@@ -199,12 +199,17 @@ function Version() {
 						const form = new FormData(event.currentTarget);
 
 						try {
-							await api.post("/api/admin/update", {
+							const result = await api.post<{ installed: boolean }>("/api/admin/update", {
 								repository: String(form.get("repository")),
 								ref: String(form.get("ref")) || "main",
 								token: String(form.get("token")),
 							});
-							toast.ok("Update started", "Watch it under Actions in your repository.");
+							toast.ok(
+								"Update started",
+								result.installed
+									? "The workflow was missing and has been added to your repository. Watch it under Actions."
+									: "Watch it under Actions in your repository.",
+							);
 							setDispatching(false);
 						} catch (error) {
 							toast.fail("Could not start the update", String(error));
@@ -221,7 +226,7 @@ function Version() {
 
 					<Field
 						label="GitHub token"
-						hint="A fine-grained token with Actions: write on that repository. It is forwarded to GitHub and never stored."
+						hint="A fine-grained token on that repository with Actions: write, plus Contents: write and Workflows: write — a copy made by the Deploy button has no workflow file, and the first update writes it. Forwarded to GitHub, never stored."
 					>
 						<Input name="token" type="password" required autoComplete="off" />
 					</Field>

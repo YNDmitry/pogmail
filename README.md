@@ -78,12 +78,14 @@ and offers to run the **Update** workflow in your copy: it merges upstream and
 applies pending D1 migrations, and because Workers Builds watches your repository,
 the push it makes is what deploys.
 
-The workflow needs a fine-grained GitHub token with `Actions: write` on your copy.
-It is forwarded to GitHub and never stored.
+The GitHub App behind the Deploy button cannot push `.github/workflows`, so your
+copy arrives without the workflow. The first update writes it for you: give the
+token `Actions: write`, `Contents: write` and `Workflows: write` on that
+repository. It is forwarded to GitHub and never stored.
 
 If you cannot sign in — a fresh installation that never got past `/setup`, say —
-run the same workflow by hand: your repository → **Actions** → **Update** → **Run
-workflow**.
+add `.github/workflows/deploy-update.yml` from here by hand, then run it from
+your repository's **Actions** tab.
 
 For a manual deployment:
 

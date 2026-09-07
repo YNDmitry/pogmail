@@ -1,9 +1,14 @@
-import { createMimeMessage } from "mimetext";
+import { createMimeMessage, Mailbox } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messageAttachments, messages, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "./types";
+
+/** The domain a Message-ID is minted under: it must be one the sender owns. */
+function domainOf(address: string): string {
+	return address.slice(address.lastIndexOf("@") + 1);
+}
 
 /**
  * Sends a `draft`/`sent` row through the EMAIL binding. Cloudflare only accepts
@@ -30,7 +35,21 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 		const mime = createMimeMessage();
 		mime.setSender({ addr: row.message.fromAddress, name: row.message.fromName ?? undefined });
 		mime.setRecipients(row.message.toAddresses.map((entry) => entry.address));
+		if (row.message.ccAddresses?.length) {
+			mime.setCc(row.message.ccAddresses.map((entry) => entry.address));
+		}
 		mime.setSubject(row.message.subject ?? "(no subject)");
+		// mimetext validates address headers by type, so Reply-To has to be a Mailbox.
+		if (row.message.replyTo) mime.setHeader("Reply-To", new Mailbox(row.message.replyTo));
+
+		/*
+		 * Our own Message-ID rather than the one mimetext invents, because it has to
+		 * be written back to the row: a reply arrives quoting it in `In-Reply-To`, and
+		 * a thread that cannot be joined is also a thread a receiver reads as one-off
+		 * mail from an unknown domain.
+		 */
+		const messageId = row.message.messageId ?? `<${crypto.randomUUID()}@${domainOf(row.message.fromAddress)}>`;
+		mime.setHeader("Message-ID", messageId);
 		/*
 		 * Plain first, HTML last. In `multipart/alternative` the *last* part is the
 		 * one a client is meant to prefer, so the order here is what decides whether
@@ -38,7 +57,15 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 		 */
 		if (row.message.bodyText) mime.addMessage({ contentType: "text/plain", data: row.message.bodyText });
 		if (row.message.bodyHtml) mime.addMessage({ contentType: "text/html", data: row.message.bodyHtml });
-		if (row.message.inReplyTo) mime.setHeader("In-Reply-To", row.message.inReplyTo);
+		if (row.message.inReplyTo) {
+			mime.setHeader("In-Reply-To", row.message.inReplyTo);
+			// `threadId` is the root, `inReplyTo` the parent; a client walks References
+			// from the root, so send both and never the same id twice.
+			const references = [row.message.threadId, row.message.inReplyTo].filter(
+				(value, index, all) => value && all.indexOf(value) === index,
+			);
+			mime.setHeader("References", references.join(" "));
+		}
 
 		if (row.message.hasAttachments) {
 			const files = await db
@@ -70,7 +97,10 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			.update(outboundJobs)
 			.set({ status: "sent", sentAt: new Date(), lastError: null })
 			.where(eq(outboundJobs.id, job.jobId));
-		await db.update(messages).set({ status: "sent" }).where(eq(messages.id, row.message.id));
+		await db
+			.update(messages)
+			.set({ status: "sent", messageId })
+			.where(eq(messages.id, row.message.id));
 	} catch (error) {
 		await db
 			.update(outboundJobs)

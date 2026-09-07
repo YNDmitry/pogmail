@@ -7,6 +7,7 @@ import { domains, mailboxes, messages, SINGLETON_ID, updateSettings, users } fro
 import { audit } from "../audit";
 import { BUILD_COMMIT, BUILD_REPOSITORY, UPSTREAM_REPOSITORY } from "../build";
 import { decryptSecret, encryptSecret } from "../auth/secrets";
+import { applyPendingMigrations, pendingMigrations } from "../db/migrate";
 import { requireAdmin } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
 import { parseBody } from "./_util";
@@ -190,6 +191,24 @@ export const adminRoutes = new Hono<AppBindings>()
 	 * merges upstream and applies migrations. The workflow itself does not deploy —
 	 * but where Workers Builds watches that repository, its push does.
 	 */
+	/**
+	 * Schema migrations the deployed code carries but the database has not run.
+	 *
+	 * A deploy ships new SQL along with the code that expects it, and nothing else
+	 * runs it: Workers Builds only deploys. So the gap is shown here and closed with
+	 * a button, rather than through a Cloudflare API token handed to CI.
+	 */
+	.get("/migrations", async (c) => {
+		const pending = await pendingMigrations(c.env);
+		return c.json({ pending: pending.map((migration) => migration.name) });
+	})
+
+	.post("/migrations", async (c) => {
+		const applied = await applyPendingMigrations(c.env);
+		audit(c, { action: "admin.migrations_applied", metadata: { applied } });
+		return c.json({ applied });
+	})
+
 	/**
 	 * What this installation knows about updating itself. The token is never sent
 	 * back — only whether one is held, so the form can stop asking for it.

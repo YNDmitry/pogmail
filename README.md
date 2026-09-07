@@ -78,16 +78,16 @@ and offers to run the **Update** workflow in your copy: it merges upstream and
 applies pending D1 migrations, and because Workers Builds watches your repository,
 the push it makes is what deploys.
 
-Migrations are the one part the workflow cannot do on its own: add
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` under Settings → Secrets and
-variables → Actions in your copy. Without them the merge still happens and the
-run stays green, but pending D1 migrations are skipped and the job summary says
-so — apply them yourself with `bun x wrangler d1 migrations apply DB --remote`.
-
 The GitHub App behind the Deploy button cannot push `.github/workflows`, so your
 copy arrives without the workflow. The first update writes it for you: give the
 token `Actions: write`, `Contents: write` and `Workflows: write` on that
 repository.
+
+The workflow needs no secrets of its own: it only merges and pushes, Workers
+Builds deploys the push, and the Worker applies its own pending D1 migrations —
+Administration → Overview lists what a new build carries and applies it on a
+button. A first install needs nothing either: `/setup` creates the schema before
+the first admin, so a database that arrives empty from the Deploy button works.
 
 Repository and token are asked for once and kept in `update_settings`, so later
 updates are a single button. The token is encrypted with AES-GCM under a key

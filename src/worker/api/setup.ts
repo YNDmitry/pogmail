@@ -4,17 +4,28 @@ import { appSettings, backupSettings, SINGLETON_ID, users } from "@/db/schema";
 import { setupInput } from "@/shared/contract/auth";
 import { hashPassword } from "../auth/password";
 import { createSession, sessionCookie } from "../auth/session";
+import { applyPendingMigrations, schemaIsMissing } from "../db/migrate";
 import type { AppBindings } from "../middleware/context";
 import { instanceIsEmpty } from "./auth";
 import { parseBody } from "./_util";
 
 /**
- * First-run bootstrap. Creates the initial admin and the singleton settings rows, and
- * nothing else — schema comes from the ordinary migrations, so unlike Mailflare there
- * is no second inline copy of the DDL to keep in sync.
+ * First-run bootstrap. Creates the initial admin and the singleton settings rows.
+ *
+ * The schema still comes from the ordinary migrations — there is no second inline
+ * copy of the DDL — but they are applied here rather than expected to have been
+ * applied already: a deployment made by the Deploy to Cloudflare button runs
+ * `wrangler deploy` and nothing else, so its D1 arrives empty. Only an instance
+ * with no schema is bootstrapped this way; upgrading a live one is an admin action.
  */
 export const setupRoutes = new Hono<AppBindings>()
 	.get("/status", async (c) => {
+		// The very first request to a new deployment hits a database with no tables,
+		// which must read as "needs setup" rather than as a 500.
+		if (await schemaIsMissing(c.env)) {
+			return c.json({ needsSetup: true, allowRegistration: false, appName: "Pogmail" });
+		}
+
 		const settings = await c.get("db").select().from(appSettings).get();
 		return c.json({
 			needsSetup: await instanceIsEmpty(c.get("db")),
@@ -24,6 +35,8 @@ export const setupRoutes = new Hono<AppBindings>()
 	})
 
 	.post("/", async (c) => {
+		if (await schemaIsMissing(c.env)) await applyPendingMigrations(c.env);
+
 		if (!(await instanceIsEmpty(c.get("db")))) {
 			throw new HTTPException(409, { message: "This instance is already set up" });
 		}

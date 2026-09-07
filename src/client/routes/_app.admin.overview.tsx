@@ -201,8 +201,14 @@ function Version() {
 		queryFn: () => api.get<UpdateConfig>("/api/admin/update/config"),
 	});
 
+	const migrations = useQuery({
+		queryKey: qk.adminMigrations,
+		queryFn: () => api.get<{ pending: string[] }>("/api/admin/migrations"),
+	});
+
 	const data = version.data;
 	const settings = config.data;
+	const pending = migrations.data?.pending ?? [];
 	const behind = data?.behind === true;
 	const ready = Boolean(settings?.hasToken && settings.repository);
 
@@ -225,6 +231,22 @@ function Version() {
 			await client.invalidateQueries({ queryKey: qk.adminUpdateConfig });
 		} catch (error) {
 			toast.fail("Could not start the update", String(error));
+		} finally {
+			setRunning(false);
+		}
+	}
+
+	async function migrate() {
+		setRunning(true);
+		try {
+			const result = await api.post<{ applied: string[] }>("/api/admin/migrations", {});
+			toast.ok(
+				`Applied ${result.applied.length} migration${result.applied.length === 1 ? "" : "s"}`,
+				result.applied.join(", "),
+			);
+			await client.invalidateQueries({ queryKey: qk.adminMigrations });
+		} catch (error) {
+			toast.fail("Could not apply the migrations", String(error));
 		} finally {
 			setRunning(false);
 		}
@@ -354,6 +376,19 @@ function Version() {
 					</dd>
 				</div>
 			</dl>
+
+			{pending.length > 0 ? (
+				<div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md bg-recess p-4">
+					<p className="min-w-0 flex-1 text-sm text-ink-2">
+						This build carries {pending.length} schema{" "}
+						{pending.length === 1 ? "migration" : "migrations"} the database has not run:{" "}
+						<span className="machine">{pending.join(", ")}</span>
+					</p>
+					<Button size="sm" disabled={running} onClick={() => void migrate()}>
+						{running ? "Applying…" : "Apply"}
+					</Button>
+				</div>
+			) : null}
 
 			{behind && data?.upstream ? (
 				<div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md bg-recess p-4">

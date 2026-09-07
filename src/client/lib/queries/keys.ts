@@ -33,4 +33,5 @@ export const qk = {
 	adminOverview: ["admin", "overview"] as const,
 	adminVersion: ["admin", "version"] as const,
 	adminUpdateConfig: ["admin", "update", "config"] as const,
+	adminMigrations: ["admin", "migrations"] as const,
 };

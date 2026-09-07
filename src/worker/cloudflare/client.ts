@@ -47,11 +47,10 @@ export class CloudflareClient {
 
 		if (!response.ok || !body?.success) {
 			const first = body?.errors?.[0];
-			throw new CloudflareError(
-				first?.message ?? `Cloudflare API ${response.status}`,
-				response.status,
-				first?.code,
-			);
+			// Cloudflare sometimes answers with an error entry carrying an empty message;
+			// `??` would keep the empty string and the failure would surface nameless.
+			const message = first?.message?.trim() || `Cloudflare API ${response.status}`;
+			throw new CloudflareError(message, response.status, first?.code);
 		}
 
 		return body.result;

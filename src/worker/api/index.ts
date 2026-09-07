@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { CloudflareError } from "../cloudflare/client";
 import { requireAuth } from "../middleware/auth";
 import { withDb, type AppBindings } from "../middleware/context";
 import { accountRoutes } from "./accounts";
@@ -34,6 +35,13 @@ api.onError((error, c) => {
 	if (error instanceof HTTPException) {
 		// A route may attach its own response (validation details, for example).
 		return error.res ?? c.json({ error: error.message }, error.status);
+	}
+	// Provisioning talks to Cloudflare on the caller's behalf, and what Cloudflare
+	// refused is the whole answer — swallowing it into "Internal error" leaves the
+	// operator with a 500 and no idea which name, zone or token was wrong.
+	if (error instanceof CloudflareError) {
+		console.error("Cloudflare API error", error.status, error.code, error.message);
+		return c.json({ error: error.message }, 502);
 	}
 	console.error("Unhandled API error", error);
 	return c.json({ error: "Internal error" }, 500);

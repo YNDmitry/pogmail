@@ -44,7 +44,7 @@ gated behind a licence key.
 
 ```bash
 bun install
-cp .dev.vars.example .dev.vars      # CF_TOKEN, CF_ACCOUNT_ID, SESSION_SECRET
+cp .dev.vars.example .dev.vars      # CF_TOKEN
 bun run db:migrate:local
 bun run dev
 ```
@@ -57,14 +57,13 @@ you want it.
 
 Click **Deploy to Cloudflare** above and keep the Worker name as `pogmail`.
 Cloudflare creates and binds D1, R2, Queues, the Durable Object and the backup
-Workflow. Enter the three requested secrets, deploy, then open `/setup` on the
-new Worker URL to create the first admin.
+Workflow. Enter `CF_TOKEN`, deploy, then open `/setup` on the new Worker URL to
+create the first admin.
 
 `CF_TOKEN` is a runtime token, separate from the credential Cloudflare uses for
 the deployment. Give it `Zone:Read`, `DNS:Edit`, `Email Routing:Edit`,
 `Email Sending:Edit` and `Email Routing Rules:Edit` for the domains Pogmail will
-host. `CF_ACCOUNT_ID` is the account that owns those domains. Generate
-`SESSION_SECRET` with `openssl rand -base64 32`.
+host. Pogmail discovers the account and zones through this token.
 
 For a manual deployment:
 
@@ -72,13 +71,11 @@ For a manual deployment:
 bun install
 bun x wrangler login
 bun x wrangler secret put CF_TOKEN
-bun x wrangler secret put CF_ACCOUNT_ID
-bun x wrangler secret put SESSION_SECRET
 bun run deploy
 ```
 
-`bun run deploy` builds and deploys the app, then applies pending D1 migrations. The Worker name and `CF_EMAIL_WORKER_NAME` in `wrangler.jsonc` must
-match because Email Routing addresses the Worker by literal name.
+`bun run deploy` builds and deploys the app, then applies pending D1 migrations.
+Keep the Worker name as `pogmail` because Email Routing addresses it by literal name.
 
 ## Commands
 

@@ -8,9 +8,6 @@
 interface PogmailSecrets {
 	/** Cloudflare API token used for domain and mailbox provisioning. */
 	CF_TOKEN: string;
-	CF_ACCOUNT_ID: string;
-	/** Base64 key reserved for signed tokens; sessions themselves are database-backed. */
-	SESSION_SECRET: string;
 }
 
 interface Env extends PogmailSecrets {}

@@ -19,7 +19,7 @@ export const setupRoutes = new Hono<AppBindings>()
 		return c.json({
 			needsSetup: await instanceIsEmpty(c.get("db")),
 			allowRegistration: settings?.allowRegistration ?? false,
-			appName: settings?.appName ?? c.env.APP_NAME,
+			appName: settings?.appName ?? "Pogmail",
 		});
 	})
 
@@ -46,7 +46,7 @@ export const setupRoutes = new Hono<AppBindings>()
 		await c
 			.get("db")
 			.insert(appSettings)
-			.values({ id: SINGLETON_ID, appName: c.env.APP_NAME })
+			.values({ id: SINGLETON_ID, appName: "Pogmail" })
 			.onConflictDoNothing();
 		await c.get("db").insert(backupSettings).values({ id: SINGLETON_ID }).onConflictDoNothing();
 

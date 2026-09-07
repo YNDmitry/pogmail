@@ -24,16 +24,13 @@ export class CloudflareError extends Error {
  * since it grants the whole account and cannot be scoped to one zone.
  */
 export class CloudflareClient {
-	constructor(
-		private readonly token: string,
-		readonly accountId: string,
-	) {}
+	constructor(private readonly token: string) {}
 
 	static fromEnv(env: Env): CloudflareClient {
-		if (!env.CF_TOKEN || !env.CF_ACCOUNT_ID) {
-			throw new CloudflareError("CF_TOKEN and CF_ACCOUNT_ID are not configured", 500);
+		if (!env.CF_TOKEN) {
+			throw new CloudflareError("CF_TOKEN is not configured", 500);
 		}
-		return new CloudflareClient(env.CF_TOKEN, env.CF_ACCOUNT_ID);
+		return new CloudflareClient(env.CF_TOKEN);
 	}
 
 	async request<T>(path: string, init: RequestInit = {}): Promise<T> {

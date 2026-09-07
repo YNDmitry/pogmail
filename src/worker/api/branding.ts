@@ -16,7 +16,7 @@ export const brandingRoutes = new Hono<AppBindings>()
 	.get("/", async (c) => {
 		const row = await c.get("db").select().from(appSettings).get();
 		return c.json({
-			appName: row?.appName ?? c.env.APP_NAME,
+			appName: row?.appName ?? "Pogmail",
 			iconUrl: row?.iconKey ? publicKeyFor(row.iconKey) : null,
 			accentColor: row?.accentColor ?? null,
 			allowRegistration: row?.allowRegistration ?? false,

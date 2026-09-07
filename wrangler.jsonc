@@ -11,10 +11,6 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
-  "vars": {
-    "APP_NAME": "Pogmail",
-    "CF_EMAIL_WORKER_NAME": "pogmail"
-  },
   "d1_databases": [
     {
       "binding": "DB",

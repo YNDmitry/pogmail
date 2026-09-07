@@ -19,6 +19,8 @@ import {
   listDnsRecords,
 } from "../cloudflare/zones";
 
+const EMAIL_WORKER_NAME = "pogmail";
+
 /**
  * Adding a domain is a multi-step remote operation that can fail halfway. Every
  * record we create is recorded in `domain_records`, so teardown removes exactly what
@@ -77,7 +79,7 @@ export async function provisionDomain(
 
     // Unknown local parts must still reach the Worker: our own routing engine
     // decides whether to reject, forward or store them.
-    await setCatchAllToWorker(cf, domain.zoneId, env.CF_EMAIL_WORKER_NAME);
+    await setCatchAllToWorker(cf, domain.zoneId, EMAIL_WORKER_NAME);
 
     const after = await getRoutingSettings(cf, domain.zoneId);
 
@@ -151,12 +153,7 @@ export async function provisionMailboxRule(
   address: string,
 ): Promise<string | null> {
   const cf = CloudflareClient.fromEnv(env);
-  const rule = await createWorkerRule(
-    cf,
-    zoneId,
-    address,
-    env.CF_EMAIL_WORKER_NAME,
-  );
+  const rule = await createWorkerRule(cf, zoneId, address, EMAIL_WORKER_NAME);
   return rule.tag ?? null;
 }
 

@@ -78,9 +78,8 @@ export function listRoutingRules(
 }
 
 /**
- * Points one address at our Worker. Cloudflare addresses the Worker by literal name,
- * which is why `CF_EMAIL_WORKER_NAME`, the deployed Worker `name` and the
- * `WORKER_SELF_REFERENCE` service binding must all agree.
+ * Points one address at our Worker. Cloudflare addresses it by literal name, so the
+ * deployment keeps the fixed `pogmail` Worker name.
  */
 export function createWorkerRule(
   cf: CloudflareClient,

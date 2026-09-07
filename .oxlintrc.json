@@ -36,7 +36,8 @@
 			"warn",
 			{
 				"allow": [
-					"__BUILD_COMMIT__"
+					"__BUILD_COMMIT__",
+					"__WORKER_NAME__"
 				]
 			}
 		]

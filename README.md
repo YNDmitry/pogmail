@@ -55,7 +55,9 @@ you want it.
 
 ## Deploying
 
-Click **Deploy to Cloudflare** above and keep the Worker name as `pogmail`.
+Click **Deploy to Cloudflare** above. Any Worker name works — the button writes
+your choice into `wrangler.jsonc`, and the build reads it back, because Email
+Routing binds its rules to the Worker by literal name.
 Cloudflare creates and binds D1, R2, Queues, the Durable Object and the backup
 Workflow. Enter `CF_TOKEN`, deploy, then open `/setup` on the new Worker URL to
 create the first admin.
@@ -93,7 +95,11 @@ bun run deploy
 ```
 
 `bun run deploy` builds and deploys the app, then applies pending D1 migrations.
-Keep the Worker name as `pogmail` because Email Routing addresses it by literal name.
+
+If you rename the deployed Worker without changing `name` in `wrangler.jsonc`,
+adding a domain fails with *Workers Script Info not found*: Email Routing looks
+the Worker up by literal name. Fix the config and redeploy, or set the
+`EMAIL_WORKER_NAME` variable to the name the script actually has.
 
 ## Commands
 

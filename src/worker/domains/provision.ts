@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "@/db";
 import { domainRecords, domains } from "@/db/schema";
-import { CloudflareClient } from "../cloudflare/client";
+import { WORKER_NAME } from "../build";
+import { CloudflareClient, CloudflareError } from "../cloudflare/client";
 import {
   createWorkerRule,
   deleteRoutingRule,
@@ -19,7 +20,33 @@ import {
   listDnsRecords,
 } from "../cloudflare/zones";
 
-const EMAIL_WORKER_NAME = "pogmail";
+/**
+ * Email Routing binds a rule to a Worker by literal name, so provisioning fails
+ * outright if this does not match the deployed script. It follows `wrangler.jsonc`
+ * — which the Deploy button rewrites when the operator picks another name — and
+ * `EMAIL_WORKER_NAME` overrides it for a deployment renamed after the fact.
+ */
+function emailWorkerName(env: Env): string {
+  return env.EMAIL_WORKER_NAME?.trim() || WORKER_NAME;
+}
+
+/**
+ * Cloudflare answers a rule pointing at a missing script with "Workers Script Info
+ * not found", which says nothing about which name it looked for. Name it.
+ */
+function asWorkerNameError(error: unknown, workerName: string): unknown {
+  if (
+    error instanceof CloudflareError &&
+    /script info not found/i.test(error.message)
+  ) {
+    return new CloudflareError(
+      `This account has no Worker named "${workerName}". Email Routing addresses the Worker by literal name: rename the deployment to "${workerName}", or set the EMAIL_WORKER_NAME variable to the name it actually has.`,
+      error.status,
+      error.code,
+    );
+  }
+  return error;
+}
 
 /**
  * Adding a domain is a multi-step remote operation that can fail halfway. Every
@@ -79,7 +106,10 @@ export async function provisionDomain(
 
     // Unknown local parts must still reach the Worker: our own routing engine
     // decides whether to reject, forward or store them.
-    await setCatchAllToWorker(cf, domain.zoneId, EMAIL_WORKER_NAME);
+    const workerName = emailWorkerName(env);
+    await setCatchAllToWorker(cf, domain.zoneId, workerName).catch((error) => {
+      throw asWorkerNameError(error, workerName);
+    });
 
     const after = await getRoutingSettings(cf, domain.zoneId);
 
@@ -153,7 +183,12 @@ export async function provisionMailboxRule(
   address: string,
 ): Promise<string | null> {
   const cf = CloudflareClient.fromEnv(env);
-  const rule = await createWorkerRule(cf, zoneId, address, EMAIL_WORKER_NAME);
+  const workerName = emailWorkerName(env);
+  const rule = await createWorkerRule(cf, zoneId, address, workerName).catch(
+    (error) => {
+      throw asWorkerNameError(error, workerName);
+    },
+  );
   return rule.tag ?? null;
 }
 

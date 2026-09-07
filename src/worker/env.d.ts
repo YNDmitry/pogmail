@@ -8,6 +8,11 @@
 interface PogmailSecrets {
 	/** Cloudflare API token used for domain and mailbox provisioning. */
 	CF_TOKEN: string;
+	/**
+	 * Overrides the Worker name Email Routing rules point at. Only needed when the
+	 * deployed script was renamed away from the name in `wrangler.jsonc`.
+	 */
+	EMAIL_WORKER_NAME?: string;
 }
 
 interface Env extends PogmailSecrets {}

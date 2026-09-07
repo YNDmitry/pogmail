@@ -1,8 +1,12 @@
 /**
  * PBKDF2-SHA256 via WebCrypto. Workers has no argon2/bcrypt, and pulling one in as
  * WASM costs more startup time than the extra iterations buy in resistance here.
+ *
+ * workerd caps PBKDF2 at 100k iterations and throws `NotSupportedError` above it, so
+ * that ceiling is the count — OWASP's 210k is unreachable on this runtime.
  */
-const ITERATIONS = 210_000;
+const MAX_ITERATIONS = 100_000;
+const ITERATIONS = MAX_ITERATIONS;
 const KEY_BITS = 256;
 
 function toB64(bytes: ArrayBuffer | Uint8Array): string {
@@ -39,6 +43,8 @@ export async function verifyPassword(password: string, stored: string): Promise<
 
 	const iterations = Number(iterationsRaw);
 	if (!Number.isFinite(iterations) || iterations <= 0) return false;
+	// A hash written before the cap was known cannot be verified here: deriveBits would throw.
+	if (iterations > MAX_ITERATIONS) return false;
 
 	const bits = await derive(password, fromB64(saltB64), iterations);
 	return timingSafeEqual(new Uint8Array(bits), fromB64(hashB64));

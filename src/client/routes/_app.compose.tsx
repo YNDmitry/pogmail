@@ -3,7 +3,7 @@ import { createFileRoute, useBlocker, useNavigate, useSearch } from "@tanstack/r
 import { z } from "zod";
 import { Paperclip, Save, Send, X } from "lucide-react";
 import { Button, SubmitButton } from "@/client/components/app/button";
-import { Input, Textarea } from "@/client/components/ui";
+import { Input } from "@/client/components/ui";
 import { Choice } from "@/client/components/app/choice";
 import { Modal } from "@/client/components/app/modal";
 import { Machine, PageHeader } from "@/client/components/app/primitives";
@@ -14,6 +14,11 @@ import { useMailboxes, useMessage } from "@/client/lib/queries";
 import { useList } from "@/client/lib/queries/crud";
 import { qk } from "@/client/lib/queries/keys";
 import { bytes } from "@/client/lib/format";
+import { escapeHtml, htmlHasContent, textToHtml } from "@/client/lib/mail-html";
+import {
+	RichTextEditor,
+	type RichTextHandle,
+} from "@/client/components/app/rich-text-editor";
 import { canSend } from "@/shared/contract/permissions";
 import { cn } from "@/client/lib/utils";
 import type { Attachment, MailAddress, MailboxSummary } from "@/shared/contract/mail";
@@ -94,7 +99,11 @@ function Compose() {
 							? reply.subject
 							: `Re: ${reply.subject ?? ""}`.trim()
 						: "",
-				body: draft ? (draft.bodyText ?? "") : reply ? quote(reply) : "",
+				body: draft
+					? (draft.bodyHtml ?? textToHtml(draft.bodyText))
+					: reply
+						? quote(reply)
+						: "",
 			}}
 			initialAttachments={draft?.attachments ?? []}
 			inReplyTo={reply?.messageId ?? null}
@@ -104,15 +113,19 @@ function Compose() {
 	);
 }
 
-/** The quoted original, in the convention every mail client already renders. */
+/**
+ * The quoted original, in the convention every mail client already renders: an
+ * empty line to write in, the attribution, then the original inside a
+ * blockquote. The original's own HTML is deliberately not carried over — it
+ * arrived from a stranger and is only ever rendered in a sandboxed frame, so
+ * the quote is built from the plain-text part.
+ */
 function quote(mail: { receivedAt: string; fromAddress: string; bodyText: string | null }): string {
-	const attribution = `On ${new Date(mail.receivedAt).toLocaleString()}, ${mail.fromAddress} wrote:`;
-	const quoted = (mail.bodyText ?? "")
-		.split("\n")
-		.map((line) => `> ${line}`)
-		.join("\n");
+	const attribution = `On ${new Date(mail.receivedAt).toLocaleString()}, ${escapeHtml(
+		mail.fromAddress,
+	)} wrote:`;
 
-	return `\n\n${attribution}\n${quoted}`;
+	return `<p></p><p>${attribution}</p><blockquote>${textToHtml(mail.bodyText)}</blockquote>`;
 }
 
 /**
@@ -156,6 +169,7 @@ type FormValues = {
 	cc: string;
 	bcc: string;
 	subject: string;
+	/** HTML: the editor's document, and what the message is sent as. */
 	body: string;
 };
 
@@ -196,7 +210,7 @@ function ComposeForm({
 	const [attaching, setAttaching] = useState(false);
 
 	const templates = useList<Template>(qk.templates, "/api/templates");
-	const bodyRef = useRef<HTMLTextAreaElement>(null);
+	const editorRef = useRef<RichTextHandle>(null);
 	const fileRef = useRef<HTMLInputElement>(null);
 
 	const values: FormValues = { mailboxId, to, cc, bcc, subject, body };
@@ -213,10 +227,7 @@ function ComposeForm({
 	// write, so the caret starts above the quoted original rather than in `To`.
 	useEffect(() => {
 		if (!replyingTo) return;
-		const field = bodyRef.current;
-		if (!field) return;
-		field.focus();
-		field.setSelectionRange(0, 0);
+		editorRef.current?.focusStart();
 	}, [replyingTo]);
 
 	/** Saves and returns the draft id, creating the draft on first use. */
@@ -228,7 +239,10 @@ function ComposeForm({
 			cc: parseAddresses(cc),
 			bcc: parseAddresses(bcc),
 			subject,
-			bodyText: body,
+			// Every message carries both parts: the HTML the editor holds, and the
+			// plain text a client that refuses HTML — and the folder snippet — read.
+			bodyText: editorRef.current?.getText() ?? "",
+			bodyHtml: body || null,
 			...(inReplyTo ? { inReplyTo } : {}),
 			...(threadId ? { threadId } : {}),
 		};
@@ -485,13 +499,13 @@ function ComposeForm({
 
 			{/* The message is the point of the screen, so it takes the space that is
 			    left rather than a fixed box with the actions stranded below it. */}
-			<Textarea
-				ref={bodyRef}
-				value={body}
-				onChange={(event) => setBody(event.target.value)}
-				aria-label="Message"
+			<RichTextEditor
+				handleRef={editorRef}
+				initialHtml={initial.body}
+				onChange={setBody}
+				ariaLabel="Message"
 				placeholder="Write your message…"
-				className="min-h-48 flex-1 resize-none border-0 bg-transparent px-1 py-4 leading-relaxed shadow-none focus-visible:ring-0 dark:bg-transparent"
+				className="flex-1"
 			/>
 
 			{attachments.length > 0 ? (
@@ -579,9 +593,9 @@ function ComposeForm({
 							const template = templates.data?.find((entry) => entry.id === id);
 							if (!template) return;
 							if (!subject.trim() && template.subject) setSubject(template.subject);
-							setBody((current) =>
-								current.trim() ? `${template.bodyText}\n\n${current}` : template.bodyText,
-							);
+							// Templates are written in a plain textarea in Settings, so what
+							// goes in above the reply is that text as a document.
+							editorRef.current?.prepend(textToHtml(template.bodyText));
 							toast.ok(`Template "${template.name}" inserted`);
 						}}
 					/>
@@ -647,6 +661,6 @@ function hasContent(values: FormValues): boolean {
 			values.cc.trim() ||
 			values.bcc.trim() ||
 			values.subject.trim() ||
-			values.body.trim(),
+			htmlHasContent(values.body),
 	);
 }

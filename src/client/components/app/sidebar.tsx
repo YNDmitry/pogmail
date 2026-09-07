@@ -63,12 +63,7 @@ function ProductBrand({
 			to="/mail/$folder"
 			params={{ folder: "inbox" }}
 			aria-label={`${appName} home`}
-			className={cn(
-				"group flex h-11 w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-xl px-1.5 text-[var(--pogpin-shell-text)] transition-colors hover:bg-[var(--pogpin-shell-fill-soft)]",
-				// Collapsed the wordmark is clipped away, so the tile is the control
-				// and it sits in the middle of the rail rather than against its edge.
-				compact && "w-11 justify-center px-0",
-			)}
+			className="group flex h-11 w-full min-w-0 items-center gap-2.5 overflow-hidden rounded-xl px-1.5 text-[var(--pogpin-shell-text)] transition-colors hover:bg-[var(--pogpin-shell-fill-soft)]"
 		>
 			<span className="grid size-8 shrink-0 place-items-center rounded-md border border-[var(--pogpin-shell-border)] bg-[var(--pogpin-shell-panel-alt)]">
 				{iconUrl ? (
@@ -83,7 +78,10 @@ function ProductBrand({
 				animate={{ opacity: compact ? 0 : 1, x: compact ? -4 : 0 }}
 				transition={compact ? { duration: 0.12 } : { duration: 0.2, delay: 0.08 }}
 				aria-hidden={compact}
-				className="min-w-0 flex-1 truncate text-[0.82rem] font-semibold tracking-[-0.03em]"
+				className={cn(
+					"min-w-0 flex-1 truncate text-[0.82rem] font-semibold tracking-[-0.03em]",
+					compact && "w-0 flex-none",
+				)}
 			>
 				{appName}
 			</motion.span>
@@ -164,20 +162,16 @@ export function AppSidebar({
 			 * see `interceptRouterLinks` for why this is not a fork of the component.
 			 */}
 			<AnimatedSidebarContent className="overflow-hidden p-0" onClickCapture={navigateInApp}>
+				{/* Fixed group padding keeps every icon on the same axis while the
+				    sidebar width animates. */}
 				<ScrollFade
 					className="min-h-0 flex-1"
-					/*
-					 * No horizontal padding in the rail: with the group and the button
-					 * each adding their own, an icon ended up pushed against the panel
-					 * edge. The scrollbar is hidden for the same reason — 10px of a 68px
-					 * rail is a sixth of it.
-					 */
 					viewportClassName={cn("h-full scrollbar-none", isMobile && "px-2 py-3")}
 					viewportProps={{ tabIndex: 0, "aria-label": "Navigation" }}
 					fadeColor="var(--background)"
 				>
 					{nav.map((group) => (
-						<AnimatedSidebarGroup key={group.label} className={cn(navCompact && "px-0")}>
+						<AnimatedSidebarGroup key={group.label} className="px-3">
 							{/* beUI already holds this at a fixed height and fades it when
 							    collapsed, so it must not be given a display rule of its own. */}
 							<AnimatedSidebarGroupLabel className="field-label">
@@ -195,9 +189,12 @@ export function AppSidebar({
 														isActive={active}
 														icon={<item.icon className="size-4" />}
 														badge={item.badge ? <Count value={item.badge} /> : undefined}
-																/* Collapsed, the padding is what centres the icon: 68px rail
-															   less 24px either side leaves exactly the icon. */
-															className={cn("rounded-md", navCompact && "px-6", active && ACTIVE)}
+														className={cn(
+															"rounded-md px-3",
+															navCompact &&
+																"gap-0 [&>span:last-child]:w-0 [&>span:last-child]:flex-none",
+															active && ACTIVE,
+														)}
 													>
 														{item.label}
 													</AnimatedSidebarMenuButton>

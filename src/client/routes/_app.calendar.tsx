@@ -25,6 +25,7 @@ import { qk } from "@/client/lib/queries/keys";
 import { z } from "zod";
 import { cn } from "@/client/lib/utils";
 import { WeekGrid } from "@/client/components/app/week-grid";
+import { DateTimePicker } from "@/client/components/app/date-time-picker";
 
 const searchSchema = z.object({
 	/** `YYYY-MM`, so a link to a month opens on that month. */
@@ -135,12 +136,6 @@ function monthFromParam(value: string | undefined): Date {
 
 function pad(value: number): string {
 	return String(value).padStart(2, "0");
-}
-
-/** `datetime-local` and `date` want a local wall-clock string, not an ISO one. */
-function toInput(date: Date, allDay: boolean): string {
-	const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-	return allDay ? day : `${day}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function spansDay(event: CalendarEvent, day: Date): boolean {
@@ -885,16 +880,6 @@ function EventForm({
 
 	const invalid = endsAt.getTime() < startsAt.getTime();
 
-	function parse(value: string, endOfDay: boolean): Date | null {
-		if (!value) return null;
-		const parsed = new Date(value);
-		if (Number.isNaN(parsed.getTime())) return null;
-		// A date input carries no time, so an all-day event owns the whole day.
-		return allDay && endOfDay
-			? new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 23, 59, 59)
-			: parsed;
-	}
-
 	return (
 		<Modal open onClose={onClose} title={draft.id ? "Event" : "New event"}>
 			<form
@@ -953,18 +938,19 @@ function EventForm({
 
 				<div className="grid gap-3 sm:grid-cols-2">
 					<Field label="Starts">
-						<Input
-							type={allDay ? "date" : "datetime-local"}
-							value={toInput(startsAt, allDay)}
-							required
-							onChange={(event) => {
-								const next = parse(event.target.value, false);
-								if (!next) return;
+						<DateTimePicker
+							label="Starts"
+							value={startsAt}
+							allDay={allDay}
+							onChange={(next) => {
 								setStartsAt(next);
-								// Dragging the start past the end moves the end with it, which
-								// is less annoying than a validation error.
+								// Moving the start past the end moves the end with it.
 								if (next.getTime() > endsAt.getTime()) {
-									setEndsAt(new Date(next.getTime() + 60 * 60 * 1000));
+									setEndsAt(
+										allDay
+											? new Date(next.getFullYear(), next.getMonth(), next.getDate(), 23, 59, 59)
+											: new Date(next.getTime() + 60 * 60 * 1000),
+									);
 								}
 							}}
 						/>
@@ -974,15 +960,12 @@ function EventForm({
 						label="Ends"
 						error={invalid ? "An event cannot end before it starts." : undefined}
 					>
-						<Input
-							type={allDay ? "date" : "datetime-local"}
-							value={toInput(endsAt, allDay)}
-							required
-							aria-invalid={invalid}
-							onChange={(event) => {
-								const next = parse(event.target.value, true);
-								if (next) setEndsAt(next);
-							}}
+						<DateTimePicker
+							label="Ends"
+							value={endsAt}
+							allDay={allDay}
+							invalid={invalid}
+							onChange={setEndsAt}
 						/>
 					</Field>
 				</div>

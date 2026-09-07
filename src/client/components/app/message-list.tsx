@@ -128,7 +128,9 @@ export function MessageList({
 								</span>
 
 								<span className="min-w-0 flex-1">
-									<span className="flex items-baseline gap-2">
+									{/* A starred row's star never hides, so the line reserves the
+									    width of it — otherwise the date sits under the star. */}
+									<span className={cn("flex items-baseline gap-2", message.starred && "pr-6")}>
 										<span
 											className={cn(
 												"min-w-0 flex-1 truncate text-[0.8125rem]",
@@ -138,15 +140,16 @@ export function MessageList({
 											{label}
 										</span>
 
+										{/* The paperclip and the date both step aside for the
+										    actions on hover: a row is either being read or being
+										    acted on. */}
 										{message.hasAttachments ? (
 											<Paperclip
 												aria-label="Has attachments"
-												className="size-3 shrink-0 text-muted-foreground"
+												className="size-3 shrink-0 text-muted-foreground group-hover/row:invisible"
 											/>
 										) : null}
 
-										{/* The date steps aside for the actions on hover: a row is
-										    either being read or being acted on. */}
 										<time
 											dateTime={message.receivedAt}
 											className="machine shrink-0 text-[0.6875rem] text-muted-foreground group-hover/row:invisible"
@@ -191,19 +194,6 @@ export function MessageList({
 							 */}
 							<div className="absolute top-1.5 right-2 flex items-center gap-0.5">
 								<RowAction
-									label={message.starred ? "Remove star" : "Add star"}
-									pressed={message.starred}
-									className={cn(
-										message.starred
-											? "text-wait opacity-100"
-											: "opacity-0 group-hover/row:opacity-100",
-									)}
-									onClick={() => onToggleStar(message)}
-								>
-									<Star className={cn("size-3.5", message.starred && "fill-wait")} />
-								</RowAction>
-
-								<RowAction
 									label={message.read ? "Mark as unread" : "Mark as read"}
 									className="opacity-0 group-hover/row:opacity-100"
 									onClick={() => onToggleRead(message)}
@@ -225,6 +215,19 @@ export function MessageList({
 									onClick={() => onTrash(message)}
 								>
 									<Trash2 className="size-3.5" />
+								</RowAction>
+
+								<RowAction
+									label={message.starred ? "Remove star" : "Add star"}
+									pressed={message.starred}
+									className={cn(
+										message.starred
+											? "text-wait opacity-100"
+											: "opacity-0 group-hover/row:opacity-100",
+									)}
+									onClick={() => onToggleStar(message)}
+								>
+									<Star className={cn("size-3.5", message.starred && "fill-wait")} />
 								</RowAction>
 							</div>
 						</div>

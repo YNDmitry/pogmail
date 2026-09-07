@@ -50,9 +50,7 @@ export function MailboxSwitcher({
 					size="md"
 					pressScale={0.98}
 					className={cn(
-						"shell-hover-trigger h-9 w-full min-w-0 cursor-pointer justify-start gap-2 overflow-hidden rounded-lg border border-[var(--pogpin-shell-border)] bg-[var(--pogpin-shell-fill-soft)] px-2 text-left transition-[border-color,background-color] duration-150 hover:border-[var(--pogpin-shell-border-strong)] hover:bg-[var(--pogpin-shell-fill-strong)] data-[state=open]:border-[var(--pogpin-shell-border-strong)]",
-						// Collapsed the address is clipped away, so the icon is the control.
-						compact && "w-11 justify-center px-0",
+						"shell-hover-trigger h-11 w-full min-w-0 cursor-pointer justify-start gap-2 overflow-hidden rounded-xl border border-[var(--pogpin-shell-border)] bg-[var(--pogpin-shell-fill-soft)] px-3.5 text-left transition-[border-color,background-color] duration-150 hover:border-[var(--pogpin-shell-border-strong)] hover:bg-[var(--pogpin-shell-fill-strong)] data-[state=open]:border-[var(--pogpin-shell-border-strong)]",
 						open && shellMenuTriggerLift,
 					)}
 					aria-label={current ? `Mailbox: ${current.address}` : "All mailboxes"}
@@ -64,7 +62,7 @@ export function MailboxSwitcher({
 						animate={{ opacity: compact ? 0 : 1, x: compact ? -4 : 0 }}
 						transition={compact ? { duration: 0.12 } : { duration: 0.2, delay: 0.08 }}
 						aria-hidden={compact}
-						className="flex min-w-0 flex-1 items-center gap-2"
+						className={cn("flex min-w-0 flex-1 items-center gap-2", compact && "w-0 flex-none")}
 					>
 						{/* An address is machine-assigned, so it keeps the mono face. */}
 						<span

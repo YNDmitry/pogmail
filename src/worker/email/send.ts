@@ -31,8 +31,13 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 		mime.setSender({ addr: row.message.fromAddress, name: row.message.fromName ?? undefined });
 		mime.setRecipients(row.message.toAddresses.map((entry) => entry.address));
 		mime.setSubject(row.message.subject ?? "(no subject)");
-		if (row.message.bodyHtml) mime.addMessage({ contentType: "text/html", data: row.message.bodyHtml });
+		/*
+		 * Plain first, HTML last. In `multipart/alternative` the *last* part is the
+		 * one a client is meant to prefer, so the order here is what decides whether
+		 * a formatted message arrives formatted.
+		 */
 		if (row.message.bodyText) mime.addMessage({ contentType: "text/plain", data: row.message.bodyText });
+		if (row.message.bodyHtml) mime.addMessage({ contentType: "text/html", data: row.message.bodyHtml });
 		if (row.message.inReplyTo) mime.setHeader("In-Reply-To", row.message.inReplyTo);
 
 		if (row.message.hasAttachments) {

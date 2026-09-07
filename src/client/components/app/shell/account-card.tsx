@@ -58,10 +58,7 @@ export function AccountCard({
 					size="md"
 					pressScale={0.98}
 					className={cn(
-						"shell-hover-trigger relative h-11 w-full min-w-0 cursor-pointer justify-start gap-2.5 overflow-hidden rounded-xl border border-[var(--pogpin-shell-border)] bg-[var(--pogpin-shell-fill-soft)] px-1 text-left outline-none transition-[transform,border-color,background-color] duration-150 hover:border-[var(--pogpin-shell-border-strong)] hover:bg-[var(--pogpin-shell-fill-strong)] focus-visible:ring-2 focus-visible:ring-[var(--pogpin-brand-border)] data-[state=open]:border-[var(--pogpin-shell-border-strong)] data-[state=open]:bg-[var(--pogpin-shell-fill-strong)]",
-						// Collapsed there is only the avatar, so the control is the avatar:
-						// a full-width row would sit it against the left edge of the rail.
-						compact && "w-11 justify-center px-0",
+						"shell-hover-trigger relative h-11 w-full min-w-0 cursor-pointer justify-start gap-2.5 overflow-hidden rounded-xl border border-[var(--pogpin-shell-border)] bg-[var(--pogpin-shell-fill-soft)] px-1.5 text-left outline-none transition-[transform,border-color,background-color] duration-150 hover:border-[var(--pogpin-shell-border-strong)] hover:bg-[var(--pogpin-shell-fill-strong)] focus-visible:ring-2 focus-visible:ring-[var(--pogpin-brand-border)] data-[state=open]:border-[var(--pogpin-shell-border-strong)] data-[state=open]:bg-[var(--pogpin-shell-fill-strong)]",
 						open && shellMenuTriggerLift,
 					)}
 					aria-label={displayName}
@@ -77,7 +74,7 @@ export function AccountCard({
 						animate={{ opacity: compact ? 0 : 1, x: compact ? -4 : 0 }}
 						transition={compact ? { duration: 0.12 } : { duration: 0.2, delay: 0.08 }}
 						aria-hidden={compact}
-						className="min-w-0 flex-1"
+						className={cn("min-w-0 flex-1", compact && "w-0 flex-none")}
 					>
 						<span className="block truncate text-[0.78rem] font-semibold tracking-[-0.02em] text-[var(--pogpin-shell-text)]">
 							{displayName}

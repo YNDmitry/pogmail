@@ -29,7 +29,7 @@ import {
 } from "@/client/lib/queries";
 import { canSend } from "@/shared/contract/permissions";
 import { cn } from "@/client/lib/utils";
-import type { MessageStatus, MessageSummary } from "@/shared/contract/mail";
+import type { Attachment, MessageStatus, MessageSummary } from "@/shared/contract/mail";
 
 export const Route = createFileRoute("/_app/mail/$folder/$messageId")({ component: Reader });
 
@@ -386,7 +386,7 @@ function Reader() {
 				</section>
 			) : null}
 
-			<MessageBody html={mail.bodyHtml} text={mail.bodyText} />
+			<MessageBody html={mail.bodyHtml} text={mail.bodyText} messageId={mail.id} attachments={mail.attachments} />
 
 			<footer className="flex flex-wrap items-center gap-3 border-t border-seam pt-4 text-xs text-ink-3">
 				<Tag tone={mail.direction === "inbound" ? "accent" : "neutral"}>
@@ -491,15 +491,32 @@ function Reader() {
  * scripts. It renders inside a sandboxed iframe with no origin and no script
  * execution, so nothing in a message can reach the app or the network.
  */
-function MessageBody({ html, text }: { html: string | null; text: string | null }) {
+function MessageBody({
+	html,
+	text,
+	messageId,
+	attachments,
+}: {
+	html: string | null;
+	text: string | null;
+	messageId: string;
+	attachments: Attachment[];
+}) {
 	if (html) {
+		const body = attachments.reduce((result, attachment) => {
+			if (attachment.disposition !== "inline" || !attachment.contentId) return result;
+			return result.replaceAll(
+				`cid:${attachment.contentId}`,
+				`/api/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachment.id)}`,
+			);
+		}, html);
 		return (
 			<iframe
 				title="Message body"
 				sandbox=""
 				referrerPolicy="no-referrer"
 				className="min-h-96 w-full rounded-panel border border-seam bg-white"
-				srcDoc={html}
+				srcDoc={body}
 			/>
 		);
 	}

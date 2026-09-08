@@ -60,7 +60,13 @@ describe("outbound delivery retry", () => {
 			body: new Uint8Array([137, 80, 78, 71]),
 		}), env);
 		expect(upload.status).toBe(201);
-		expect(await upload.json()).toMatchObject({ filename: "chart.png", disposition: "inline" });
+		const attachment = await upload.json() as { id: string; filename: string; disposition: string };
+		expect(attachment).toMatchObject({ filename: "chart.png", disposition: "inline" });
+		const preview = await api.fetch(new Request(`https://pogmail.test/api/send/drafts/${draft.id}/attachments/${attachment.id}`, {
+			headers: { cookie },
+		}), env);
+		expect(preview.status).toBe(200);
+		expect(preview.headers.get("content-disposition")).toBeNull();
 	});
 
 	it("copies a template image into a draft and cleans an unreferenced CID image", async () => {

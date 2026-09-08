@@ -7,7 +7,7 @@ import { audit } from "../audit";
 import { canSendFrom, getPermission, hasAtLeast } from "../mailboxes/access";
 import type { AppBindings } from "../middleware/context";
 import { forbidden, notFound, parseBody } from "./_util";
-import { deleteObject, putUpload } from "../storage";
+import { deleteObject, putUpload, serveObject } from "../storage";
 import type { OutboundSendMessage } from "../email/types";
 
 /*
@@ -240,6 +240,24 @@ export const sendRoutes = new Hono<AppBindings>()
 			},
 			201,
 		);
+	})
+
+	/** A private, inline-safe preview URL for CID images while a draft is open. */
+	.get("/drafts/:id/attachments/:attachmentId", async (c) => {
+		const draft = await editableDraft(c, c.req.param("id"));
+		const attachment = await c
+			.get("db")
+			.select()
+			.from(messageAttachments)
+			.where(
+				and(
+					eq(messageAttachments.id, c.req.param("attachmentId")),
+					eq(messageAttachments.messageId, draft.id),
+				),
+			)
+			.get();
+		if (!attachment) notFound("Attachment");
+		return serveObject(c.env, attachment.r2Key);
 	})
 
 	.delete("/drafts/:id/attachments/:attachmentId", async (c) => {

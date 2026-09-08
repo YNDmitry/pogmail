@@ -9,6 +9,8 @@ const Editor = lazy(() =>
   import("@maily-to/core").then((module) => ({ default: module.Editor })),
 );
 
+type ImageUploadResult = string | { previewSrc: string; htmlSrc: string };
+
 /** The subset of Maily's editor API the compose flow needs to preserve. */
 type MailyEditorInstance = {
   isEmpty: boolean;
@@ -37,6 +39,7 @@ export function MailyEditor({
   className,
   density = "compose",
 	  onImageUpload,
+	imagePreviewSources,
 }: {
   initialHtml: string;
   /** HTML is sent to capable clients; text is the accessible MIME fallback. */
@@ -46,15 +49,24 @@ export function MailyEditor({
   className?: string;
   /** Settings and inline replies need the same editor, just less vertical chrome. */
   density?: "compose" | "compact";
-	/** Returns a message-safe source, normally a `cid:` reference to an inline attachment. */
-	  onImageUpload?: (file: Blob) => Promise<string>;
+	/** Provides a local preview URL while keeping the HTML's `cid:` source intact. */
+	  onImageUpload?: (file: Blob) => Promise<ImageUploadResult>;
+	/** Existing CID references mapped to their private, authenticated preview URLs. */
+	imagePreviewSources?: Record<string, string>;
 }) {
   const editorRef = useRef<MailyEditorInstance | null>(null);
+	const uploadedImageSources = useRef(new Map<string, string>());
 	const uploadImage = useEffectEvent(
-		(file: Blob) => onImageUpload?.(file) ?? Promise.reject(new Error("Image uploads are unavailable")),
+		async (file: Blob) => {
+			const result = await (onImageUpload?.(file) ?? Promise.reject(new Error("Image uploads are unavailable")));
+			if (typeof result === "string") return result;
+			uploadedImageSources.current.set(result.previewSrc, result.htmlSrc);
+			return result.previewSrc;
+		},
 	);
 	const supportsImageUploads = Boolean(onImageUpload);
 	const extensions = supportsImageUploads ? [ImageUploadExtension.configure({ onImageUpload: uploadImage })] : undefined;
+	const previewHtml = replaceSources(initialHtml, imagePreviewSources);
 
   useImperativeHandle(
     handleRef,
@@ -84,7 +96,7 @@ export function MailyEditor({
         }
       >
         <Editor
-          contentHtml={initialHtml || undefined}
+		  contentHtml={previewHtml || undefined}
 		  extensions={extensions}
           config={{
             hasMenuBar: true,
@@ -110,7 +122,7 @@ export function MailyEditor({
           onUpdate={(editor) => {
             editorRef.current = editor as unknown as MailyEditorInstance;
             onChange(
-              editor.isEmpty ? "" : editor.getHTML(),
+				editor.isEmpty ? "" : restoreSources(editor.getHTML(), imagePreviewSources, uploadedImageSources.current),
               editor.isEmpty ? "" : editor.getText({ blockSeparator: "\n" }),
             );
           }}
@@ -118,4 +130,17 @@ export function MailyEditor({
       </Suspense>
     </div>
   );
+}
+
+function replaceSources(html: string, sources: Record<string, string> | undefined) {
+	if (!sources) return html;
+	return Object.entries(sources).reduce((result, [source, preview]) => result.replaceAll(source, preview), html);
+}
+
+function restoreSources(html: string, sources: Record<string, string> | undefined, uploaded: Map<string, string>) {
+	const persisted = sources ? Object.entries(sources).map(([source, preview]) => [preview, source] as const) : [];
+	return [...persisted, ...uploaded.entries()].reduce(
+		(result, [preview, source]) => result.replaceAll(preview, source),
+		html,
+	);
 }

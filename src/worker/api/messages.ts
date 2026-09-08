@@ -226,7 +226,8 @@ export const messageRoutes = new Hono<AppBindings>()
 			.get();
 
 		if (!attachment) notFound("Attachment");
-		return serveObject(c.env, attachment.r2Key, attachment.filename);
+		// CID parts must render inside the reader; regular files should still download.
+		return serveObject(c.env, attachment.r2Key, attachment.disposition === "inline" ? undefined : attachment.filename);
 	})
 
 	/** The untouched MIME source, for debugging a bad parse. */

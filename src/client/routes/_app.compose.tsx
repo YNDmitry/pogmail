@@ -27,6 +27,10 @@ type TemplateInsertion = {
 	replacements: Array<{ from: string; to: string }>;
 };
 
+function draftAttachmentUrl(draftId: string, attachmentId: string) {
+	return `/api/send/drafts/${encodeURIComponent(draftId)}/attachments/${encodeURIComponent(attachmentId)}`;
+}
+
 export const Route = createFileRoute("/_app/compose")({
 	validateSearch: z.object({ replyTo: z.string().optional(), draftId: z.string().optional() }),
 	component: Compose,
@@ -214,6 +218,13 @@ function ComposeForm({
 	const templates = useList<Template>(qk.templates, "/api/templates");
 	const editorRef = useRef<RichTextHandle>(null);
 	const fileRef = useRef<HTMLInputElement>(null);
+	const imagePreviewSources = draftId
+		? Object.fromEntries(
+			attachments
+				.filter((attachment) => attachment.disposition === "inline" && attachment.contentId)
+				.map((attachment) => [`cid:${attachment.contentId}`, draftAttachmentUrl(draftId, attachment.id)]),
+			)
+		: undefined;
 
 	const values: FormValues = { mailboxId, to, cc, bcc, subject, body };
 	const snapshot = JSON.stringify(values);
@@ -345,7 +356,7 @@ function ComposeForm({
 	}
 
 	/** Images live in the MIME envelope as CID parts, never at a public bucket URL. */
-	async function attachInlineImage(file: Blob): Promise<string> {
+	async function attachInlineImage(file: Blob): Promise<{ previewSrc: string; htmlSrc: string }> {
 		if (!file.type.startsWith("image/")) throw new Error("Choose an image file");
 		const image = file instanceof File ? file : new File([file], "image", { type: file.type });
 		setAttaching(true);
@@ -356,7 +367,10 @@ function ComposeForm({
 			});
 			if (!attachment.contentId) throw new Error("Image upload did not return a content ID");
 			setAttachments((current) => [...current, attachment]);
-			return `cid:${attachment.contentId}`;
+			return {
+				previewSrc: draftAttachmentUrl(id, attachment.id),
+				htmlSrc: `cid:${attachment.contentId}`,
+			};
 		} finally {
 			setAttaching(false);
 		}
@@ -379,10 +393,17 @@ function ComposeForm({
 			// URLs for fresh CIDs before the HTML reaches the outgoing message.
 			const id = await saveDraft();
 			const insertion = await api.post<TemplateInsertion>(`/api/templates/${template.id}/insert`, { draftId: id });
-			let html = template.bodyHtml ?? textToHtml(template.bodyText);
-			for (const replacement of insertion.replacements) html = html.replaceAll(replacement.from, replacement.to);
+		let html = template.bodyHtml ?? textToHtml(template.bodyText);
+		const previews = new Map(insertion.attachments.map((attachment) => [attachment.to, draftAttachmentUrl(id, attachment.id)]));
+		for (const replacement of insertion.replacements) {
+			html = html.replaceAll(replacement.from, previews.get(replacement.to) ?? replacement.to);
+		}
 			if (!subject.trim() && template.subject) setSubject(template.subject);
-			if (insertion.attachments.length > 0) setAttachments((current) => [...current, ...insertion.attachments]);
+			if (insertion.attachments.length > 0) {
+				setAttachments((current) => [...current, ...insertion.attachments]);
+				// Let the preview-source map reach Maily before it emits its update.
+				await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+			}
 			editorRef.current?.prepend(html);
 			toast.ok(`Template "${template.name}" inserted`);
 		} catch (error) {
@@ -543,6 +564,7 @@ function ComposeForm({
 				onChange={(html) => setBody(html)}
 				ariaLabel="Message"
 				onImageUpload={attachInlineImage}
+				imagePreviewSources={imagePreviewSources}
 				className="flex-1"
 			/>
 

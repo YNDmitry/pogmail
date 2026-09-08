@@ -34,12 +34,16 @@ export function MailyEditor({
   ariaLabel,
   handleRef,
   className,
+  density = "compose",
 }: {
   initialHtml: string;
-  onChange: (html: string) => void;
+  /** HTML is sent to capable clients; text is the accessible MIME fallback. */
+  onChange: (html: string, text: string) => void;
   ariaLabel: string;
   handleRef?: Ref<RichTextHandle>;
   className?: string;
+  /** Settings and inline replies need the same editor, just less vertical chrome. */
+  density?: "compose" | "compact";
 }) {
   const editorRef = useRef<MailyEditorInstance | null>(null);
 
@@ -79,18 +83,26 @@ export function MailyEditor({
             hideContextMenu: true,
             spellCheck: true,
             immediatelyRender: false,
-            wrapClassName: "maily-compose-editor flex min-h-0 flex-1 flex-col",
+            wrapClassName: cn(
+              "maily-compose-editor flex min-h-0 flex-1 flex-col",
+              density === "compact" && "maily-editor-compact",
+            ),
             toolbarClassName: "maily-compose-toolbar",
             bodyClassName:
-              "maily-compose-canvas min-h-96 flex-1 border-0! p-0! shadow-none! bg-transparent!",
-            contentClassName: "w-full max-w-none! py-4",
+              density === "compact"
+                ? "maily-compose-canvas min-h-36 flex-1 border-0! p-0! shadow-none! bg-transparent!"
+                : "maily-compose-canvas min-h-96 flex-1 border-0! p-0! shadow-none! bg-transparent!",
+            contentClassName: density === "compact" ? "w-full max-w-none! py-3" : "w-full max-w-none! py-4",
           }}
           onCreate={(editor) => {
             editorRef.current = editor as unknown as MailyEditorInstance;
           }}
           onUpdate={(editor) => {
             editorRef.current = editor as unknown as MailyEditorInstance;
-            onChange(editor.isEmpty ? "" : editor.getHTML());
+            onChange(
+              editor.isEmpty ? "" : editor.getHTML(),
+              editor.isEmpty ? "" : editor.getText({ blockSeparator: "\n" }),
+            );
           }}
         />
       </Suspense>

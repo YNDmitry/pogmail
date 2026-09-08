@@ -19,7 +19,9 @@ export const mailboxes = sqliteTable(
 		/** Local part only. The address is `localPart@domain.hostname`. */
 		localPart: text("local_part").notNull(),
 		displayName: text("display_name"),
+		/** Plain-text fallback for signatures sent to clients that decline HTML. */
 		signature: text("signature"),
+		signatureHtml: text("signature_html"),
 		avatarKey: text("avatar_key"),
 		type: text("type", { enum: MAILBOX_TYPES }).notNull().default("personal"),
 		/** Accept mail for this local part on every verified domain, not just `domainId`. */
@@ -28,6 +30,7 @@ export const mailboxes = sqliteTable(
 		autoReplyEnabled: integer("auto_reply_enabled", { mode: "boolean" }).notNull().default(false),
 		autoReplySubject: text("auto_reply_subject").notNull().default("Out of office"),
 		autoReplyBody: text("auto_reply_body").notNull().default(""),
+		autoReplyHtml: text("auto_reply_html"),
 
 		/** Cloudflare Email Routing rule id, so teardown removes the right rule. */
 		cloudflareRuleId: text("cloudflare_rule_id"),

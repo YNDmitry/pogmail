@@ -21,7 +21,7 @@ import { canSend } from "@/shared/contract/permissions";
 import { cn } from "@/client/lib/utils";
 import type { Attachment, MailAddress, MailboxSummary } from "@/shared/contract/mail";
 
-type Template = { id: string; name: string; subject: string; bodyText: string };
+type Template = { id: string; name: string; subject: string; bodyText: string; bodyHtml: string | null };
 
 export const Route = createFileRoute("/_app/compose")({
 	validateSearch: z.object({ replyTo: z.string().optional(), draftId: z.string().optional() }),
@@ -500,7 +500,7 @@ function ComposeForm({
 			<MailyEditor
 				handleRef={editorRef}
 				initialHtml={initial.body}
-				onChange={setBody}
+				onChange={(html) => setBody(html)}
 				ariaLabel="Message"
 				className="flex-1"
 			/>
@@ -590,9 +590,7 @@ function ComposeForm({
 							const template = templates.data?.find((entry) => entry.id === id);
 							if (!template) return;
 							if (!subject.trim() && template.subject) setSubject(template.subject);
-							// Templates are written in a plain textarea in Settings, so what
-							// goes in above the reply is that text as a document.
-							editorRef.current?.prepend(textToHtml(template.bodyText));
+							editorRef.current?.prepend(template.bodyHtml ?? textToHtml(template.bodyText));
 							toast.ok(`Template "${template.name}" inserted`);
 						}}
 					/>

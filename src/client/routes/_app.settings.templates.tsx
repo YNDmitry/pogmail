@@ -2,7 +2,8 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/client/components/app/button";
-import { Input, Textarea } from "@/client/components/ui";
+import { Input } from "@/client/components/ui";
+import { MailyEditor } from "@/client/components/app/maily-editor";
 import { Modal } from "@/client/components/app/modal";
 import { Card, Empty, Field } from "@/client/components/app/primitives";
 import { useToast } from "@/client/components/app/toast-host";
@@ -11,11 +12,13 @@ import { qk } from "@/client/lib/queries/keys";
 
 export const Route = createFileRoute("/_app/settings/templates")({ component: Templates });
 
-type Template = { id: string; name: string; subject: string; bodyText: string };
+type Template = { id: string; name: string; subject: string; bodyText: string; bodyHtml: string | null };
 
 function Templates() {
 	const toast = useToast();
 	const [open, setOpen] = useState(false);
+	const [body, setBody] = useState({ html: "", text: "" });
+	const [editorKey, setEditorKey] = useState(0);
 
 	const templates = useList<Template>(qk.templates, "/api/templates");
 	const create = useCreate<Record<string, unknown>, Template>(qk.templates, "/api/templates");
@@ -30,7 +33,14 @@ function Templates() {
 						Replies you send often, kept ready to drop into a message.
 					</p>
 				</div>
-				<Button size="sm" onClick={() => setOpen(true)}>
+				<Button
+					size="sm"
+					onClick={() => {
+						setBody({ html: "", text: "" });
+						setEditorKey((key) => key + 1);
+						setOpen(true);
+					}}
+				>
 					<Plus className="size-3.5" />
 					New template
 				</Button>
@@ -75,7 +85,8 @@ function Templates() {
 							{
 								name: String(form.get("name")),
 								subject: String(form.get("subject")),
-								bodyText: String(form.get("bodyText")),
+								bodyText: body.text,
+								bodyHtml: body.html || null,
 							},
 							{
 								onSuccess: () => {
@@ -93,8 +104,15 @@ function Templates() {
 					<Field label="Subject">
 						<Input name="subject" maxLength={300} />
 					</Field>
-					<Field label="Message">
-						<Textarea name="bodyText" rows={6} />
+					<Field label="Message" hint="Formatting and slash commands are kept when the template is inserted.">
+						<MailyEditor
+							key={editorKey}
+							initialHtml=""
+							onChange={(html, text) => setBody({ html, text })}
+							ariaLabel="Template message"
+							density="compact"
+							className="rounded-panel border border-seam px-3"
+						/>
 					</Field>
 
 					<div className="flex justify-end gap-2 pt-2">

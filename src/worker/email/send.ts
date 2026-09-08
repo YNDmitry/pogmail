@@ -2,7 +2,7 @@ import { createMimeMessage, Mailbox } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { messageAttachments, messages, outboundJobs } from "@/db/schema";
+import { mailboxes, messageAttachments, messages, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "./types";
 
 /** The domain a Message-ID is minted under: it must be one the sender owns. */
@@ -18,9 +18,15 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 	const db = getDb(env.DB);
 
 	const row = await db
-		.select({ job: outboundJobs, message: messages })
+		.select({
+			job: outboundJobs,
+			message: messages,
+			signatureText: mailboxes.signature,
+			signatureHtml: mailboxes.signatureHtml,
+		})
 		.from(outboundJobs)
 		.innerJoin(messages, eq(messages.id, outboundJobs.messageId))
+		.leftJoin(mailboxes, eq(mailboxes.id, messages.mailboxId))
 		.where(eq(outboundJobs.id, job.jobId))
 		.get();
 
@@ -55,8 +61,15 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 		 * one a client is meant to prefer, so the order here is what decides whether
 		 * a formatted message arrives formatted.
 		 */
-		if (row.message.bodyText) mime.addMessage({ contentType: "text/plain", data: row.message.bodyText });
-		if (row.message.bodyHtml) mime.addMessage({ contentType: "text/html", data: row.message.bodyHtml });
+		const bodyText = appendSignatureText(row.message.bodyText, row.signatureText);
+		const bodyHtml = appendSignatureHtml(
+			row.message.bodyHtml,
+			row.message.bodyText,
+			row.signatureHtml,
+			row.signatureText,
+		);
+		if (bodyText) mime.addMessage({ contentType: "text/plain", data: bodyText });
+		if (bodyHtml) mime.addMessage({ contentType: "text/html", data: bodyHtml });
 		if (row.message.inReplyTo) {
 			mime.setHeader("In-Reply-To", row.message.inReplyTo);
 			// `threadId` is the root, `inReplyTo` the parent; a client walks References
@@ -108,6 +121,32 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			.where(eq(outboundJobs.id, job.jobId));
 		throw error;
 	}
+}
+
+function appendSignatureText(body: string | null, signature: string | null): string | null {
+	if (!signature?.trim()) return body;
+	return [body?.trim(), `-- \n${signature.trim()}`].filter(Boolean).join("\n\n");
+}
+
+function appendSignatureHtml(
+	bodyHtml: string | null,
+	bodyText: string | null,
+	signatureHtml: string | null,
+	signatureText: string | null,
+): string | null {
+	const signature = signatureHtml?.trim() || plainTextHtml(signatureText);
+	if (!signature) return bodyHtml;
+	const body = bodyHtml?.trim() || plainTextHtml(bodyText);
+	return `${body ? `${body}<hr>` : ""}${signature}`;
+}
+
+function plainTextHtml(value: string | null): string {
+	if (!value?.trim()) return "";
+	return `<p>${escapeHtml(value.trim()).replaceAll("\n", "<br>")}</p>`;
+}
+
+function escapeHtml(value: string): string {
+	return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 /**

@@ -35,12 +35,14 @@ const createInput = z.object({
 const updateInput = z.object({
 	displayName: z.string().max(120).nullable().optional(),
 	signature: z.string().max(5000).nullable().optional(),
+	signatureHtml: z.string().max(100_000).nullable().optional(),
 	type: z.enum(MAILBOX_TYPES).optional(),
 	useAllDomains: z.boolean().optional(),
 	disabled: z.boolean().optional(),
 	autoReplyEnabled: z.boolean().optional(),
 	autoReplySubject: z.string().max(300).optional(),
 	autoReplyBody: z.string().max(10000).optional(),
+	autoReplyHtml: z.string().max(100_000).nullable().optional(),
 });
 
 const accessInput = z.object({

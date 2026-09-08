@@ -3,7 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { Button, SubmitButton } from "@/client/components/app/button";
-import { Input, Switch, Textarea } from "@/client/components/ui";
+import { Input, Switch } from "@/client/components/ui";
+import { MailyEditor } from "@/client/components/app/maily-editor";
 import { Card, Empty, Field, Machine, Tag } from "@/client/components/app/primitives";
 import { useToast } from "@/client/components/app/toast-host";
 import { api } from "@/client/lib/api";
@@ -11,6 +12,7 @@ import { useMailboxes } from "@/client/lib/queries";
 import { useCreate, useList, useRemove } from "@/client/lib/queries/crud";
 import { qk } from "@/client/lib/queries/keys";
 import { PERMISSION_LABELS } from "@/shared/contract/permissions";
+import { textToHtml } from "@/client/lib/mail-html";
 
 export const Route = createFileRoute("/_app/settings/mailboxes")({ component: MailboxSettings });
 
@@ -19,9 +21,11 @@ type MailboxDetail = {
 	address: string;
 	displayName: string | null;
 	signature: string | null;
+	signatureHtml: string | null;
 	autoReplyEnabled: boolean;
 	autoReplySubject: string;
 	autoReplyBody: string;
+	autoReplyHtml: string | null;
 	aliases: { id: string; localPart: string }[];
 };
 
@@ -68,7 +72,7 @@ function MailboxSettings() {
 				))}
 			</div>
 
-			{current ? <MailboxForm id={current} /> : null}
+			{current ? <MailboxForm key={current} id={current} /> : null}
 		</div>
 	);
 }
@@ -77,6 +81,9 @@ function MailboxForm({ id }: { id: string }) {
 	const toast = useToast();
 	const client = useQueryClient();
 	const [state, setState] = useState<"idle" | "loading">("idle");
+	const [contentMailboxId, setContentMailboxId] = useState<string | null>(null);
+	const [signature, setSignature] = useState({ html: "", text: "" });
+	const [autoReply, setAutoReply] = useState({ html: "", text: "" });
 
 	const mailbox = useQuery({
 		queryKey: qk.mailbox(id),
@@ -87,6 +94,14 @@ function MailboxForm({ id }: { id: string }) {
 
 	if (!mailbox.data) return null;
 	const data = mailbox.data;
+	// Query data arrives after this component mounts. Reset the two editors before
+	// they mount for a different mailbox, without clobbering edits on a refetch.
+	if (contentMailboxId !== data.id) {
+		setContentMailboxId(data.id);
+		setSignature({ html: data.signatureHtml ?? textToHtml(data.signature), text: data.signature ?? "" });
+		setAutoReply({ html: data.autoReplyHtml ?? textToHtml(data.autoReplyBody), text: data.autoReplyBody });
+		return null;
+	}
 
 	return (
 		<Card className="p-5">
@@ -100,10 +115,12 @@ function MailboxForm({ id }: { id: string }) {
 					try {
 						await api.patch(`/api/mailboxes/${id}`, {
 							displayName: String(form.get("displayName")) || null,
-							signature: String(form.get("signature")) || null,
+							signature: signature.text || null,
+							signatureHtml: signature.html || null,
 							autoReplyEnabled: form.get("autoReplyEnabled") === "on",
 							autoReplySubject: String(form.get("autoReplySubject")),
-							autoReplyBody: String(form.get("autoReplyBody")),
+							autoReplyBody: autoReply.text,
+							autoReplyHtml: autoReply.html || null,
 						});
 						await client.invalidateQueries({ queryKey: qk.mailbox(id) });
 						toast.ok("Mailbox saved");
@@ -133,8 +150,14 @@ function MailboxForm({ id }: { id: string }) {
 					/>
 				</Field>
 
-				<Field label="Signature">
-					<Textarea name="signature" defaultValue={data.signature ?? ""} rows={4} />
+				<Field label="Signature" hint="Added to every sent message with a plain-text fallback.">
+					<MailyEditor
+						initialHtml={data.signatureHtml ?? textToHtml(data.signature)}
+						onChange={(html, text) => setSignature({ html, text })}
+						ariaLabel="Signature"
+						density="compact"
+						className="rounded-panel border border-seam px-3"
+					/>
 				</Field>
 
 				<fieldset className="space-y-4 rounded-panel border border-seam p-4">
@@ -159,8 +182,14 @@ function MailboxForm({ id }: { id: string }) {
 						/>
 					</Field>
 
-					<Field label="Message">
-						<Textarea name="autoReplyBody" defaultValue={data.autoReplyBody} rows={4} />
+					<Field label="Message" hint="Formatting is sent to capable clients; everyone else receives the text version.">
+						<MailyEditor
+							initialHtml={data.autoReplyHtml ?? textToHtml(data.autoReplyBody)}
+							onChange={(html, text) => setAutoReply({ html, text })}
+							ariaLabel="Out-of-office message"
+							density="compact"
+							className="rounded-panel border border-seam px-3"
+						/>
 					</Field>
 				</fieldset>
 

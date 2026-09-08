@@ -34,7 +34,8 @@ export async function queueAutoReply(env: Env, request: AutoReplyRequest): Promi
 			displayName: mailboxes.displayName,
 			enabled: mailboxes.autoReplyEnabled,
 			subject: mailboxes.autoReplySubject,
-			body: mailboxes.autoReplyBody,
+			bodyText: mailboxes.autoReplyBody,
+			bodyHtml: mailboxes.autoReplyHtml,
 			hostname: domains.hostname,
 		})
 		.from(mailboxes)
@@ -64,7 +65,8 @@ export async function queueAutoReply(env: Env, request: AutoReplyRequest): Promi
 	mime.setSender({ addr: address, name: mailbox.displayName ?? undefined });
 	mime.setRecipient(request.recipient);
 	mime.setSubject(mailbox.subject || `Re: ${request.subject ?? ""}`.trim());
-	mime.addMessage({ contentType: "text/plain", data: mailbox.body });
+	mime.addMessage({ contentType: "text/plain", data: mailbox.bodyText });
+	if (mailbox.bodyHtml) mime.addMessage({ contentType: "text/html", data: mailbox.bodyHtml });
 	// Marks our own reply as automated so the other side's guard fires too.
 	mime.setHeader("Auto-Submitted", "auto-replied");
 	mime.setHeader("X-Auto-Response-Suppress", "All");

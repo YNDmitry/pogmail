@@ -6,6 +6,8 @@
  * former, and `cloudflare:test` hands tests the latter.
  */
 interface PogmailSecrets {
+	/** Local-only opt-in that provisions reserved `.test` domains without Cloudflare. */
+	DEV_MOCK_CLOUDFLARE?: string;
 	/**
 	 * Cloudflare API token used for domain and mailbox provisioning. It doubles as
 	 * the key material the stored GitHub update token is encrypted under.

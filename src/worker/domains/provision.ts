@@ -3,6 +3,7 @@ import type { Database } from "@/db";
 import { domainRecords, domains } from "@/db/schema";
 import { WORKER_NAME } from "../build";
 import { CloudflareClient, CloudflareError } from "../cloudflare/client";
+import { isMockZone } from "./mock";
 import {
   createWorkerRule,
   deleteRoutingRule,
@@ -64,6 +65,20 @@ export async function provisionDomain(
     .where(eq(domains.id, domainId))
     .get();
   if (!domain) throw new Error(`Domain ${domainId} disappeared mid-provision`);
+
+  if (isMockZone(domain.zoneId)) {
+    await db
+      .update(domains)
+      .set({
+        status: "active",
+        routingEnabled: true,
+        routingStatus: "mock",
+        lastError: null,
+        verifiedAt: new Date(),
+      })
+      .where(eq(domains.id, domain.id));
+    return { status: "active" };
+  }
 
   const cf = CloudflareClient.fromEnv(env);
 
@@ -152,6 +167,8 @@ export async function deprovisionDomain(
     .get();
   if (!domain) return;
 
+  if (isMockZone(domain.zoneId)) return;
+
   const cf = CloudflareClient.fromEnv(env);
 
   const rules = await listRoutingRules(cf, domain.zoneId).catch(() => []);
@@ -182,6 +199,8 @@ export async function provisionMailboxRule(
   zoneId: string,
   address: string,
 ): Promise<string | null> {
+  if (isMockZone(zoneId)) return `mock:${address}`;
+
   const cf = CloudflareClient.fromEnv(env);
   const workerName = emailWorkerName(env);
   const rule = await createWorkerRule(cf, zoneId, address, workerName).catch(
@@ -197,6 +216,8 @@ export async function removeMailboxRule(
   zoneId: string,
   tag: string,
 ): Promise<void> {
+  if (isMockZone(zoneId)) return;
+
   const cf = CloudflareClient.fromEnv(env);
   await deleteRoutingRule(cf, zoneId, tag).catch(() => undefined);
 }

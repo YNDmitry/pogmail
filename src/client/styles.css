@@ -1,7 +1,7 @@
-@import 'tailwindcss';
-@import 'tw-animate-css';
-@import '@fontsource-variable/onest';
-@import '@fontsource-variable/jetbrains-mono';
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/onest";
+@import "@fontsource-variable/jetbrains-mono";
 
 @custom-variant dark (&:is(.dark, .dark *));
 
@@ -19,8 +19,9 @@
   --radius-pill: 9999px;
 
   /* Brand typography (Brandbook §8) wired into Tailwind's font-sans/font-mono. */
-  --font-sans: 'Onest Variable', 'Onest', Inter, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
+  --font-sans: "Onest Variable", "Onest", Inter, system-ui, sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
 
   /* Pogpin Coral scale (Brandbook §3) exposed as Tailwind color utilities. */
   --color-pogpin-brand-50: var(--pogpin-brand-50);
@@ -180,7 +181,11 @@
   --pogpin-shell-panel-dashed: rgb(0 0 0 / 0.02);
   --pogpin-shell-field: rgb(255 255 255);
   --pogpin-shell-tabs-active: rgb(255 255 255);
-  --pogpin-shell-accent-surface: linear-gradient(180deg, rgb(0 0 0 / 0.02), rgb(0 0 0 / 0.01));
+  --pogpin-shell-accent-surface: linear-gradient(
+    180deg,
+    rgb(0 0 0 / 0.02),
+    rgb(0 0 0 / 0.01)
+  );
   --pogpin-shell-border: rgb(0 0 0 / 0.1);
   --pogpin-shell-border-soft: rgb(0 0 0 / 0.07);
   --pogpin-shell-border-strong: rgb(0 0 0 / 0.14);
@@ -210,10 +215,14 @@
   --pogpin-auth-copy: rgb(163 163 163);
   --pogpin-auth-muted: rgb(115 115 115);
   --pogpin-shell-shadow:
-    0 0.5rem 1.5rem -0.5rem rgb(15 23 42 / 0.1), 0 0.125rem 0.375rem rgb(15 23 42 / 0.06);
+    0 0.5rem 1.5rem -0.5rem rgb(15 23 42 / 0.1),
+    0 0.125rem 0.375rem rgb(15 23 42 / 0.06);
   --pogpin-shell-shadow-strong:
-    0 1.5rem 3rem -1rem rgb(15 23 42 / 0.18), 0 0.25rem 0.75rem -0.25rem rgb(15 23 42 / 0.1);
-  --pogpin-shell-menu-shadow: drop-shadow(0 1.125rem 1.75rem rgb(15 23 42 / 0.12))
+    0 1.5rem 3rem -1rem rgb(15 23 42 / 0.18),
+    0 0.25rem 0.75rem -0.25rem rgb(15 23 42 / 0.1);
+  --pogpin-shell-menu-shadow: drop-shadow(
+      0 1.125rem 1.75rem rgb(15 23 42 / 0.12)
+    )
     drop-shadow(0 0.1875rem 0.5rem rgb(15 23 42 / 0.08));
 }
 
@@ -255,8 +264,16 @@
   --pogpin-shell-hero-outer: rgb(9 10 12);
   --pogpin-shell-hero-inner: rgb(13 14 17);
   --pogpin-shell-hero-glow:
-    radial-gradient(circle at top right, rgb(255 255 255 / 0.018), transparent 30%),
-    radial-gradient(circle at bottom left, rgb(255 255 255 / 0.01), transparent 38%);
+    radial-gradient(
+      circle at top right,
+      rgb(255 255 255 / 0.018),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at bottom left,
+      rgb(255 255 255 / 0.01),
+      transparent 38%
+    );
   --pogpin-shell-panel: rgb(12 13 16);
   --pogpin-shell-panel-alt: rgb(15 16 19);
   --pogpin-shell-panel-hover: rgb(18 19 23);
@@ -420,7 +437,7 @@
   }
 
   .pogpin-shell-hero-inner::before {
-    content: '';
+    content: "";
     position: absolute;
     inset: 0;
     pointer-events: none;
@@ -460,12 +477,12 @@
     border: 1px solid transparent;
   }
 
-  .pogpin-shell-tab-trigger[data-state='active'] {
+  .pogpin-shell-tab-trigger[data-state="active"] {
     color: var(--pogpin-brand-300);
     box-shadow: none;
   }
 
-  .pogpin-shell-tab-trigger > [data-slot='tabs-indicator'] {
+  .pogpin-shell-tab-trigger > [data-slot="tabs-indicator"] {
     border-color: var(--pogpin-brand-border);
     background: var(--pogpin-brand-surface);
     box-shadow: none;
@@ -669,7 +686,7 @@
     color: var(--pogpin-auth-muted);
   }
 
-  .pogpin-auth-input[aria-invalid='true']::placeholder {
+  .pogpin-auth-input[aria-invalid="true"]::placeholder {
     color: rgb(254 202 202 / 0.85);
   }
 
@@ -693,11 +710,11 @@
   /* Errors use the semantic danger token, never coral (Brandbook §5): on this
      screen the primary CTA *is* coral, so a coral-ish invalid border would read
      as brand, not as a problem. */
-  .pogpin-auth-input[aria-invalid='true'] {
+  .pogpin-auth-input[aria-invalid="true"] {
     border-color: rgb(240 79 101 / 0.55);
   }
 
-  .pogpin-auth-input[aria-invalid='true']:focus-visible {
+  .pogpin-auth-input[aria-invalid="true"]:focus-visible {
     border-color: var(--pogpin-danger);
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.015),
@@ -719,7 +736,11 @@
 
   .pogpin-auth-card-inner {
     border-radius: inherit;
-    background: linear-gradient(180deg, rgb(255 255 255 / 0.035), transparent 45%);
+    background: linear-gradient(
+      180deg,
+      rgb(255 255 255 / 0.035),
+      transparent 45%
+    );
   }
 
   /* Bare text buttons and links on the auth surface (mode switch, forgot
@@ -756,9 +777,21 @@
      Soft coral aurora + faint grid, masked to keep the card legible. */
   .pogpin-auth-aurora {
     background:
-      radial-gradient(40rem 40rem at 18% 12%, rgb(255 94 87 / 0.16), transparent 60%),
-      radial-gradient(34rem 34rem at 86% 88%, rgb(255 116 108 / 0.12), transparent 62%),
-      radial-gradient(28rem 28rem at 70% 20%, rgb(199 61 57 / 0.1), transparent 64%);
+      radial-gradient(
+        40rem 40rem at 18% 12%,
+        rgb(255 94 87 / 0.16),
+        transparent 60%
+      ),
+      radial-gradient(
+        34rem 34rem at 86% 88%,
+        rgb(255 116 108 / 0.12),
+        transparent 62%
+      ),
+      radial-gradient(
+        28rem 28rem at 70% 20%,
+        rgb(199 61 57 / 0.1),
+        transparent 64%
+      );
     filter: blur(20px) saturate(115%);
     will-change: transform, opacity;
     animation: pogpin-auth-drift 22s ease-in-out infinite alternate;
@@ -770,7 +803,11 @@
       linear-gradient(to bottom, rgb(255 255 255 / 0.022) 1px, transparent 1px);
     background-size: 3.5rem 3.5rem;
     mask-image: radial-gradient(60% 55% at 50% 38%, black, transparent 78%);
-    -webkit-mask-image: radial-gradient(60% 55% at 50% 38%, black, transparent 78%);
+    -webkit-mask-image: radial-gradient(
+      60% 55% at 50% 38%,
+      black,
+      transparent 78%
+    );
   }
 
   @keyframes pogpin-auth-drift {
@@ -809,7 +846,7 @@
   }
 
   .pogpin-skeleton::before {
-    content: '';
+    content: "";
     position: absolute;
     inset: 0;
     background: linear-gradient(
@@ -859,14 +896,14 @@
 
   .shell-hover-trigger:hover .shell-hover-icon,
   .shell-hover-trigger:focus-visible .shell-hover-icon,
-  .shell-hover-trigger[data-state='open'] .shell-hover-icon {
+  .shell-hover-trigger[data-state="open"] .shell-hover-icon {
     filter: none;
   }
 
   @media (prefers-reduced-motion: no-preference) {
     .shell-hover-trigger:hover .shell-hover-icon,
     .shell-hover-trigger:focus-visible .shell-hover-icon,
-    .shell-hover-trigger[data-state='open'] .shell-hover-icon,
+    .shell-hover-trigger[data-state="open"] .shell-hover-icon,
     .shell-active-icon,
     .shell-hover-trigger:hover .shell-active-icon,
     .shell-hover-trigger:focus-visible .shell-active-icon {
@@ -876,29 +913,32 @@
 }
 
 /* Shared motion behavior for Radix surfaces and native controls. */
-:is([data-slot='dialog-overlay'], [data-slot='sheet-overlay']) {
+:is([data-slot="dialog-overlay"], [data-slot="sheet-overlay"]) {
   --tw-animation-duration: var(--motion-fast);
   --tw-ease: var(--motion-ease-out);
 }
 
-:is([data-slot='dialog-overlay'], [data-slot='sheet-overlay'])[data-state='closed'] {
+:is(
+  [data-slot="dialog-overlay"],
+  [data-slot="sheet-overlay"]
+)[data-state="closed"] {
   --tw-animation-duration: var(--motion-exit);
   --tw-ease: var(--motion-ease-in);
 }
 
-[data-slot='dialog-content'] {
+[data-slot="dialog-content"] {
   --tw-animation-duration: var(--motion-medium);
   --tw-ease: var(--motion-ease-out);
   --tw-enter-scale: 0.98;
   --tw-exit-scale: 0.98;
 }
 
-[data-slot='sheet-content'] {
+[data-slot="sheet-content"] {
   --tw-animation-duration: var(--motion-slow);
   --tw-ease: var(--motion-ease-out);
 }
 
-[data-slot='sheet-content'][data-state='closed'] {
+[data-slot="sheet-content"][data-state="closed"] {
   --tw-animation-duration: var(--motion-medium);
   --tw-ease: var(--motion-ease-in);
 }
@@ -910,27 +950,27 @@
   --tw-exit-scale: 0.98;
 }
 
-[data-side][data-state='closed'] {
+[data-side][data-state="closed"] {
   --tw-animation-duration: var(--motion-exit);
   --tw-ease: var(--motion-ease-in);
 }
 
-[data-side='bottom'] {
+[data-side="bottom"] {
   --tw-enter-translate-y: -4px;
   --tw-exit-translate-y: -2px;
 }
 
-[data-side='top'] {
+[data-side="top"] {
   --tw-enter-translate-y: 4px;
   --tw-exit-translate-y: 2px;
 }
 
-[data-side='left'] {
+[data-side="left"] {
   --tw-enter-translate-x: 4px;
   --tw-exit-translate-x: 2px;
 }
 
-[data-side='right'] {
+[data-side="right"] {
   --tw-enter-translate-x: -4px;
   --tw-exit-translate-x: -2px;
 }
@@ -963,55 +1003,73 @@
 
 /* Horizontal anchor: the trigger's side wins, falling back to align when the
    panel sits above or below it. */
-.pogpin-menu-morph[data-side='right'] {
+.pogpin-menu-morph[data-side="right"] {
   --morph-left: 0px;
   --morph-right: calc(100% - var(--morph-size));
 }
 
-.pogpin-menu-morph[data-side='left'] {
+.pogpin-menu-morph[data-side="left"] {
   --morph-left: calc(100% - var(--morph-size));
   --morph-right: 0px;
 }
 
-.pogpin-menu-morph:is([data-side='top'], [data-side='bottom'])[data-align='start'] {
+.pogpin-menu-morph:is(
+    [data-side="top"],
+    [data-side="bottom"]
+  )[data-align="start"] {
   --morph-left: 0px;
   --morph-right: calc(100% - var(--morph-size));
 }
 
-.pogpin-menu-morph:is([data-side='top'], [data-side='bottom'])[data-align='end'] {
+.pogpin-menu-morph:is(
+    [data-side="top"],
+    [data-side="bottom"]
+  )[data-align="end"] {
   --morph-left: calc(100% - var(--morph-size));
   --morph-right: 0px;
 }
 
-.pogpin-menu-morph:is([data-side='top'], [data-side='bottom'])[data-align='center'] {
+.pogpin-menu-morph:is(
+    [data-side="top"],
+    [data-side="bottom"]
+  )[data-align="center"] {
   --morph-left: calc((100% - var(--morph-size)) / 2);
   --morph-right: calc((100% - var(--morph-size)) / 2);
 }
 
 /* Vertical anchor: mirror of the above. */
-.pogpin-menu-morph[data-side='bottom'] {
+.pogpin-menu-morph[data-side="bottom"] {
   --morph-top: 0px;
   --morph-bottom: calc(100% - var(--morph-size));
 }
 
-.pogpin-menu-morph[data-side='top'] {
+.pogpin-menu-morph[data-side="top"] {
   --morph-top: calc(100% - var(--morph-size));
   --morph-bottom: 0px;
   --morph-shift: 5px;
 }
 
-.pogpin-menu-morph:is([data-side='left'], [data-side='right'])[data-align='start'] {
+.pogpin-menu-morph:is(
+    [data-side="left"],
+    [data-side="right"]
+  )[data-align="start"] {
   --morph-top: 0px;
   --morph-bottom: calc(100% - var(--morph-size));
 }
 
-.pogpin-menu-morph:is([data-side='left'], [data-side='right'])[data-align='end'] {
+.pogpin-menu-morph:is(
+    [data-side="left"],
+    [data-side="right"]
+  )[data-align="end"] {
   --morph-top: calc(100% - var(--morph-size));
   --morph-bottom: 0px;
   --morph-shift: 5px;
 }
 
-.pogpin-menu-morph:is([data-side='left'], [data-side='right'])[data-align='center'] {
+.pogpin-menu-morph:is(
+    [data-side="left"],
+    [data-side="right"]
+  )[data-align="center"] {
   --morph-top: calc((100% - var(--morph-size)) / 2);
   --morph-bottom: calc((100% - var(--morph-size)) / 2);
 }
@@ -1026,49 +1084,60 @@
 /* `backwards` rather than `both`: neither the clip nor the scale may persist on
    the open panel — the clip would keep cutting off the drop shadow, and a held
    transform would blur the text on fractional pixels. */
-.pogpin-menu-morph[data-side][data-state='open'] {
-  animation: pogpin-menu-morph-in var(--motion-slow) var(--motion-ease-out) backwards;
+.pogpin-menu-morph[data-side][data-state="open"] {
+  animation: pogpin-menu-morph-in var(--motion-slow) var(--motion-ease-out)
+    backwards;
 }
 
 /* Rows arrive one after another out of the anchored corner. The cascade is what
    sells the panel as unfolding rather than appearing; it is capped at eight rows
    so a long workspace list still finishes in one beat. */
-.pogpin-menu-morph[data-side][data-state='open'] > * {
+.pogpin-menu-morph[data-side][data-state="open"] > * {
   animation: pogpin-menu-morph-row var(--motion-fast) var(--motion-ease-out)
     calc(var(--morph-stagger-delay) + 7 * var(--morph-stagger-step)) backwards;
 }
 
-.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(1) {
+.pogpin-menu-morph[data-side][data-state="open"] > :nth-child(1) {
   animation-delay: var(--morph-stagger-delay);
 }
 
-.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(2) {
+.pogpin-menu-morph[data-side][data-state="open"] > :nth-child(2) {
   animation-delay: calc(var(--morph-stagger-delay) + var(--morph-stagger-step));
 }
 
-.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(3) {
-  animation-delay: calc(var(--morph-stagger-delay) + 2 * var(--morph-stagger-step));
+.pogpin-menu-morph[data-side][data-state="open"] > :nth-child(3) {
+  animation-delay: calc(
+    var(--morph-stagger-delay) + 2 * var(--morph-stagger-step)
+  );
 }
 
-.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(4) {
-  animation-delay: calc(var(--morph-stagger-delay) + 3 * var(--morph-stagger-step));
+.pogpin-menu-morph[data-side][data-state="open"] > :nth-child(4) {
+  animation-delay: calc(
+    var(--morph-stagger-delay) + 3 * var(--morph-stagger-step)
+  );
 }
 
-.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(5) {
-  animation-delay: calc(var(--morph-stagger-delay) + 4 * var(--morph-stagger-step));
+.pogpin-menu-morph[data-side][data-state="open"] > :nth-child(5) {
+  animation-delay: calc(
+    var(--morph-stagger-delay) + 4 * var(--morph-stagger-step)
+  );
 }
 
-.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(6) {
-  animation-delay: calc(var(--morph-stagger-delay) + 5 * var(--morph-stagger-step));
+.pogpin-menu-morph[data-side][data-state="open"] > :nth-child(6) {
+  animation-delay: calc(
+    var(--morph-stagger-delay) + 5 * var(--morph-stagger-step)
+  );
 }
 
-.pogpin-menu-morph[data-side][data-state='open'] > :nth-child(7) {
-  animation-delay: calc(var(--morph-stagger-delay) + 6 * var(--morph-stagger-step));
+.pogpin-menu-morph[data-side][data-state="open"] > :nth-child(7) {
+  animation-delay: calc(
+    var(--morph-stagger-delay) + 6 * var(--morph-stagger-step)
+  );
 }
 
 /* Closing collapses back through the clip would read slow; a plain exit fade at
    the exit token keeps dismissal immediate. */
-.pogpin-menu-morph[data-side][data-state='closed'] {
+.pogpin-menu-morph[data-side][data-state="closed"] {
   animation: pogpin-menu-morph-out var(--motion-exit) var(--motion-ease-in) both;
 }
 
@@ -1079,8 +1148,8 @@
 @keyframes pogpin-menu-morph-in {
   from {
     clip-path: inset(
-      var(--morph-top) var(--morph-right) var(--morph-bottom) var(--morph-left) round
-        var(--morph-radius)
+      var(--morph-top) var(--morph-right) var(--morph-bottom) var(--morph-left)
+        round var(--morph-radius)
     );
     transform: scale(0.9);
     opacity: 0;
@@ -1119,7 +1188,7 @@
   }
 }
 
-:where(button, nav a[href], [role='menuitem'], [role='option']) {
+:where(button, nav a[href], [role="menuitem"], [role="option"]) {
   transition-duration: var(--motion-fast);
   transition-timing-function: var(--motion-ease-out);
 }
@@ -1147,11 +1216,13 @@
   will-change: transform, opacity;
 }
 
-[data-sonner-toaster] [data-sonner-toast][data-mounted='false'][data-y-position='bottom'] {
+[data-sonner-toaster]
+  [data-sonner-toast][data-mounted="false"][data-y-position="bottom"] {
   --y: translateY(4px);
 }
 
-[data-sonner-toaster] [data-sonner-toast][data-mounted='false'][data-y-position='top'] {
+[data-sonner-toaster]
+  [data-sonner-toast][data-mounted="false"][data-y-position="top"] {
   --y: translateY(-4px);
 }
 
@@ -1168,23 +1239,23 @@
   color: var(--muted-foreground);
 }
 
-[data-sonner-toaster] [data-sonner-toast][data-type='success'] [data-icon] {
+[data-sonner-toaster] [data-sonner-toast][data-type="success"] [data-icon] {
   background: var(--pogpin-success-surface);
   color: var(--pogpin-success);
 }
 
-[data-sonner-toaster] [data-sonner-toast][data-type='info'] [data-icon],
-[data-sonner-toaster] [data-sonner-toast][data-type='loading'] [data-icon] {
+[data-sonner-toaster] [data-sonner-toast][data-type="info"] [data-icon],
+[data-sonner-toaster] [data-sonner-toast][data-type="loading"] [data-icon] {
   background: var(--pogpin-info-surface);
   color: var(--pogpin-info);
 }
 
-[data-sonner-toaster] [data-sonner-toast][data-type='warning'] [data-icon] {
+[data-sonner-toaster] [data-sonner-toast][data-type="warning"] [data-icon] {
   background: var(--pogpin-warning-surface);
   color: var(--pogpin-warning);
 }
 
-[data-sonner-toaster] [data-sonner-toast][data-type='error'] [data-icon] {
+[data-sonner-toaster] [data-sonner-toast][data-type="error"] [data-icon] {
   background: var(--pogpin-danger-surface);
   color: var(--pogpin-danger);
 }
@@ -1229,14 +1300,18 @@
   z-index: calc(var(--z-index) + 100);
 }
 
-[data-sonner-toaster] [data-sonner-toast]:is(:hover, :focus-within) [data-title] {
+[data-sonner-toaster]
+  [data-sonner-toast]:is(:hover, :focus-within)
+  [data-title] {
   overflow: visible;
   text-overflow: clip;
   white-space: normal;
   overflow-wrap: anywhere;
 }
 
-[data-sonner-toaster] [data-sonner-toast]:is(:hover, :focus-within) [data-description] {
+[data-sonner-toaster]
+  [data-sonner-toast]:is(:hover, :focus-within)
+  [data-description] {
   display: block;
   overflow: visible;
   overflow-wrap: anywhere;
@@ -1308,27 +1383,35 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  :where(button:not(:disabled), nav a[href], [role='menuitem'], [role='option']):active {
+  :where(
+    button:not(:disabled),
+    nav a[href],
+    [role="menuitem"],
+    [role="option"]
+  ):active {
     scale: 0.97;
     transition-duration: 60ms;
   }
 
-  [data-slot='tabs-content'][data-state='active'] {
-    animation: pogpin-content-enter var(--motion-medium) var(--motion-ease-out) both;
+  [data-slot="tabs-content"][data-state="active"] {
+    animation: pogpin-content-enter var(--motion-medium) var(--motion-ease-out)
+      both;
   }
 
   .pogpin-skeleton {
-    animation: pogpin-skeleton-enter var(--motion-fast) var(--motion-ease-out) var(--motion-fast)
-      backwards;
+    animation: pogpin-skeleton-enter var(--motion-fast) var(--motion-ease-out)
+      var(--motion-fast) backwards;
   }
 
   .pogpin-content-reveal {
-    animation: pogpin-content-reveal var(--motion-medium) var(--motion-ease-out) both;
+    animation: pogpin-content-reveal var(--motion-medium) var(--motion-ease-out)
+      both;
   }
 
   /* Entrance for the public reader: low distance, compositor-only, tokenized. */
   .pogpin-public-enter {
-    animation: pogpin-public-enter var(--motion-medium) var(--motion-ease-out) both;
+    animation: pogpin-public-enter var(--motion-medium) var(--motion-ease-out)
+      both;
   }
 }
 
@@ -1467,6 +1550,102 @@
     background: var(--pogpin-brand-surface-strong);
     color: var(--pogpin-shell-text);
   }
+}
+
+/*
+ * Maily bundles a complete light-only palette. Scope its colour aliases to the
+ * compose editor so the email canvas, toolbar and its menus inherit Pogmail's
+ * surfaces in both themes instead of flashing white in dark mode.
+ */
+.maily-compose-editor {
+  --mly-color-white: var(--card);
+  --mly-color-black: var(--foreground);
+  --mly-color-soft-gray: var(--muted);
+  --mly-color-midnight-gray: var(--foreground);
+  --mly-color-gray-50: var(--popover);
+  --mly-color-gray-100: var(--muted);
+  --mly-color-gray-200: var(--border);
+  --mly-color-gray-300: var(--border);
+  --mly-color-gray-400: var(--muted-foreground);
+  --mly-color-gray-500: var(--pogpin-shell-text-muted);
+  --mly-color-gray-600: var(--pogpin-shell-text-soft);
+  --mly-color-gray-700: var(--secondary-foreground);
+  --mly-color-gray-900: var(--foreground);
+  --mly-color-gray-950: var(--foreground);
+  --placeholder-color: var(--muted-foreground);
+  --bg-color: var(--card);
+  --mly-body-background-color: var(--card);
+  --mly-container-background-color: var(--card);
+  --mly-link-color: var(--primary);
+  color: var(--foreground);
+}
+
+/* Slash commands and link controls render through portals, outside the editor
+   wrapper. The root override carries the same palette to those overlays. */
+:root.dark {
+  --mly-color-white: var(--card);
+  --mly-color-black: var(--foreground);
+  --mly-color-soft-gray: var(--muted);
+  --mly-color-midnight-gray: var(--foreground);
+  --mly-color-gray-50: var(--popover);
+  --mly-color-gray-100: var(--muted);
+  --mly-color-gray-200: var(--border);
+  --mly-color-gray-300: var(--border);
+  --mly-color-gray-400: var(--muted-foreground);
+  --mly-color-gray-500: var(--pogpin-shell-text-muted);
+  --mly-color-gray-600: var(--pogpin-shell-text-soft);
+  --mly-color-gray-700: var(--secondary-foreground);
+  --mly-color-gray-900: var(--foreground);
+  --mly-color-gray-950: var(--foreground);
+  --placeholder-color: var(--muted-foreground);
+  --bg-color: var(--card);
+  --mly-body-background-color: var(--card);
+  --mly-container-background-color: var(--card);
+  --mly-link-color: var(--primary);
+}
+
+.maily-compose-editor #mly-editor,
+.maily-compose-editor .maily-compose-canvas,
+.maily-compose-editor .ProseMirror {
+  background-color: transparent !important;
+  color: var(--foreground) !important;
+}
+
+.maily-compose-editor .ProseMirror {
+  caret-color: var(--primary);
+}
+
+.maily-compose-editor .ProseMirror .is-editor-empty:first-child::before {
+  content: "Write your message…" !important;
+}
+
+/* Maily keeps selection menus enabled even when its block controls are hidden.
+   Compose deliberately has one persistent toolbar; the floating duplicate
+   obscures the line being edited and offers no extra capability here. */
+.maily-compose-editor [data-tippy-root]:has(.mly\:gap-0\.5.mly\:shadow-md) {
+  display: none !important;
+}
+
+.maily-compose-toolbar {
+  gap: 0.5rem !important;
+  padding-block: 0.25rem;
+  order: 2;
+}
+
+/* Maily's command, image and selection menus all supply their own card. Tippy's
+   default charcoal shell would otherwise add a grey frame and second shadow. */
+[data-tippy-root]:has([class*="mly:shadow-md"]) .tippy-box {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+[data-tippy-root]:has([class*="mly:shadow-md"]) .tippy-content {
+  padding: 0;
+}
+
+[data-tippy-root]:has([class*="mly:shadow-md"]) .tippy-arrow {
+  color: var(--card);
 }
 
 /* Headings carry their own weight; nothing sits above them announcing them. */

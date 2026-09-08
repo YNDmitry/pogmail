@@ -12,6 +12,12 @@ import {
   provisionDomain,
   resolveZone,
 } from "../domains/provision";
+import {
+  isMockHostname,
+  isMockProvisioningEnabled,
+  isMockZone,
+  mockZoneId,
+} from "../domains/mock";
 import { requireMailboxManager } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
 import { notFound, parseBody } from "./_util";
@@ -50,7 +56,16 @@ export const domainRoutes = new Hono<AppBindings>()
     if (existing)
       throw new HTTPException(409, { message: "That domain is already added" });
 
-    const zoneId = input.zoneId ?? (await resolveZone(c.env, hostname))?.id;
+    const mock = isMockProvisioningEnabled(c.env);
+    if (mock && !isMockHostname(hostname)) {
+      throw new HTTPException(422, {
+        message: "Local mock provisioning only accepts reserved .test hostnames",
+      });
+    }
+
+    const zoneId = mock
+      ? mockZoneId(hostname)
+      : input.zoneId ?? (await resolveZone(c.env, hostname))?.id;
     if (!zoneId) {
       throw new HTTPException(422, {
         message: `No Cloudflare zone on this account covers ${hostname}. Add the domain to Cloudflare first.`,
@@ -113,6 +128,13 @@ export const domainRoutes = new Hono<AppBindings>()
       .where(eq(domains.id, c.req.param("id")))
       .get();
     if (!domain) notFound("Domain");
+
+    if (isMockZone(domain.zoneId)) {
+      return c.json({
+        routing: { enabled: true, status: "mock", name: "Local mock" },
+        records: [],
+      });
+    }
 
     const cf = CloudflareClient.fromEnv(c.env);
     const [routing, records, tracked] = await Promise.all([

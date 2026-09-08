@@ -1,2 +1,5 @@
 # Cloudflare API token used at runtime for domain and mailbox provisioning.
 CF_TOKEN=
+
+# Local-only: lets you add reserved names such as acme.test without Cloudflare.
+DEV_MOCK_CLOUDFLARE=false

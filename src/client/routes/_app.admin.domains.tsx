@@ -57,7 +57,9 @@ function Domains() {
           <h2 className="display text-base">Domains</h2>
           <p className="mt-1 max-w-prose text-sm text-ink-2">
             A domain must already be on your Cloudflare account. Pogmail turns
-            on Email Routing and points it at this Worker.
+            on Email Routing and points it at this Worker. When local mock
+            provisioning is enabled, use a reserved <Machine>*.test</Machine>{" "}
+            hostname instead.
           </p>
         </div>
         <Button size="sm" onClick={() => setOpen(true)}>
@@ -190,12 +192,12 @@ function Domains() {
         >
           <Field
             label="Hostname"
-            hint="The zone must already exist on the Cloudflare account this instance authenticates as."
+            hint="The zone must already exist on the Cloudflare account this instance authenticates as. Local mock provisioning accepts only *.test."
           >
             <Input
               name="hostname"
               required
-              placeholder="example.com"
+              placeholder="example.com or acme.test"
               className="machine"
             />
           </Field>

@@ -15,10 +15,8 @@ import { useList } from "@/client/lib/queries/crud";
 import { qk } from "@/client/lib/queries/keys";
 import { bytes } from "@/client/lib/format";
 import { escapeHtml, htmlHasContent, textToHtml } from "@/client/lib/mail-html";
-import {
-	RichTextEditor,
-	type RichTextHandle,
-} from "@/client/components/app/rich-text-editor";
+import { MailyEditor } from "@/client/components/app/maily-editor";
+import type { RichTextHandle } from "@/client/components/app/rich-text-editor";
 import { canSend } from "@/shared/contract/permissions";
 import { cn } from "@/client/lib/utils";
 import type { Attachment, MailAddress, MailboxSummary } from "@/shared/contract/mail";
@@ -499,12 +497,11 @@ function ComposeForm({
 
 			{/* The message is the point of the screen, so it takes the space that is
 			    left rather than a fixed box with the actions stranded below it. */}
-			<RichTextEditor
+			<MailyEditor
 				handleRef={editorRef}
 				initialHtml={initial.body}
 				onChange={setBody}
 				ariaLabel="Message"
-				placeholder="Write your message…"
 				className="flex-1"
 			/>
 

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createFileRoute, useBlocker, useNavigate, useSearch } from "@tanstack/react-router";
 import { z } from "zod";
-import { Paperclip, Save, Send, X } from "lucide-react";
+import { Image, Paperclip, Save, Send, X } from "lucide-react";
 import { Button, SubmitButton } from "@/client/components/app/button";
 import { Input } from "@/client/components/ui";
 import { Choice } from "@/client/components/app/choice";
 import { Modal } from "@/client/components/app/modal";
-import { Machine, PageHeader } from "@/client/components/app/primitives";
+import { Machine, PageHeader, Tag } from "@/client/components/app/primitives";
 import { useToast } from "@/client/components/app/toast-host";
 import { api, ApiError } from "@/client/lib/api";
 import { Loader } from "@/client/components/motion/loader";
@@ -531,19 +531,25 @@ function ComposeForm({
 							key={attachment.id}
 							className="pogpin-shell-chip flex items-center gap-2 rounded-lg py-1 pr-1 pl-2.5 text-xs"
 						>
-							<Paperclip aria-hidden className="size-3 shrink-0" />
+							{attachment.disposition === "inline" ? <Image aria-hidden className="size-3 shrink-0" /> : <Paperclip aria-hidden className="size-3 shrink-0" />}
 							<span className="max-w-[16rem] truncate text-foreground">{attachment.filename}</span>
-							<Machine className="shrink-0 text-[0.6875rem]">{bytes(attachment.sizeBytes)}</Machine>
-							<Button
-								type="button"
-								variant="ghost"
-								size="icon"
-								aria-label={`Remove ${attachment.filename}`}
-								className="size-6"
-								onClick={() => void detach(attachment)}
-							>
-								<X className="size-3" />
-							</Button>
+							{attachment.disposition === "inline" ? (
+								<Tag tone="accent" className="shrink-0">Inline image</Tag>
+							) : (
+								<>
+									<Machine className="shrink-0 text-[0.6875rem]">{bytes(attachment.sizeBytes)}</Machine>
+									<Button
+										type="button"
+										variant="ghost"
+										size="icon"
+										aria-label={`Remove ${attachment.filename}`}
+										className="size-6"
+										onClick={() => void detach(attachment)}
+									>
+										<X className="size-3" />
+									</Button>
+								</>
+							)}
 						</li>
 					))}
 				</ul>

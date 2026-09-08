@@ -36,4 +36,30 @@ describe("outbound delivery retry", () => {
 		expect(response.status).toBe(200);
 		expect(await db.select().from(outboundJobs).where(eq(outboundJobs.id, job.id)).get()).toMatchObject({ status: "queued", lastError: null });
 	});
+
+	it("stores an editor image as an inline CID attachment", async () => {
+		const db = getDb(env.DB);
+		const user = await db.insert(users).values({
+			email: `image-${crypto.randomUUID()}@example.test`, name: "Image", passwordHash: await hashPassword("test password"),
+		}).returning().get();
+		createdUsers.push(user.id);
+		const domain = await db.insert(domains).values({ hostname: `${crypto.randomUUID()}.test`, zoneId: "mock", userId: user.id, status: "active" }).returning().get();
+		const mailbox = await db.insert(mailboxes).values({ domainId: domain.id, userId: user.id, localPart: "hello" }).returning().get();
+		const session = await createSession(db, user.id);
+		const cookie = `${SESSION_COOKIE}=${session.token}`;
+		const draftResponse = await api.fetch(new Request("https://pogmail.test/api/send/drafts", {
+			method: "POST", headers: { "content-type": "application/json", cookie },
+			body: JSON.stringify({ mailboxId: mailbox.id, to: [] }),
+		}), env);
+		expect(draftResponse.status).toBe(201);
+		const draft = await draftResponse.json() as { id: string };
+
+		const upload = await api.fetch(new Request(`https://pogmail.test/api/send/drafts/${draft.id}/attachments`, {
+			method: "POST",
+			headers: { cookie, "content-type": "image/png", "x-filename": "chart.png", "x-inline": "true" },
+			body: new Uint8Array([137, 80, 78, 71]),
+		}), env);
+		expect(upload.status).toBe(201);
+		expect(await upload.json()).toMatchObject({ filename: "chart.png", disposition: "inline" });
+	});
 });

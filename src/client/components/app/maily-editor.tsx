@@ -1,4 +1,5 @@
-import { lazy, Suspense, useImperativeHandle, useRef, type Ref } from "react";
+import { lazy, Suspense, useEffectEvent, useImperativeHandle, useRef, type Ref } from "react";
+import { ImageUploadExtension } from "@maily-to/core/extensions";
 import type { RichTextHandle } from "@/client/components/app/rich-text-editor";
 import { cn } from "@/client/lib/utils";
 
@@ -35,6 +36,7 @@ export function MailyEditor({
   handleRef,
   className,
   density = "compose",
+	  onImageUpload,
 }: {
   initialHtml: string;
   /** HTML is sent to capable clients; text is the accessible MIME fallback. */
@@ -44,8 +46,15 @@ export function MailyEditor({
   className?: string;
   /** Settings and inline replies need the same editor, just less vertical chrome. */
   density?: "compose" | "compact";
+	/** Returns a message-safe source, normally a `cid:` reference to an inline attachment. */
+	  onImageUpload?: (file: Blob) => Promise<string>;
 }) {
   const editorRef = useRef<MailyEditorInstance | null>(null);
+	const uploadImage = useEffectEvent(
+		(file: Blob) => onImageUpload?.(file) ?? Promise.reject(new Error("Image uploads are unavailable")),
+	);
+	const supportsImageUploads = Boolean(onImageUpload);
+	const extensions = supportsImageUploads ? [ImageUploadExtension.configure({ onImageUpload: uploadImage })] : undefined;
 
   useImperativeHandle(
     handleRef,
@@ -76,6 +85,7 @@ export function MailyEditor({
       >
         <Editor
           contentHtml={initialHtml || undefined}
+		  extensions={extensions}
           config={{
             hasMenuBar: true,
             // Compose has one stable toolbar. Block controls and a second

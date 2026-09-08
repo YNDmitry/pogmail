@@ -340,6 +340,24 @@ function ComposeForm({
 		}
 	}
 
+	/** Images live in the MIME envelope as CID parts, never at a public bucket URL. */
+	async function attachInlineImage(file: Blob): Promise<string> {
+		if (!file.type.startsWith("image/")) throw new Error("Choose an image file");
+		const image = file instanceof File ? file : new File([file], "image", { type: file.type });
+		setAttaching(true);
+		try {
+			const id = await saveDraft();
+			const attachment = await api.upload<Attachment>(`/api/send/drafts/${id}/attachments`, image, {
+				"x-inline": "true",
+			});
+			if (!attachment.contentId) throw new Error("Image upload did not return a content ID");
+			setAttachments((current) => [...current, attachment]);
+			return `cid:${attachment.contentId}`;
+		} finally {
+			setAttaching(false);
+		}
+	}
+
 	async function detach(attachment: Attachment) {
 		if (!draftId) return;
 		try {
@@ -502,6 +520,7 @@ function ComposeForm({
 				initialHtml={initial.body}
 				onChange={(html) => setBody(html)}
 				ariaLabel="Message"
+				onImageUpload={attachInlineImage}
 				className="flex-1"
 			/>
 

@@ -35,10 +35,17 @@ const composeInput = z.object({
 	scheduledFor: z.number().int().nullable().optional(),
 });
 
+// A draft is an unfinished envelope: body, attachment, or a CID image may be
+// saved before the recipient is known. The actual send endpoint keeps the
+// stricter `composeInput` and will still refuse an empty `To` list.
+const draftInput = composeInput
+	.partial({ to: true, mailboxId: true })
+	.extend({ to: z.array(address).max(100).optional() });
+
 export const sendRoutes = new Hono<AppBindings>()
 	/** Saves or updates a draft without sending it. */
 	.post("/drafts", async (c) => {
-		const input = await parseBody(c, composeInput.partial({ to: true }));
+		const input = await parseBody(c, draftInput);
 		const mailbox = await sendableMailbox(c, input.mailboxId ?? "");
 
 		const row = await c
@@ -69,7 +76,7 @@ export const sendRoutes = new Hono<AppBindings>()
 	})
 
 	.put("/drafts/:id", async (c) => {
-		const input = await parseBody(c, composeInput.partial({ to: true, mailboxId: true }));
+		const input = await parseBody(c, draftInput);
 
 		const draft = await c
 			.get("db")
@@ -182,6 +189,7 @@ export const sendRoutes = new Hono<AppBindings>()
 
 		const filename = decodeURIComponent(c.req.header("x-filename") ?? "").trim();
 		if (!filename) throw new HTTPException(400, { message: "Missing x-filename" });
+		const inline = c.req.header("x-inline") === "true";
 
 		const used = await attachedBytes(c, draft.id);
 		const declared = Number(c.req.header("content-length") ?? "0");
@@ -192,6 +200,9 @@ export const sendRoutes = new Hono<AppBindings>()
 		}
 
 		const contentType = c.req.header("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
+		if (inline && !contentType.startsWith("image/")) {
+			throw new HTTPException(415, { message: "Inline attachments must be images" });
+		}
 		const key = await putUpload(c.env, "attachments", c.req.raw, {
 			accept: "any",
 			maxBytes: MAX_ATTACHMENT_BYTES,
@@ -207,7 +218,8 @@ export const sendRoutes = new Hono<AppBindings>()
 				filename: filename.slice(0, 200),
 				contentType,
 				sizeBytes: object?.size ?? declared,
-				disposition: "attachment",
+				disposition: inline ? "inline" : "attachment",
+				contentId: inline ? crypto.randomUUID() : null,
 				r2Key: key,
 			})
 			.returning()

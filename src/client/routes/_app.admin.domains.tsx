@@ -42,6 +42,11 @@ function Domains() {
   const [inspecting, setInspecting] = useState<string | null>(null);
 
   const domains = useList<Domain>(qk.domains, "/api/domains");
+	const demo = useQuery({
+		queryKey: ["local-demo"],
+		queryFn: () => api.get<{ enabled: boolean }>("/api/demo"),
+		retry: false,
+	});
   const create = useCreate<{ hostname: string }, Domain>(
     qk.domains,
     "/api/domains",
@@ -62,10 +67,29 @@ function Domains() {
             hostname instead.
           </p>
         </div>
-        <Button size="sm" onClick={() => setOpen(true)}>
-          <Plus className="size-3.5" />
-          Add domain
-        </Button>
+		<div className="flex flex-wrap gap-2">
+			{demo.data?.enabled ? (
+				<Button
+					size="sm"
+					variant="secondary"
+					onClick={async () => {
+						try {
+							const result = await api.post<{ seeded: boolean }>("/api/demo/seed", {});
+							await domains.refetch();
+							toast.ok(result.seeded ? "Local demo loaded" : "Local demo is already loaded");
+						} catch (error) {
+							toast.fail("Could not load local demo", error instanceof ApiError ? error.message : undefined);
+						}
+					}}
+				>
+					Load local demo
+				</Button>
+			) : null}
+			<Button size="sm" onClick={() => setOpen(true)}>
+				<Plus className="size-3.5" />
+				Add domain
+			</Button>
+		</div>
       </header>
 
       {domains.data?.length ? (

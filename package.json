@@ -11,6 +11,7 @@
 		"typecheck": "tsc --noEmit -p tsconfig.client.json && tsc --noEmit -p tsconfig.worker.json && tsc --noEmit -p tsconfig.node.json",
 		"lint": "oxlint",
 		"test": "vitest run",
+		"test:e2e": "playwright test",
 		"test:watch": "vitest",
 		"deploy": "bun run build && wrangler deploy && bun run db:migrate:remote",
 		"db:generate": "drizzle-kit generate",

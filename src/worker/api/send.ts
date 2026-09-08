@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { domains, mailboxes, messageAttachments, messages, outboundJobs } from "@/db/schema";
 import { audit } from "../audit";
@@ -121,6 +121,8 @@ export const sendRoutes = new Hono<AppBindings>()
 			.where(eq(messages.id, draft.id))
 			.returning()
 			.get();
+
+		await removeUnusedInlineAttachments(c, row.id, row.bodyHtml);
 
 		return c.json(row);
 	})
@@ -325,6 +327,32 @@ async function attachedBytes(c: Context<AppBindings>, messageId: string): Promis
 		.all();
 
 	return rows.reduce((total, row) => total + row.sizeBytes, 0);
+}
+
+/** Removes CID blobs when their image was removed from the rich-text document. */
+async function removeUnusedInlineAttachments(
+	c: Context<AppBindings>,
+	messageId: string,
+	bodyHtml: string | null,
+) {
+	const inline = await c
+		.get("db")
+		.select({ id: messageAttachments.id, contentId: messageAttachments.contentId, r2Key: messageAttachments.r2Key })
+		.from(messageAttachments)
+		.where(and(eq(messageAttachments.messageId, messageId), eq(messageAttachments.disposition, "inline")))
+		.all();
+
+	const unused = inline.filter((attachment) =>
+		attachment.contentId ? !(bodyHtml ?? "").includes(`cid:${attachment.contentId}`) : true,
+	);
+	if (unused.length === 0) return;
+
+	await c.get("db").delete(messageAttachments).where(inArray(messageAttachments.id, unused.map(({ id }) => id)));
+	await Promise.all(unused.map((attachment) => deleteObject(c.env, attachment.r2Key)));
+
+	if ((await attachedBytes(c, messageId)) === 0) {
+		await c.get("db").update(messages).set({ hasAttachments: false }).where(eq(messages.id, messageId));
+	}
 }
 
 /**

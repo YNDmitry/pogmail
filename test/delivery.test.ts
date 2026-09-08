@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
-import { domains, mailboxes, messages, outboundJobs, users } from "@/db/schema";
+import { domains, mailboxes, messageAttachments, messages, outboundJobs, templateAttachments, users } from "@/db/schema";
 import { api } from "@/worker/api";
 import { hashPassword } from "@/worker/auth/password";
 import { createSession, SESSION_COOKIE } from "@/worker/auth/session";
@@ -61,5 +61,51 @@ describe("outbound delivery retry", () => {
 		}), env);
 		expect(upload.status).toBe(201);
 		expect(await upload.json()).toMatchObject({ filename: "chart.png", disposition: "inline" });
+	});
+
+	it("copies a template image into a draft and cleans an unreferenced CID image", async () => {
+		const db = getDb(env.DB);
+		const user = await db.insert(users).values({
+			email: `template-${crypto.randomUUID()}@example.test`, name: "Template", passwordHash: await hashPassword("test password"),
+		}).returning().get();
+		createdUsers.push(user.id);
+		const domain = await db.insert(domains).values({ hostname: `${crypto.randomUUID()}.test`, zoneId: "mock", userId: user.id, status: "active" }).returning().get();
+		const mailbox = await db.insert(mailboxes).values({ domainId: domain.id, userId: user.id, localPart: "hello" }).returning().get();
+		const session = await createSession(db, user.id);
+		const cookie = `${SESSION_COOKIE}=${session.token}`;
+
+		const created = await api.fetch(new Request("https://pogmail.test/api/templates", {
+			method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify({ name: "Newsletter" }),
+		}), env);
+		const template = await created.json() as { id: string };
+		const uploaded = await api.fetch(new Request(`https://pogmail.test/api/templates/${template.id}/attachments`, {
+			method: "POST", headers: { cookie, "content-type": "image/png", "x-filename": "banner.png" }, body: new Uint8Array([137, 80, 78, 71]),
+		}), env);
+		expect(uploaded.status).toBe(201);
+		const image = await uploaded.json() as { url: string };
+		await api.fetch(new Request(`https://pogmail.test/api/templates/${template.id}`, {
+			method: "PATCH", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ bodyHtml: `<img src="${image.url}">` }),
+		}), env);
+
+		const draftResponse = await api.fetch(new Request("https://pogmail.test/api/send/drafts", {
+			method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify({ mailboxId: mailbox.id, to: [] }),
+		}), env);
+		const draft = await draftResponse.json() as { id: string };
+		const inserted = await api.fetch(new Request(`https://pogmail.test/api/templates/${template.id}/insert`, {
+			method: "POST", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ draftId: draft.id }),
+		}), env);
+		expect(inserted.status).toBe(200);
+		const result = await inserted.json() as { replacements: Array<{ from: string; to: string }> };
+		expect(result.replacements).toEqual([{ from: image.url, to: expect.stringMatching(/^cid:/) }]);
+
+		const source = await db.select().from(templateAttachments).where(eq(templateAttachments.templateId, template.id)).get();
+		const copied = await db.select().from(messageAttachments).where(eq(messageAttachments.messageId, draft.id)).get();
+		expect(copied).toMatchObject({ disposition: "inline" });
+		expect(copied?.r2Key).not.toBe(source?.r2Key);
+
+		await api.fetch(new Request(`https://pogmail.test/api/send/drafts/${draft.id}`, {
+			method: "PUT", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ bodyHtml: "<p>No image</p>" }),
+		}), env);
+		expect(await db.select().from(messageAttachments).where(eq(messageAttachments.messageId, draft.id)).all()).toEqual([]);
 	});
 });

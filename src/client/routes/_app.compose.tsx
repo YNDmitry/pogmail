@@ -22,6 +22,10 @@ import { cn } from "@/client/lib/utils";
 import type { Attachment, MailAddress, MailboxSummary } from "@/shared/contract/mail";
 
 type Template = { id: string; name: string; subject: string; bodyText: string; bodyHtml: string | null };
+type TemplateInsertion = {
+	attachments: Array<Attachment & { from: string; to: string }>;
+	replacements: Array<{ from: string; to: string }>;
+};
 
 export const Route = createFileRoute("/_app/compose")({
 	validateSearch: z.object({ replyTo: z.string().optional(), draftId: z.string().optional() }),
@@ -368,6 +372,24 @@ function ComposeForm({
 		}
 	}
 
+	async function insertTemplate(template: Template) {
+		try {
+			// Template images belong to the template until this moment. Save first so
+			// their MIME parts have a draft row to attach to, then swap private editor
+			// URLs for fresh CIDs before the HTML reaches the outgoing message.
+			const id = await saveDraft();
+			const insertion = await api.post<TemplateInsertion>(`/api/templates/${template.id}/insert`, { draftId: id });
+			let html = template.bodyHtml ?? textToHtml(template.bodyText);
+			for (const replacement of insertion.replacements) html = html.replaceAll(replacement.from, replacement.to);
+			if (!subject.trim() && template.subject) setSubject(template.subject);
+			if (insertion.attachments.length > 0) setAttachments((current) => [...current, ...insertion.attachments]);
+			editorRef.current?.prepend(html);
+			toast.ok(`Template "${template.name}" inserted`);
+		} catch (error) {
+			toast.fail("Could not insert the template", error instanceof ApiError ? error.message : undefined);
+		}
+	}
+
 	async function submit(mode: "send" | "draft") {
 		setState("loading");
 		try {
@@ -614,9 +636,7 @@ function ComposeForm({
 						onChange={(id) => {
 							const template = templates.data?.find((entry) => entry.id === id);
 							if (!template) return;
-							if (!subject.trim() && template.subject) setSubject(template.subject);
-							editorRef.current?.prepend(template.bodyHtml ?? textToHtml(template.bodyText));
-							toast.ok(`Template "${template.name}" inserted`);
+							void insertTemplate(template);
 						}}
 					/>
 				) : null}

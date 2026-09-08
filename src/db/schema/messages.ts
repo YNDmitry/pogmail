@@ -159,6 +159,32 @@ export const emailTemplates = sqliteTable(
 	(t) => [index("email_templates_user_idx").on(t.userId)],
 );
 
+/**
+ * Images owned by a template. They intentionally do not share the draft
+ * attachment table: applying a template copies each image into the draft so a
+ * later edit or deletion of the template can never change mail already sent.
+ */
+export const templateAttachments = sqliteTable(
+	"template_attachments",
+	{
+		id: id(),
+		templateId: text("template_id")
+			.notNull()
+			.references(() => emailTemplates.id, { onDelete: "cascade" }),
+		filename: text("filename").notNull(),
+		contentType: text("content_type").notNull(),
+		sizeBytes: integer("size_bytes").notNull(),
+		/** Kept separate from the draft's Content-ID; a fresh one is minted on insertion. */
+		contentId: text("content_id").notNull(),
+		r2Key: text("r2_key").notNull(),
+		...timestamps(),
+	},
+	(t) => [
+		index("template_attachments_template_idx").on(t.templateId),
+		uniqueIndex("template_attachments_key_unq").on(t.r2Key),
+	],
+);
+
 export const calendarEvents = sqliteTable(
 	"calendar_events",
 	{

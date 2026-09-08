@@ -7,6 +7,7 @@ import { MailyEditor } from "@/client/components/app/maily-editor";
 import { Modal } from "@/client/components/app/modal";
 import { Card, Empty, Field } from "@/client/components/app/primitives";
 import { useToast } from "@/client/components/app/toast-host";
+import { api } from "@/client/lib/api";
 import { useCreate, useList, useRemove, useUpdate } from "@/client/lib/queries/crud";
 import { qk } from "@/client/lib/queries/keys";
 import { textToHtml } from "@/client/lib/mail-html";
@@ -15,6 +16,7 @@ export const Route = createFileRoute("/_app/settings/templates")({ component: Te
 
 type Template = { id: string; name: string; subject: string; bodyText: string; bodyHtml: string | null };
 type Draft = Omit<Template, "id"> & { id?: string };
+type TemplateImage = { id: string; filename: string; contentType: string; sizeBytes: number; url: string };
 
 function emptyDraft(): Draft {
 	return { name: "", subject: "", bodyText: "", bodyHtml: null };
@@ -77,7 +79,11 @@ function Templates() {
 			<Modal open={Boolean(draft)} onClose={() => setDraft(null)} title={draft?.id ? "Edit template" : "New template"}>
 				{draft ? <TemplateForm key={editorKey} draft={draft} onCancel={() => setDraft(null)} onSave={(next) => {
 					if (next.id) update.mutate({ id: next.id, input: next }, { onSuccess: () => { toast.ok("Template saved"); setDraft(null); } });
-					else create.mutate(next, { onSuccess: () => { toast.ok("Template saved"); setDraft(null); } });
+					else create.mutate(next, { onSuccess: (saved) => {
+						setDraft({ ...next, id: saved.id });
+						setEditorKey((key) => key + 1);
+						toast.ok("Template saved — images are now available");
+					} });
 				}} /> : null}
 			</Modal>
 
@@ -90,6 +96,13 @@ function Templates() {
 
 function TemplateForm({ draft, onCancel, onSave }: { draft: Draft; onCancel: () => void; onSave: (draft: Draft) => void }) {
 	const [body, setBody] = useState({ html: draft.bodyHtml ?? textToHtml(draft.bodyText), text: draft.bodyText });
+	const uploadImage = draft.id
+		? async (blob: Blob) => {
+			const image = blob instanceof File ? blob : new File([blob], "image", { type: blob.type });
+			const asset = await api.upload<TemplateImage>(`/api/templates/${draft.id}/attachments`, image);
+			return asset.url;
+		}
+		: undefined;
 	return <form className="space-y-4" onSubmit={(event) => {
 		event.preventDefault();
 		const form = new FormData(event.currentTarget);
@@ -97,8 +110,8 @@ function TemplateForm({ draft, onCancel, onSave }: { draft: Draft; onCancel: () 
 	}}>
 		<Field label="Name"><Input name="name" required maxLength={80} defaultValue={draft.name} /></Field>
 		<Field label="Subject"><Input name="subject" maxLength={300} defaultValue={draft.subject} /></Field>
-		<Field label="Message" hint="Formatting and slash commands are kept when the template is inserted.">
-			<MailyEditor initialHtml={body.html} onChange={(html, text) => setBody({ html, text })} ariaLabel="Template message" density="compact" className="rounded-panel border border-seam px-3" />
+		<Field label="Message" hint={draft.id ? "Formatting, slash commands, and images are kept when the template is inserted." : "Save once to enable private image uploads in this template."}>
+			<MailyEditor initialHtml={body.html} onChange={(html, text) => setBody({ html, text })} ariaLabel="Template message" density="compact" onImageUpload={uploadImage} className="rounded-panel border border-seam px-3" />
 		</Field>
 		<div className="flex justify-end gap-2 pt-2">
 			<Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>

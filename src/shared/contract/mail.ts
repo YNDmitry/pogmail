@@ -54,6 +54,14 @@ export type MessageDetail = MessageSummary & {
   bodyHtml: string | null;
   rawKey: string | null;
   attachments: Attachment[];
+	/** Present only for messages that have an outbound delivery job. */
+	delivery: {
+		status: "queued" | "sending" | "sent" | "failed";
+		attempts: number;
+		lastError: string | null;
+		scheduledFor: string | null;
+		sentAt: string | null;
+	} | null;
 };
 
 export type MessageCounts = {

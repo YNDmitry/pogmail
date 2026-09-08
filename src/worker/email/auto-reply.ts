@@ -3,6 +3,7 @@ import { createMimeMessage } from "mimetext";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { autoReplyDeliveries, domains, mailboxes } from "@/db/schema";
+import { safeEmailHtml } from "./html-safety";
 
 /** Headers that mark mail as automated. Replying to any of them causes loops. */
 const LOOP_HEADERS = ["auto-submitted", "x-auto-response-suppress", "list-id", "list-unsubscribe", "precedence"];
@@ -66,7 +67,8 @@ export async function queueAutoReply(env: Env, request: AutoReplyRequest): Promi
 	mime.setRecipient(request.recipient);
 	mime.setSubject(mailbox.subject || `Re: ${request.subject ?? ""}`.trim());
 	mime.addMessage({ contentType: "text/plain", data: mailbox.bodyText });
-	if (mailbox.bodyHtml) mime.addMessage({ contentType: "text/html", data: mailbox.bodyHtml });
+	const safeHtml = safeEmailHtml(mailbox.bodyHtml);
+	if (safeHtml) mime.addMessage({ contentType: "text/html", data: safeHtml });
 	// Marks our own reply as automated so the other side's guard fires too.
 	mime.setHeader("Auto-Submitted", "auto-replied");
 	mime.setHeader("X-Auto-Response-Suppress", "All");

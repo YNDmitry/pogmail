@@ -1,7 +1,8 @@
 import { Hono, type Context } from "hono";
 import { and, count, desc, eq, inArray, isNotNull, like, lt, or } from "drizzle-orm";
 import { z } from "zod";
-import { MESSAGE_STATUSES, messageAttachments, messages } from "@/db/schema";
+import { MESSAGE_STATUSES, messageAttachments, messages, outboundJobs } from "@/db/schema";
+import type { OutboundSendMessage } from "../email/types";
 import { audit } from "../audit";
 import {
 	getPermission,
@@ -163,8 +164,9 @@ export const messageRoutes = new Hono<AppBindings>()
 	.get("/:id", async (c) => {
 		const message = await readable(c, c.req.param("id"));
 
-		const attachments = await c
-			.get("db")
+		const [attachments, delivery] = await Promise.all([
+			c
+				.get("db")
 			.select({
 				id: messageAttachments.id,
 				filename: messageAttachments.filename,
@@ -175,9 +177,22 @@ export const messageRoutes = new Hono<AppBindings>()
 			})
 			.from(messageAttachments)
 			.where(eq(messageAttachments.messageId, message.id))
-			.all();
+			.all(),
+			c
+				.get("db")
+				.select({
+					status: outboundJobs.status,
+					attempts: outboundJobs.attempts,
+					lastError: outboundJobs.lastError,
+					scheduledFor: outboundJobs.scheduledFor,
+					sentAt: outboundJobs.sentAt,
+				})
+				.from(outboundJobs)
+				.where(eq(outboundJobs.messageId, message.id))
+				.get(),
+		]);
 
-		return c.json({ ...message, attachments });
+		return c.json({ ...message, attachments, delivery: delivery ?? null });
 	})
 
 	/** The full thread this message belongs to, oldest first. */
@@ -234,6 +249,26 @@ export const messageRoutes = new Hono<AppBindings>()
 			.get();
 
 		return c.json(row);
+	})
+
+	.post("/:id/retry", async (c) => {
+		const message = await writable(c, c.req.param("id"));
+		const job = await c
+			.get("db")
+			.select()
+			.from(outboundJobs)
+			.where(and(eq(outboundJobs.messageId, message.id), eq(outboundJobs.status, "failed")))
+			.get();
+		if (!job) notFound("Failed delivery");
+
+		await c
+			.get("db")
+			.update(outboundJobs)
+			.set({ status: "queued", lastError: null, scheduledFor: null })
+			.where(eq(outboundJobs.id, job.id));
+		await c.env.OUTBOUND_QUEUE.send({ kind: "outbound", jobId: job.id } satisfies OutboundSendMessage);
+		audit(c, { action: "message.retry", messageId: message.id, mailboxId: message.mailboxId });
+		return c.json({ ok: true });
 	})
 
 	/** Permanent delete. Moving to trash is a status patch, not this. */

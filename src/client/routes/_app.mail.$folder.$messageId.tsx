@@ -181,6 +181,29 @@ function Reader() {
 					</p>
 				) : null}
 
+				{mail.delivery ? (
+					<div className="flex flex-wrap items-center gap-2 rounded-panel border border-seam bg-recess px-3 py-2 text-xs">
+						<Tag tone={mail.delivery.status === "sent" ? "ok" : mail.delivery.status === "failed" ? "fail" : "wait"}>
+							{mail.delivery.status === "sent" ? "Delivered" : mail.delivery.status === "failed" ? "Delivery failed" : "Sending"}
+						</Tag>
+						{mail.delivery.attempts > 1 ? <span className="text-ink-3">Attempt {mail.delivery.attempts}</span> : null}
+						{mail.delivery.lastError ? <span className="min-w-0 truncate text-fail" title={mail.delivery.lastError}>{mail.delivery.lastError}</span> : null}
+						{mail.delivery.status === "failed" ? (
+							<Button size="sm" variant="secondary" className="ml-auto" onClick={async () => {
+								try {
+									await api.post(`/api/messages/${mail.id}/retry`, {});
+									await message.refetch();
+									toast.ok("Delivery retry queued");
+								} catch (error) {
+									toast.fail("Could not retry delivery", String(error));
+								}
+							}}>
+								Retry delivery
+							</Button>
+						) : null}
+					</div>
+				) : null}
+
 				<div className="flex items-start gap-3 border-b border-seam pb-4">
 					<span
 						aria-hidden

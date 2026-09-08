@@ -1632,6 +1632,24 @@
   order: 2;
 }
 
+/* The editing surface must remain usable on a phone: the controls scroll as one
+   row rather than wrapping into a tall, unstable stack above the cursor. */
+@media (max-width: 640px) {
+  .maily-compose-toolbar {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .maily-editor-compact .maily-compose-canvas {
+    min-height: 9rem !important;
+  }
+
+  .maily-compose-editor:not(.maily-editor-compact) .maily-compose-canvas {
+    min-height: 18rem !important;
+  }
+}
+
 /* Maily's command, image and selection menus all supply their own card. Tippy's
    default charcoal shell would otherwise add a grey frame and second shadow. */
 [data-tippy-root]:has([class*="mly:shadow-md"]) .tippy-box {

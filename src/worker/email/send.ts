@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { mailboxes, messageAttachments, messages, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "./types";
+import { safeEmailHtml } from "./html-safety";
 
 /** The domain a Message-ID is minted under: it must be one the sender owns. */
 function domainOf(address: string): string {
@@ -69,7 +70,8 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			row.signatureText,
 		);
 		if (bodyText) mime.addMessage({ contentType: "text/plain", data: bodyText });
-		if (bodyHtml) mime.addMessage({ contentType: "text/html", data: bodyHtml });
+		const safeHtml = safeEmailHtml(bodyHtml);
+		if (safeHtml) mime.addMessage({ contentType: "text/html", data: safeHtml });
 		if (row.message.inReplyTo) {
 			mime.setHeader("In-Reply-To", row.message.inReplyTo);
 			// `threadId` is the root, `inReplyTo` the parent; a client walks References

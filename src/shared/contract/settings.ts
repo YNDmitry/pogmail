@@ -16,6 +16,11 @@ export const forwardingInput = z.object({
 	forwardingEmail: z.email().nullable(),
 });
 
+export const telegramNotificationsInput = z.object({
+	/** Null turns notifications off; Telegram permits numeric IDs and @channel names. */
+	telegramChatId: z.string().trim().min(1).max(128).nullable(),
+});
+
 export const brandingInput = z.object({
 	appName: z.string().min(1).max(60),
 	accentColor: z

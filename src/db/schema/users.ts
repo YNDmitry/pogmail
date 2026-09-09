@@ -26,6 +26,8 @@ export const users = sqliteTable(
 		passwordHash: text("password_hash").notNull(),
 		avatarKey: text("avatar_key"),
 		mailLayout: text("mail_layout", { enum: MAIL_LAYOUTS }).notNull().default("messages"),
+		/** Telegram chat that receives this user's new-mail notifications. */
+		telegramChatId: text("telegram_chat_id"),
 		role: text("role", { enum: USER_ROLES }).notNull().default("user"),
 		disabled: integer("disabled", { mode: "boolean" }).notNull().default(false),
 		/** Grants mailbox and domain management without full admin rights. */

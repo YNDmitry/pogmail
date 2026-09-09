@@ -149,6 +149,47 @@ function Profile() {
 			</section>
 
 			<section className="space-y-4">
+				<h2 className="display text-base">Telegram notifications</h2>
+				<p className="max-w-prose text-sm text-ink-2">
+					Receive a short alert when a new message reaches a mailbox you can access. Start a chat with
+					the instance bot first, then enter your Telegram chat ID or a channel username.
+				</p>
+
+				<Card className="p-5">
+					<form
+						className="flex flex-wrap items-end gap-3"
+						onSubmit={async (event) => {
+							event.preventDefault();
+							const form = new FormData(event.currentTarget);
+							const value = String(form.get("telegramChatId")).trim();
+							try {
+								await api.put("/api/settings/telegram", { telegramChatId: value || null });
+								await client.invalidateQueries({ queryKey: qk.session });
+								toast.ok(value ? "Telegram notifications on" : "Telegram notifications off");
+							} catch (error) {
+								toast.fail(
+									"Could not update Telegram notifications",
+									error instanceof ApiError ? error.message : undefined,
+								);
+							}
+						}}
+					>
+						<Field label="Chat ID" className="flex-1">
+							<Input
+								name="telegramChatId"
+								defaultValue={session.data?.telegramChatId ?? ""}
+								placeholder="-1001234567890 or @my_channel"
+								maxLength={128}
+							/>
+						</Field>
+						<Button type="submit" variant="secondary">
+							Update
+						</Button>
+					</form>
+				</Card>
+			</section>
+
+			<section className="space-y-4">
 				<h2 className="display text-base">Forwarding</h2>
 				<p className="max-w-prose text-sm text-ink-2">
 					Send a copy of everything that arrives to another address. The original still lands in your

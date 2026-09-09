@@ -16,6 +16,7 @@ import type { InboundQueueMessage } from "./types";
 import { dispatchWebhooks } from "./webhooks";
 import { queueAutoReply } from "./auto-reply";
 import { notifyNewMessage } from "../realtime/notify";
+import { notifyTelegramNewMail } from "../telegram/notifications";
 
 /**
  * Queue consumer step. The `email` handler already decided *where* the mail goes and
@@ -125,7 +126,17 @@ export async function processInboundMessage(env: Env, job: InboundQueueMessage):
 		});
 	}
 
-	await notifyNewMessage(env, job.mailboxId, inserted.id);
+	await Promise.all([
+		notifyNewMessage(env, job.mailboxId, inserted.id).catch((error: unknown) =>
+			console.error("Realtime new-mail notification failed", error instanceof Error ? error.message : String(error)),
+		),
+		notifyTelegramNewMail(env, db, job.mailboxId, {
+			from: fromAddress,
+			subject: parsed.subject ?? null,
+		}).catch((error: unknown) =>
+			console.error("Telegram new-mail notification failed", error instanceof Error ? error.message : String(error)),
+		),
+	]);
 }
 
 /** `mailbox`-scope rules run after delivery and only choose a folder or divert. */

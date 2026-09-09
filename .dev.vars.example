@@ -1,5 +1,8 @@
 # Cloudflare API token used at runtime for domain and mailbox provisioning.
 CF_TOKEN=
 
+# Optional Telegram bot token for new-mail notifications.
+TELEGRAM_BOT_TOKEN=
+
 # Local-only: lets you add reserved names such as acme.test without Cloudflare.
 DEV_MOCK_CLOUDFLARE=false

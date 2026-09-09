@@ -2,7 +2,12 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { eq } from "drizzle-orm";
 import { users } from "@/db/schema";
-import { changePasswordInput, forwardingInput, updateProfileInput } from "@/shared/contract/settings";
+import {
+	changePasswordInput,
+	forwardingInput,
+	telegramNotificationsInput,
+	updateProfileInput,
+} from "@/shared/contract/settings";
 import { audit } from "../audit";
 import { hashPassword, verifyPassword } from "../auth/password";
 import { destroyAllSessions } from "../auth/session";
@@ -67,6 +72,19 @@ export const settingsRoutes = new Hono<AppBindings>()
 
 		audit(c, { action: "profile.forwarding", metadata: { enabled: input.forwardingEmail !== null } });
 		return c.json({ forwardingEmail: input.forwardingEmail });
+	})
+
+	.put("/telegram", async (c) => {
+		const input = await parseBody(c, telegramNotificationsInput);
+
+		await c
+			.get("db")
+			.update(users)
+			.set({ telegramChatId: input.telegramChatId })
+			.where(eq(users.id, c.get("user").id));
+
+		audit(c, { action: "profile.telegram", metadata: { enabled: input.telegramChatId !== null } });
+		return c.json({ telegramChatId: input.telegramChatId });
 	})
 
 	.put("/avatar", async (c) => {

@@ -11,6 +11,7 @@ const session = (row: { id: string; email: string; name: string; role: "admin" |
 	...row,
 	avatarKey: null,
 	mailLayout: "messages",
+	telegramChatId: null,
 	canManageMailboxes: false,
 });
 

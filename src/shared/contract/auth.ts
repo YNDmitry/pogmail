@@ -12,6 +12,8 @@ export type SessionUser = {
 	avatarKey: string | null;
 	/** How this operator reads a folder; see `MAIL_LAYOUTS`. */
 	mailLayout: "conversations" | "messages";
+	/** Null disables Telegram notifications for this user. */
+	telegramChatId: string | null;
 	canManageMailboxes: boolean;
 };
 

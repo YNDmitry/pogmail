@@ -1,10 +1,19 @@
 import type { CloudflareClient } from "./client";
 
-export type Zone = { id: string; name: string; status: string };
+export type Zone = {
+	id: string;
+	name: string;
+	status: string;
+	account?: { id: string; name: string };
+};
 export type DnsRecord = { id: string; type: string; name: string; content: string; proxied?: boolean };
 
 export function listZones(cf: CloudflareClient): Promise<Zone[]> {
 	return cf.get<Zone[]>("/zones?per_page=200");
+}
+
+export function getZone(cf: CloudflareClient, zoneId: string): Promise<Zone> {
+	return cf.get<Zone>(`/zones/${zoneId}`);
 }
 
 export async function findZoneByHostname(cf: CloudflareClient, hostname: string): Promise<Zone | null> {

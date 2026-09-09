@@ -72,7 +72,8 @@ press **Verify** after adding the Email Sending permission below.
 the deployment. Create a [custom API token](https://dash.cloudflare.com/profile/api-tokens)
 with `Zone / Zone / Read`, `Zone / DNS / Edit`, `Zone / Zone Settings / Edit`,
 `Zone / Email Routing Rules / Edit`, `Zone / Email Sending / Edit` and `Zone /
-Analytics / Read`. Limit its
+Analytics / Read`. To use Administration → Suppressions, also add `Account /
+Email Sending / Edit` for the account that owns those zones. Limit its
 Zone Resources to the domains Pogmail will manage. Paste the token value without
 the `Bearer` prefix; Pogmail discovers the account and zones through it.
 

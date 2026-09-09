@@ -32,6 +32,7 @@ export const qk = {
 	backups: ["backups"] as const,
 	adminOverview: ["admin", "overview"] as const,
 	adminDeliverability: ["admin", "deliverability"] as const,
+	adminSuppressions: (filters: Record<string, string | undefined>) => ["admin", "suppressions", filters] as const,
 	adminVersion: ["admin", "version"] as const,
 	adminUpdateConfig: ["admin", "update", "config"] as const,
 	adminMigrations: ["admin", "migrations"] as const,

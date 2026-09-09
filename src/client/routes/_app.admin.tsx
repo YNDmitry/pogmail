@@ -6,6 +6,7 @@ import {
 	Gauge,
 	GaugeCircle,
 	Globe,
+	ShieldOff,
 	Palette,
 	Route as RouteIcon,
 	Users,
@@ -27,6 +28,7 @@ export const Route = createFileRoute("/_app/admin")({
 const LINKS = [
 	{ to: "/admin/overview", label: "Overview", icon: Gauge },
 	{ to: "/admin/deliverability", label: "Delivery health", icon: GaugeCircle },
+	{ to: "/admin/suppressions", label: "Suppressions", icon: ShieldOff },
 	{ to: "/admin/domains", label: "Domains", icon: Globe },
 	{ to: "/admin/mailboxes", label: "Mailboxes", icon: AtSign },
 	{ to: "/admin/accounts", label: "Accounts", icon: Users },

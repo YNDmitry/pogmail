@@ -23,7 +23,7 @@
 	"cloudflare": {
 		"bindings": {
 			"CF_TOKEN": {
-				"description": "Open [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens), choose **Create Token → Create Custom Token**, then add: **Zone / Zone / Read**, **Zone / DNS / Edit**, **Zone / Zone Settings / Edit**, **Zone / Email Routing Rules / Edit**, **Zone / Email Sending / Edit**, and **Zone / Analytics / Read**. Limit Zone Resources to the domains Pogmail will manage. Paste only the token value here, without `Bearer`."
+				"description": "Open [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens), choose **Create Token → Create Custom Token**, then add: **Zone / Zone / Read**, **Zone / DNS / Edit**, **Zone / Zone Settings / Edit**, **Zone / Email Routing Rules / Edit**, **Zone / Email Sending / Edit**, and **Zone / Analytics / Read**. Administration → Suppressions additionally needs **Account / Email Sending / Edit**. Limit Zone Resources to the domains Pogmail will manage. Paste only the token value here, without `Bearer`."
 			}
 		}
 	},

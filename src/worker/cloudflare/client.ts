@@ -5,6 +5,7 @@ type GraphQLResult<T> = { data?: T; errors?: { message?: string }[] };
 export type CloudflareResult<T> = {
 	success: boolean;
 	result: T;
+	result_info?: unknown;
 	errors: { code: number; message: string }[];
 	messages: { code: number; message: string }[];
 };
@@ -35,7 +36,7 @@ export class CloudflareClient {
 		return new CloudflareClient(env.CF_TOKEN);
 	}
 
-	async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+	private async requestResult<T>(path: string, init: RequestInit = {}): Promise<CloudflareResult<T>> {
 		const response = await fetch(`${API_BASE}${path}`, {
 			...init,
 			headers: {
@@ -55,11 +56,27 @@ export class CloudflareClient {
 			throw new CloudflareError(message, response.status, first?.code);
 		}
 
-		return body.result;
+		return body;
+	}
+
+	async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+		return (await this.requestResult<T>(path, init)).result;
+	}
+
+	/** REST list endpoints expose their cursor outside `result`; retain it for callers that page. */
+	async requestWithInfo<T, TInfo = unknown>(
+		path: string,
+		init: RequestInit = {},
+	): Promise<{ result: T; resultInfo: TInfo | undefined }> {
+		const body = await this.requestResult<T>(path, init);
+		return { result: body.result, resultInfo: body.result_info as TInfo | undefined };
 	}
 
 	get<T>(path: string) {
 		return this.request<T>(path);
+	}
+	getWithInfo<T, TInfo = unknown>(path: string) {
+		return this.requestWithInfo<T, TInfo>(path);
 	}
 	post<T>(path: string, body: unknown) {
 		return this.request<T>(path, { method: "POST", body: JSON.stringify(body) });

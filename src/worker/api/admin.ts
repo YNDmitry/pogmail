@@ -9,10 +9,18 @@ import { BUILD_COMMIT, BUILD_REPOSITORY, UPSTREAM_REPOSITORY } from "../build";
 import { decryptSecret, encryptSecret } from "../auth/secrets";
 import { CloudflareClient } from "../cloudflare/client";
 import { getSendingMetrics } from "../cloudflare/email-analytics";
+import {
+	deleteSuppression,
+	getSuppression,
+	listSuppressions,
+	SUPPRESSION_REASONS,
+} from "../cloudflare/suppressions";
+import { getZone } from "../cloudflare/zones";
 import { applyPendingMigrations, pendingMigrations } from "../db/migrate";
+import { isMockZone } from "../domains/mock";
 import { requireAdmin } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
-import { parseBody } from "./_util";
+import { parseBody, parseQuery } from "./_util";
 // The workflow ships inside the Worker: an installation that never received
 // `.github/workflows` has to be handed the file, and it must be the one this
 // build expects to dispatch.
@@ -45,6 +53,34 @@ const updateConfigInput = z.object({
 	/** Omitted leaves the stored token alone; `null` forgets it. */
 	token: z.string().min(1).nullable().optional(),
 });
+
+const suppressionQuery = z.object({
+	accountId: z.string().min(1).optional(),
+	cursor: z.string().min(1).max(2048).optional(),
+	reason: z.enum(SUPPRESSION_REASONS).optional(),
+	search: z.string().trim().min(1).max(320).optional(),
+});
+
+const suppressionDeleteQuery = z.object({ accountId: z.string().min(1) });
+const suppressionId = z.string().uuid();
+
+type CloudflareAccount = { id: string; name: string };
+
+/**
+ * A suppression is account-wide, while Pogmail stores zones. Resolve the permitted
+ * accounts from configured zones instead of allowing an arbitrary account id from
+ * the browser to reach the Cloudflare token.
+ */
+async function configuredEmailAccounts(c: Parameters<typeof audit>[0], cf: CloudflareClient): Promise<CloudflareAccount[]> {
+	const rows = await c.get("db").select({ zoneId: domains.zoneId }).from(domains).all();
+	const zoneIds = [...new Set(rows.map((row) => row.zoneId).filter((zoneId) => !isMockZone(zoneId)))];
+	const zones = await Promise.all(zoneIds.map((zoneId) => getZone(cf, zoneId)));
+	const accounts = new Map<string, CloudflareAccount>();
+	for (const zone of zones) {
+		if (zone.account) accounts.set(zone.account.id, zone.account);
+	}
+	return [...accounts.values()];
+}
 
 
 /** One GitHub call, with the operator's token and the headers GitHub insists on. */
@@ -121,6 +157,59 @@ async function explain404(input: UpdateInput): Promise<string> {
 
 export const adminRoutes = new Hono<AppBindings>()
 	.use("*", requireAdmin)
+
+	/** Account-wide Cloudflare suppressions, limited to accounts this installation manages. */
+	.get("/suppressions", async (c) => {
+		const query = await parseQuery(c, suppressionQuery);
+		if (!c.env.CF_TOKEN) {
+			return c.json({
+				accounts: [],
+				items: [],
+				nextCursor: null,
+				error: "Set CF_TOKEN with Account / Email Sending / Edit to manage suppression records.",
+			});
+		}
+
+		const cf = CloudflareClient.fromEnv(c.env);
+		const accounts = await configuredEmailAccounts(c, cf);
+		if (accounts.length === 0) {
+			return c.json({ accounts, items: [], nextCursor: null, error: "Add a Cloudflare domain before viewing its account suppression list." });
+		}
+
+		const accountId = query.accountId ?? accounts[0]!.id;
+		if (!accounts.some((account) => account.id === accountId)) {
+			throw new HTTPException(404, { message: "Cloudflare account not found" });
+		}
+
+		const page = await listSuppressions(cf, accountId, query);
+		return c.json({ accounts, accountId, ...page, error: null });
+	})
+
+	.delete("/suppressions/:id", async (c) => {
+		const query = await parseQuery(c, suppressionDeleteQuery);
+		const parsedId = suppressionId.safeParse(c.req.param("id"));
+		if (!parsedId.success) throw new HTTPException(400, { message: "Invalid suppression id" });
+
+		const cf = CloudflareClient.fromEnv(c.env);
+		const accounts = await configuredEmailAccounts(c, cf);
+		if (!accounts.some((account) => account.id === query.accountId)) {
+			throw new HTTPException(404, { message: "Cloudflare account not found" });
+		}
+
+		// The row can change after the list was rendered. Read it again so a forged or
+		// stale browser request can never delete a Cloudflare-managed read-only record.
+		const current = await getSuppression(cf, query.accountId, parsedId.data);
+		if (current.read_only) {
+			throw new HTTPException(409, { message: "Cloudflare marks this suppression as read-only and it cannot be removed here." });
+		}
+
+		await deleteSuppression(cf, query.accountId, parsedId.data);
+		audit(c, {
+			action: "admin.suppression_removed",
+			metadata: { accountId: query.accountId, suppressionId: parsedId.data, reason: current.reason },
+		});
+		return c.json({ ok: true });
+	})
 
 	/** Cloudflare's aggregate delivery telemetry for the last 30 calendar days. */
 	.get("/deliverability", async (c) => {

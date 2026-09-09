@@ -62,7 +62,7 @@ function Domains() {
           <h2 className="display text-base">Domains</h2>
           <p className="mt-1 max-w-prose text-sm text-ink-2">
             A domain must already be on your Cloudflare account. Pogmail turns
-            on Email Routing and points it at this Worker. When local mock
+            on Email Routing, onboards Email Sending and points mail at this Worker. When local mock
             provisioning is enabled, use a reserved <Machine>*.test</Machine>{" "}
             hostname instead.
           </p>
@@ -108,6 +108,8 @@ function Domains() {
                   ) : null}
                   {domain.sendingEnabled ? (
                     <Tag tone="accent">Sending</Tag>
+                  ) : domain.status === "active" ? (
+                    <Tag tone="wait">Sending needs setup</Tag>
                   ) : null}
 
                   <Button
@@ -201,7 +203,7 @@ function Domains() {
                 onSuccess: () => {
                   toast.ok(
                     "Domain added",
-                    "DNS and Email Routing are being set up.",
+                    "Email Routing and Email Sending are being set up.",
                   );
                   setOpen(false);
                 },

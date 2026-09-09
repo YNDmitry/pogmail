@@ -23,6 +23,7 @@ export const BACKUP_TABLES = [
 	"message_attachments",
 	"contacts",
 	"outbound_jobs",
+	"outbound_deliveries",
 	"email_templates",
 	"template_attachments",
 	"calendar_events",

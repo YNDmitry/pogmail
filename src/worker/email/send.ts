@@ -1,8 +1,8 @@
 import { createMimeMessage, Mailbox } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
-import { eq } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { mailboxes, messageAttachments, messages, outboundJobs } from "@/db/schema";
+import { mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "./types";
 import { safeEmailHtml } from "./html-safety";
 
@@ -12,8 +12,8 @@ function domainOf(address: string): string {
 }
 
 /**
- * Sends a `draft`/`sent` row through the EMAIL binding. Cloudflare only accepts
- * recipients that are verified destination addresses on the account.
+ * Sends a `draft`/`sent` row through Cloudflare Email Sending. The sender domain
+ * must be onboarded, while recipients are tracked independently for safe retries.
  */
 export async function processOutboundJob(env: Env, job: OutboundSendMessage): Promise<void> {
 	const db = getDb(env.DB);
@@ -104,8 +104,37 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			}
 		}
 
-		for (const recipient of row.message.toAddresses) {
-			await env.EMAIL.send(new EmailMessage(row.message.fromAddress, recipient.address, mime.asRaw()));
+		const recipients = deliveryRecipients(row.message);
+		await db
+			.insert(outboundDeliveries)
+			.values(recipients.map((recipient) => ({ outboundJobId: row.job.id, recipient })))
+			.onConflictDoNothing();
+
+		const pending = await db
+			.select()
+			.from(outboundDeliveries)
+			.where(and(eq(outboundDeliveries.outboundJobId, row.job.id), ne(outboundDeliveries.status, "sent")))
+			.all();
+
+		for (const delivery of pending) {
+			await db
+				.update(outboundDeliveries)
+				.set({ attempts: sql`${outboundDeliveries.attempts} + 1`, lastError: null })
+				.where(eq(outboundDeliveries.id, delivery.id));
+
+			try {
+				await env.EMAIL.send(new EmailMessage(row.message.fromAddress, delivery.recipient, mime.asRaw()));
+				await db
+					.update(outboundDeliveries)
+					.set({ status: "sent", sentAt: new Date(), lastError: null })
+					.where(eq(outboundDeliveries.id, delivery.id));
+			} catch (error) {
+				await db
+					.update(outboundDeliveries)
+					.set({ status: "failed", lastError: String(error).slice(0, 500) })
+					.where(eq(outboundDeliveries.id, delivery.id));
+				throw error;
+			}
 		}
 
 		await db
@@ -123,6 +152,21 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			.where(eq(outboundJobs.id, job.jobId));
 		throw error;
 	}
+}
+
+/** Delivers To, CC and BCC once each; BCC stays out of the MIME headers. */
+export function deliveryRecipients(
+	message: Pick<typeof messages.$inferSelect, "toAddresses" | "ccAddresses" | "bccAddresses">,
+): string[] {
+	const seen = new Set<string>();
+	const recipients: string[] = [];
+	for (const address of [...message.toAddresses, ...(message.ccAddresses ?? []), ...(message.bccAddresses ?? [])]) {
+		const normalized = address.address.toLowerCase();
+		if (seen.has(normalized)) continue;
+		seen.add(normalized);
+		recipients.push(address.address);
+	}
+	return recipients;
 }
 
 function appendSignatureText(body: string | null, signature: string | null): string | null {

@@ -20,11 +20,23 @@ const MAX_TOTAL_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 
 const address = z.object({ address: z.email(), name: z.string().max(120).optional() });
 
-const composeInput = z.object({
+function validateRecipientLimit(
+	input: { to?: { address: string }[]; cc?: { address: string }[]; bcc?: { address: string }[] },
+	ctx: z.RefinementCtx,
+): void {
+	const recipients = new Set(
+		[...(input.to ?? []), ...(input.cc ?? []), ...(input.bcc ?? [])].map((entry) => entry.address.toLowerCase()),
+	);
+	if (recipients.size > 50) {
+		ctx.addIssue({ code: "custom", message: "A message may have at most 50 unique recipients" });
+	}
+}
+
+const composeShape = z.object({
 	mailboxId: z.string().min(1),
-	to: z.array(address).min(1).max(100),
-	cc: z.array(address).max(100).default([]),
-	bcc: z.array(address).max(100).default([]),
+	to: z.array(address).min(1).max(50),
+	cc: z.array(address).max(50).default([]),
+	bcc: z.array(address).max(50).default([]),
 	subject: z.string().max(300).default(""),
 	bodyText: z.string().max(500_000).default(""),
 	bodyHtml: z.string().max(1_000_000).nullable().optional(),
@@ -35,12 +47,15 @@ const composeInput = z.object({
 	scheduledFor: z.number().int().nullable().optional(),
 });
 
+const composeInput = composeShape.superRefine(validateRecipientLimit);
+
 // A draft is an unfinished envelope: body, attachment, or a CID image may be
 // saved before the recipient is known. The actual send endpoint keeps the
 // stricter `composeInput` and will still refuse an empty `To` list.
-const draftInput = composeInput
+const draftInput = composeShape
 	.partial({ to: true, mailboxId: true })
-	.extend({ to: z.array(address).max(100).optional() });
+	.extend({ to: z.array(address).max(50).optional() })
+	.superRefine(validateRecipientLimit);
 
 export const sendRoutes = new Hono<AppBindings>()
 	/** Saves or updates a draft without sending it. */
@@ -130,7 +145,7 @@ export const sendRoutes = new Hono<AppBindings>()
 	/** Composes and queues a message. Sending itself happens on the outbound queue. */
 	.post("/", async (c) => {
 		const input = await parseBody(c, composeInput);
-		const mailbox = await sendableMailbox(c, input.mailboxId);
+		const mailbox = await sendableMailbox(c, input.mailboxId, { requireSending: true });
 
 		const message = await c
 			.get("db")
@@ -375,12 +390,15 @@ async function removeUnusedInlineAttachments(
 
 /**
  * Resolves the mailbox to send from and checks the caller may put its address in the
- * From header — `read_only` sharing explicitly must not allow that. Exported
+ * From header — `read_only` sharing explicitly must not allow that. A caller that
+ * is about to queue mail can also require the domain's Email Sending onboarding;
+ * drafts deliberately do not, so work is never blocked by domain setup. Exported
  * because a calendar invitation is sent from a mailbox on exactly the same terms.
  */
 export async function sendableMailbox(
 	c: Context<AppBindings>,
 	mailboxId: string,
+	options: { requireSending?: boolean } = {},
 ): Promise<{ id: string; address: string; displayName: string | null }> {
 	const row = await c
 		.get("db")
@@ -402,6 +420,11 @@ export async function sendableMailbox(
 	const permission = await getPermission(c.get("db"), c.get("user"), row.id);
 	if (!canSendFrom(permission)) forbidden("You cannot send from this mailbox");
 	if (row.disabled) throw new HTTPException(409, { message: "That mailbox is disabled" });
+	if (options.requireSending && !row.sendingEnabled) {
+		throw new HTTPException(409, {
+			message: "Email Sending is not ready for this domain. An administrator can finish setup from Domains → Verify.",
+		});
+	}
 
 	return {
 		id: row.id,

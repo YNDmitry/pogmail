@@ -143,6 +143,30 @@ export const outboundJobs = sqliteTable(
 	(t) => [index("outbound_jobs_status_idx").on(t.status, t.createdAt)],
 );
 
+/** One row per envelope recipient: queue retries skip recipients already accepted. */
+export const OUTBOUND_DELIVERY_STATUSES = ["pending", "sent", "failed"] as const;
+export type OutboundDeliveryStatus = (typeof OUTBOUND_DELIVERY_STATUSES)[number];
+
+export const outboundDeliveries = sqliteTable(
+	"outbound_deliveries",
+	{
+		id: id(),
+		outboundJobId: text("outbound_job_id")
+			.notNull()
+			.references(() => outboundJobs.id, { onDelete: "cascade" }),
+		recipient: text("recipient").notNull(),
+		status: text("status", { enum: OUTBOUND_DELIVERY_STATUSES }).notNull().default("pending"),
+		attempts: integer("attempts").notNull().default(0),
+		lastError: text("last_error"),
+		sentAt: integer("sent_at", { mode: "timestamp_ms" }),
+		...timestamps(),
+	},
+	(t) => [
+		uniqueIndex("outbound_deliveries_recipient_unq").on(t.outboundJobId, t.recipient),
+		index("outbound_deliveries_status_idx").on(t.outboundJobId, t.status),
+	],
+);
+
 export const emailTemplates = sqliteTable(
 	"email_templates",
 	{

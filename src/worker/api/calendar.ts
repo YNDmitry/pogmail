@@ -219,8 +219,8 @@ export const calendarInteropRoutes = new Hono<AppBindings>()
 	 * It goes out as an ordinary outbound message — a row in `messages` with the
 	 * `.ics` as its attachment, queued on `OUTBOUND_QUEUE` — so it inherits the
 	 * retries, the audit trail and the Sent folder rather than growing a second
-	 * delivery path. Cloudflare only sends to verified destination addresses, so
-	 * an invitation to an unverified one fails on the queue, not here.
+	 * delivery path. The sender domain must be onboarded for Cloudflare Email
+	 * Sending, so an invitation can still fail on the queue, not here.
 	 */
 	.post("/events/:id/invite", async (c) => {
 		const event = await c
@@ -242,7 +242,7 @@ export const calendarInteropRoutes = new Hono<AppBindings>()
 			throw new HTTPException(422, { message: "Add at least one attendee" });
 		}
 
-		const mailbox = await sendableMailbox(c, event.mailboxId);
+		const mailbox = await sendableMailbox(c, event.mailboxId, { requireSending: true });
 		const host = new URL(c.req.url).host;
 		const ics = toIcs(
 			[

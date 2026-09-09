@@ -188,6 +188,11 @@ function Reader() {
 						</Tag>
 						{mail.delivery.attempts > 1 ? <span className="text-ink-3">Attempt {mail.delivery.attempts}</span> : null}
 						{mail.delivery.lastError ? <span className="min-w-0 truncate text-fail" title={mail.delivery.lastError}>{mail.delivery.lastError}</span> : null}
+						{mail.delivery.recipients.length > 0 ? (
+							<span className="text-ink-3" title={mail.delivery.recipients.map((entry) => `${entry.recipient}: ${entry.status}`).join("\n")}>
+								{mail.delivery.recipients.filter((entry) => entry.status === "sent").length}/{mail.delivery.recipients.length} recipients accepted
+							</span>
+						) : null}
 						{mail.delivery.status === "failed" ? (
 							<Button size="sm" variant="secondary" className="ml-auto" onClick={async () => {
 								try {

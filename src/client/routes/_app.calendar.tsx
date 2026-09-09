@@ -438,8 +438,8 @@ function Calendar() {
 			const result = await api.post<{ invited: number }>(`/api/calendar/events/${id}/invite`);
 			toast.ok(
 				`Invited ${result.invited} attendee${result.invited === 1 ? "" : "s"}`,
-				// Cloudflare only delivers to verified destination addresses, so an
-				// invitation can still bounce after this point.
+				// Delivery happens asynchronously, so an invitation can still fail
+				// after this point.
 				"The invitation is queued; check Sent for how it went.",
 			);
 		} catch (error) {

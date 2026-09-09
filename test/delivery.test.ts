@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
-import { domains, mailboxes, messageAttachments, messages, outboundJobs, templateAttachments, users } from "@/db/schema";
+import { domains, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs, templateAttachments, users } from "@/db/schema";
 import { api } from "@/worker/api";
 import { hashPassword } from "@/worker/auth/password";
 import { createSession, SESSION_COOKIE } from "@/worker/auth/session";
@@ -28,6 +28,10 @@ describe("outbound delivery retry", () => {
 			fromAddress: "hello@example.test", toAddresses: [{ address: "recipient@example.test" }], receivedAt: new Date(),
 		}).returning().get();
 		const job = await db.insert(outboundJobs).values({ messageId: message.id, status: "failed", attempts: 2, lastError: "Destination rejected" }).returning().get();
+		await db.insert(outboundDeliveries).values([
+			{ outboundJobId: job.id, recipient: "accepted@example.test", status: "sent", sentAt: new Date() },
+			{ outboundJobId: job.id, recipient: "retry@example.test", status: "failed", lastError: "Destination rejected" },
+		]);
 		const session = await createSession(db, user.id);
 
 		const response = await api.fetch(new Request(`https://pogmail.test/api/messages/${message.id}/retry`, {
@@ -35,6 +39,10 @@ describe("outbound delivery retry", () => {
 		}), env);
 		expect(response.status).toBe(200);
 		expect(await db.select().from(outboundJobs).where(eq(outboundJobs.id, job.id)).get()).toMatchObject({ status: "queued", lastError: null });
+		expect(await db.select().from(outboundDeliveries).where(eq(outboundDeliveries.outboundJobId, job.id)).all()).toEqual(expect.arrayContaining([
+			expect.objectContaining({ recipient: "accepted@example.test", status: "sent" }),
+			expect.objectContaining({ recipient: "retry@example.test", status: "failed" }),
+		]));
 	});
 
 	it("stores an editor image as an inline CID attachment", async () => {

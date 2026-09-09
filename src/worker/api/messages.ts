@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { and, count, desc, eq, inArray, isNotNull, like, lt, or } from "drizzle-orm";
 import { z } from "zod";
-import { MESSAGE_STATUSES, messageAttachments, messages, outboundJobs } from "@/db/schema";
+import { MESSAGE_STATUSES, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "../email/types";
 import { audit } from "../audit";
 import {
@@ -181,6 +181,7 @@ export const messageRoutes = new Hono<AppBindings>()
 			c
 				.get("db")
 				.select({
+					id: outboundJobs.id,
 					status: outboundJobs.status,
 					attempts: outboundJobs.attempts,
 					lastError: outboundJobs.lastError,
@@ -192,7 +193,27 @@ export const messageRoutes = new Hono<AppBindings>()
 				.get(),
 		]);
 
-		return c.json({ ...message, attachments, delivery: delivery ?? null });
+		const recipients = delivery
+			? await c
+					.get("db")
+					.select({
+						recipient: outboundDeliveries.recipient,
+						status: outboundDeliveries.status,
+						attempts: outboundDeliveries.attempts,
+						lastError: outboundDeliveries.lastError,
+						sentAt: outboundDeliveries.sentAt,
+					})
+					.from(outboundDeliveries)
+					.where(eq(outboundDeliveries.outboundJobId, delivery.id))
+					.orderBy(outboundDeliveries.createdAt)
+					.all()
+			: [];
+
+		return c.json({
+			...message,
+			attachments,
+			delivery: delivery ? { ...delivery, recipients } : null,
+		});
 	})
 
 	/** The full thread this message belongs to, oldest first. */

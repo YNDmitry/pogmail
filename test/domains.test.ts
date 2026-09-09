@@ -54,6 +54,7 @@ describe("domain provisioning", () => {
 			status: "active",
 			routingEnabled: true,
 			routingStatus: "mock",
+			sendingEnabled: true,
 		});
 	});
 });

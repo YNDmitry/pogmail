@@ -61,6 +61,13 @@ export type MessageDetail = MessageSummary & {
 		lastError: string | null;
 		scheduledFor: string | null;
 		sentAt: string | null;
+		recipients: Array<{
+			recipient: string;
+			status: "pending" | "sent" | "failed";
+			attempts: number;
+			lastError: string | null;
+			sentAt: string | null;
+		}>;
 	} | null;
 };
 

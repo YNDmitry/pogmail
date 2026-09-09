@@ -62,12 +62,18 @@ Cloudflare creates and binds D1, R2, Queues, the Durable Object and the backup
 Workflow. Enter `CF_TOKEN`, deploy, then open `/setup` on the new Worker URL to
 create the first admin.
 
+When a domain is added (or re-checked), Pogmail also onboards it for **Email
+Sending** and Cloudflare creates the required bounce, SPF, DKIM and DMARC
+records. This is separate from Email Routing, which receives mail for the
+domain. For domains added before this version, open Administration → Domains and
+press **Verify** after adding the Email Sending permission below.
+
 `CF_TOKEN` is a runtime token, separate from the credential Cloudflare uses for
 the deployment. Create a [custom API token](https://dash.cloudflare.com/profile/api-tokens)
-with `Zone / Zone / Read`, `Zone / DNS / Edit`, `Zone / Zone Settings / Edit`
-and `Zone / Email Routing Rules / Edit`. Limit its Zone Resources to the domains
-Pogmail will manage. Paste the token value without the `Bearer` prefix; Pogmail
-discovers the account and zones through it.
+with `Zone / Zone / Read`, `Zone / DNS / Edit`, `Zone / Zone Settings / Edit`,
+`Zone / Email Routing Rules / Edit` and `Zone / Email Sending / Edit`. Limit its
+Zone Resources to the domains Pogmail will manage. Paste the token value without
+the `Bearer` prefix; Pogmail discovers the account and zones through it.
 
 ## Updating
 

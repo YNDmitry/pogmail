@@ -20,6 +20,7 @@ import {
   findZoneByHostname,
   listDnsRecords,
 } from "../cloudflare/zones";
+import { ensureSendingSubdomain } from "../cloudflare/email-sending";
 
 /**
  * Email Routing binds a rule to a Worker by literal name, so provisioning fails
@@ -73,6 +74,7 @@ export async function provisionDomain(
         status: "active",
         routingEnabled: true,
         routingStatus: "mock",
+		sendingEnabled: true,
         lastError: null,
         verifiedAt: new Date(),
       })
@@ -127,6 +129,24 @@ export async function provisionDomain(
     });
 
     const after = await getRoutingSettings(cf, domain.zoneId);
+	let sending: { enabled: boolean; tag: string | null; warning: string | null };
+	try {
+		const configured = await ensureSendingSubdomain(cf, domain.zoneId, domain.hostname);
+		sending = { enabled: configured.enabled, tag: configured.tag, warning: null };
+	} catch (error) {
+		/*
+		 * A missing Email Sending permission or entitlement must not undo a working
+		 * inbound mailbox. Preserve routing, then make the incomplete outbound setup
+		 * explicit in the domain UI and retry it when the operator presses Verify.
+		 */
+		sending = {
+			// Do not turn a known-good sender off merely because this verification
+			// request lacked an API permission. The Workers binding can still send.
+			enabled: domain.sendingEnabled,
+			tag: domain.sendingSubdomainTag,
+			warning: `Email Sending is not configured: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500),
+		};
+	}
 
     await db
       .update(domains)
@@ -134,7 +154,9 @@ export async function provisionDomain(
         status: "active",
         routingEnabled: true,
         routingStatus: after.status,
-        lastError: null,
+		sendingEnabled: sending.enabled,
+		sendingSubdomainTag: sending.tag,
+        lastError: sending.warning,
         verifiedAt: new Date(),
       })
       .where(eq(domains.id, domain.id));

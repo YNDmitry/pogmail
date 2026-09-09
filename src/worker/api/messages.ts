@@ -3,6 +3,7 @@ import { and, count, desc, eq, inArray, isNotNull, like, lt, or } from "drizzle-
 import { z } from "zod";
 import { emailDeliveryEvents, MESSAGE_STATUSES, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "../email/types";
+import { messageSnippet, needsSnippetRepair } from "../email/snippet";
 import { audit } from "../audit";
 import {
 	getPermission,
@@ -93,9 +94,10 @@ export const messageRoutes = new Hono<AppBindings>()
 			.limit(query.limit)
 			.all();
 
+		const items = await repairMalformedSnippets(c, rows);
 		const last = rows.at(-1);
 		return c.json({
-			items: rows,
+			items,
 			nextCursor: rows.length === query.limit && last ? last.receivedAt.getTime() : null,
 		});
 	})
@@ -363,6 +365,29 @@ function toUpdate(patch: z.infer<typeof patchInput>) {
 			? { snoozedUntil: patch.snoozedUntil === null ? null : new Date(patch.snoozedUntil) }
 			: {}),
 	};
+}
+
+/**
+ * Older messages may have been saved before previews learned to discard ASCII
+ * table frames. Fetch bodies only for those exceptional rows, so the normal
+ * list query stays small while existing inboxes are fixed immediately.
+ */
+async function repairMalformedSnippets<TRow extends { id: string; snippet: string | null }>(
+	c: Context<AppBindings>,
+	rows: TRow[],
+): Promise<TRow[]> {
+	const ids = rows.filter((row) => needsSnippetRepair(row.snippet)).map((row) => row.id);
+	if (ids.length === 0) return rows;
+
+	const bodies = await c
+		.get("db")
+		.select({ id: messages.id, bodyText: messages.bodyText, bodyHtml: messages.bodyHtml })
+		.from(messages)
+		.where(inArray(messages.id, ids))
+		.all();
+	const replacements = new Map(bodies.map((body) => [body.id, messageSnippet(body.bodyText, body.bodyHtml)]));
+
+	return rows.map((row) => ({ ...row, snippet: replacements.get(row.id) ?? row.snippet }));
 }
 
 type MessageRow = typeof messages.$inferSelect;

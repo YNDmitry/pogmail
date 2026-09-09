@@ -11,6 +11,7 @@ import {
 	type MessageStatus,
 } from "@/db/schema";
 import { matches } from "./routing";
+import { messageSnippet } from "./snippet";
 import type { InboundQueueMessage } from "./types";
 import { dispatchWebhooks } from "./webhooks";
 import { queueAutoReply } from "./auto-reply";
@@ -62,7 +63,7 @@ export async function processInboundMessage(env: Env, job: InboundQueueMessage):
 			toAddresses: toAddressList(parsed.to),
 			ccAddresses: toAddressList(parsed.cc),
 			replyTo: parsed.replyTo?.[0]?.address ?? null,
-			snippet: (parsed.text ?? "").replace(/\s+/g, " ").trim().slice(0, 200),
+			snippet: messageSnippet(parsed.text, parsed.html),
 			bodyText: parsed.text ?? null,
 			bodyHtml: parsed.html ?? null,
 			rawKey: job.rawKey,

@@ -6,6 +6,7 @@ import { messages } from "@/db/schema";
 import { audit } from "../audit";
 import { ImapConnection } from "../import/imap";
 import { getPermission, hasAtLeast } from "../mailboxes/access";
+import { messageSnippet } from "../email/snippet";
 import type { AppBindings } from "../middleware/context";
 import { forbidden, parseBody } from "./_util";
 
@@ -77,7 +78,7 @@ export const imapRoutes = new Hono<AppBindings>()
 							.map((entry) => ({ address: entry.address as string })),
 						bodyText: parsed.text ?? null,
 						bodyHtml: parsed.html ?? null,
-						snippet: (parsed.text ?? "").replace(/\s+/g, " ").trim().slice(0, 200),
+						snippet: messageSnippet(parsed.text, parsed.html),
 						rawKey: key,
 						sizeBytes: raw.byteLength,
 						hasAttachments: parsed.attachments.length > 0,

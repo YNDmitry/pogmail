@@ -156,7 +156,7 @@ async function applyMailboxRules(
 		else if (rule.action === "trash") status = "trash";
 		else if (rule.action === "move") folderId = rule.actionTarget;
 
-		void db
+		await db
 			.update(routingRules)
 			.set({ matchCount: sql`${routingRules.matchCount} + 1`, lastMatchedAt: new Date() })
 			.where(eq(routingRules.id, rule.id));

@@ -1,6 +1,6 @@
 import { HTTPException } from "hono/http-exception";
 import { getCookie } from "hono/cookie";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
 import type { Database } from "@/db";
 import { apiKeys, users, type ApiKeyScope } from "@/db/schema";
@@ -24,7 +24,7 @@ export const requireAuth: MiddlewareHandler<AppBindings> = async (c, next) => {
 		return;
 	}
 
-	const key = await resolveApiKey(db, c.req.header("authorization"));
+	const key = await resolveApiKey(db, c.req.header("authorization"), executionContext(c));
 	if (!key) throw new HTTPException(401, { message: "Not authenticated" });
 
 	c.set("user", key.user);
@@ -60,6 +60,7 @@ export function requireScope(scope: ApiKeyScope): MiddlewareHandler<AppBindings>
 async function resolveApiKey(
 	db: Database,
 	header: string | undefined,
+	ctx: { waitUntil(promise: Promise<unknown>): void } | null,
 ): Promise<{ user: SessionUser; scopes: ApiKeyScope[] } | null> {
 	const token = header?.match(/^Bearer\s+(.+)$/i)?.[1];
 	if (!token) return null;
@@ -81,7 +82,17 @@ async function resolveApiKey(
 	if (!row || !user) return null;
 
 	// Fire-and-forget: last-used is telemetry, not worth blocking the request on.
-	void db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, row.keyId));
+	const update = db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, row.keyId));
+	if (ctx) ctx.waitUntil(update);
+	else void update;
 
 	return { user, scopes: row.scopes };
+}
+
+function executionContext(c: Context<AppBindings>): { waitUntil(promise: Promise<unknown>): void } | null {
+	try {
+		return c.executionCtx;
+	} catch {
+		return null;
+	}
 }

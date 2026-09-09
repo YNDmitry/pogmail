@@ -2,91 +2,99 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloud
 import { eq, lt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { backupSettings, backups } from "@/db/schema";
+import { BACKUP_TABLES, backupPartKey, deleteBackupObjects, type BackupTableManifest } from "./format";
 
 export type BackupParams = { backupId: string };
 
 /**
- * Tables are dumped one at a time, each as its own workflow step, so a failure retries
- * only the table that failed rather than the whole export. D1 has no native dump over
- * the binding API, so this reads rows and writes newline-delimited JSON to R2.
+ * Tables are read in small R2-backed parts. This keeps every Workflow step result tiny,
+ * and lets a retry overwrite only its deterministic part rather than restart the export.
  */
-const TABLES = [
-	"users",
-	"sessions",
-	"api_keys",
-	"audit_logs",
-	"domains",
-	"domain_records",
-	"mailboxes",
-	"mailbox_aliases",
-	"mailbox_access",
-	"auto_reply_deliveries",
-	"folders",
-	"messages",
-	"message_attachments",
-	"contacts",
-	"outbound_jobs",
-	"email_templates",
-	"calendar_events",
-	"routing_rules",
-	"webhooks",
-	"webhook_deliveries",
-	"app_settings",
-	"backup_settings",
-] as const;
-
-const PAGE_SIZE = 500;
+/* A bounded part avoids both a Workflow's 1 MiB step-result limit and a full-table heap spike. */
+const ROWS_PER_PART = 50;
 
 export class DatabaseBackupWorkflow extends WorkflowEntrypoint<Env, BackupParams> {
 	override async run(event: WorkflowEvent<BackupParams>, step: WorkflowStep): Promise<void> {
 		const db = getDb(this.env.DB);
 		const { backupId } = event.payload;
 
-		const key = await step.do("start", async () => {
+		const backup = await step.do("start", async () => {
 			const filename = `pogmail-${new Date().toISOString().replaceAll(":", "-")}.ndjson`;
-			const r2Key = `backups/${backupId}/${filename}`;
+			const prefix = `backups/${backupId}`;
+			const r2Key = `${prefix}/manifest.json`;
 
 			await db
 				.update(backups)
 				.set({ status: "running", startedAt: new Date(), filename, r2Key })
 				.where(eq(backups.id, backupId));
 
-			return r2Key;
+			return { prefix, r2Key };
 		});
 
 		const counts: Record<string, number> = {};
-		const parts: string[] = [];
+		const manifests: { table: (typeof BACKUP_TABLES)[number]; manifestKey: string }[] = [];
+		let totalSizeBytes = 0;
 
-		for (const table of TABLES) {
-			const chunk = await step.do(`dump:${table}`, async () => {
-				const lines: string[] = [];
-				let offset = 0;
+		for (const table of BACKUP_TABLES) {
+			let cursor = 0;
+			let partCount = 0;
+			let count = 0;
+			let sizeBytes = 0;
+			const prefix = `${backup.prefix}/tables/${table}`;
 
-				// Paged, because a single unbounded SELECT on `messages` will not fit
-				// in a Worker's memory on any instance that has been running a while.
-				for (;;) {
+			for (;;) {
+				const part = await step.do(`dump:${table}:${partCount}`, async () => {
 					const page = await this.env.DB.prepare(
-						`SELECT * FROM ${table} LIMIT ? OFFSET ?`,
+						`SELECT rowid AS backup_row_id, * FROM ${table} WHERE rowid > ? ORDER BY rowid LIMIT ?`,
 					)
-						.bind(PAGE_SIZE, offset)
-						.all();
+						.bind(cursor, ROWS_PER_PART)
+						.all<Record<string, unknown>>();
 
-					for (const row of page.results) lines.push(JSON.stringify({ table, row }));
-					if (page.results.length < PAGE_SIZE) break;
-					offset += PAGE_SIZE;
-				}
+					if (!page.results.length) return { count: 0, cursor, sizeBytes: 0 };
 
-				return { count: lines.length, body: lines.join("\n") };
+					const rows = page.results.map((result) => {
+						const { backup_row_id, ...row } = result;
+						return row;
+					});
+					const body = rows.map((row) => JSON.stringify({ table, row })).join("\n") + "\n";
+					const bytes = new TextEncoder().encode(body).byteLength;
+					await this.env.MAIL_BUCKET.put(backupPartKey(prefix, partCount), body, {
+						httpMetadata: { contentType: "application/x-ndjson" },
+					});
+
+					return { count: rows.length, cursor: Number(backupRowId(page.results.at(-1))), sizeBytes: bytes };
+				});
+
+				if (!part.count) break;
+				cursor = part.cursor;
+				count += part.count;
+				sizeBytes += part.sizeBytes;
+				partCount++;
+			}
+
+			const tableManifest: BackupTableManifest = {
+				version: 2,
+				table,
+				prefix,
+				partCount,
+				count,
+				sizeBytes,
+			};
+			const manifestKey = `${prefix}/manifest.json`;
+			await step.do(`manifest:${table}`, async () => {
+				await this.env.MAIL_BUCKET.put(manifestKey, JSON.stringify(tableManifest), {
+					httpMetadata: { contentType: "application/json" },
+				});
 			});
 
-			counts[table] = chunk.count;
-			if (chunk.body) parts.push(chunk.body);
+			counts[table] = count;
+			totalSizeBytes += sizeBytes;
+			manifests.push({ table, manifestKey });
 		}
 
 		await step.do("finish", async () => {
-			const body = `${parts.join("\n")}\n`;
-			await this.env.MAIL_BUCKET.put(key, body, {
-				httpMetadata: { contentType: "application/x-ndjson" },
+			await this.env.MAIL_BUCKET.put(backup.r2Key, JSON.stringify({ version: 2, tables: manifests }), {
+				httpMetadata: { contentType: "application/json" },
 			});
 
 			await db
@@ -94,7 +102,7 @@ export class DatabaseBackupWorkflow extends WorkflowEntrypoint<Env, BackupParams
 				.set({
 					status: "completed",
 					completedAt: new Date(),
-					sizeBytes: new TextEncoder().encode(body).byteLength,
+					sizeBytes: totalSizeBytes,
 					tableCounts: counts,
 				})
 				.where(eq(backups.id, backupId));
@@ -108,9 +116,17 @@ export class DatabaseBackupWorkflow extends WorkflowEntrypoint<Env, BackupParams
 			const stale = await db.select().from(backups).where(lt(backups.createdAt, cutoff)).all();
 
 			for (const old of stale) {
-				if (old.r2Key) await this.env.MAIL_BUCKET.delete(old.r2Key);
+				if (old.r2Key) await deleteBackupObjects(this.env, old.r2Key);
 				await db.delete(backups).where(eq(backups.id, old.id));
 			}
 		});
 	}
+}
+
+function backupRowId(row: Record<string, unknown> | undefined): number {
+	const value = row?.backup_row_id;
+	if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+		throw new Error("D1 returned an invalid backup row cursor");
+	}
+	return value;
 }

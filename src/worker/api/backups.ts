@@ -4,6 +4,7 @@ import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { BACKUP_SCHEDULES, backupSettings, backups, SINGLETON_ID } from "@/db/schema";
 import { audit } from "../audit";
+import { deleteBackupObjects, readBackupManifest, serveBackup } from "../backups/format";
 import { requireAdmin } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
 import { serveObject } from "../storage";
@@ -16,32 +17,6 @@ const settingsInput = z.object({
 	retentionEnabled: z.boolean(),
 	retentionDays: z.number().int().min(1).max(3650),
 });
-
-/** Parents before children, so foreign keys resolve as rows go back in. */
-const RESTORE_ORDER = [
-	"users",
-	"app_settings",
-	"backup_settings",
-	"sessions",
-	"api_keys",
-	"domains",
-	"domain_records",
-	"mailboxes",
-	"mailbox_aliases",
-	"mailbox_access",
-	"auto_reply_deliveries",
-	"folders",
-	"messages",
-	"message_attachments",
-	"contacts",
-	"outbound_jobs",
-	"email_templates",
-	"calendar_events",
-	"routing_rules",
-	"webhooks",
-	"webhook_deliveries",
-	"audit_logs",
-] as const;
 
 export const backupRoutes = new Hono<AppBindings>()
 	.use("*", requireAdmin)
@@ -104,11 +79,14 @@ export const backupRoutes = new Hono<AppBindings>()
 		}
 
 		audit(c, { action: "backup.download", metadata: { id: row.id } });
-		return serveObject(c.env, row.r2Key, row.filename ?? `${row.id}.ndjson`);
+		const manifest = await readBackupManifest(c.env, row.r2Key);
+		return manifest
+			? serveBackup(c.env, row.r2Key, row.filename ?? `${row.id}.ndjson`)
+			: serveObject(c.env, row.r2Key, row.filename ?? `${row.id}.ndjson`);
 	})
 
 	/**
-	 * Replays a backup back into D1. Rows are written with INSERT OR REPLACE in
+	 * Starts a streamed restore Workflow. Rows are written with INSERT OR REPLACE in
 	 * foreign-key order, so a restore overwrites by id rather than duplicating.
 	 *
 	 * This overwrites live data, so it needs the phrase typed out — an accidental
@@ -124,48 +102,24 @@ export const backupRoutes = new Hono<AppBindings>()
 			throw new HTTPException(409, { message: "That backup did not complete, so it cannot be restored" });
 		}
 
-		const object = await c.env.MAIL_BUCKET.get(backup.r2Key);
+		const object = await c.env.MAIL_BUCKET.head(backup.r2Key);
 		if (!object) throw new HTTPException(410, { message: "The backup file is no longer in storage" });
 
-		const lines = (await object.text()).split("\n").filter(Boolean);
+		const id = `restore-${backup.id}-${crypto.randomUUID()}`;
+		await c.env.RESTORE_WORKFLOW.create({
+			id,
+			params: { backupId: backup.id, r2Key: backup.r2Key, actorUserId: c.get("user").id },
+		});
 
-		// Group by table first: the dump is written table by table, but grouping
-		// makes the ordering explicit rather than implied by the file.
-		const byTable = new Map<string, Record<string, unknown>[]>();
-		for (const line of lines) {
-			const entry = JSON.parse(line) as { table: string; row: Record<string, unknown> };
-			byTable.set(entry.table, [...(byTable.get(entry.table) ?? []), entry.row]);
-		}
-
-		let restored = 0;
-		for (const table of RESTORE_ORDER) {
-			const rows = byTable.get(table);
-			if (!rows?.length) continue;
-
-			for (let index = 0; index < rows.length; index += 50) {
-				const chunk = rows.slice(index, index + 50);
-				await c.env.DB.batch(
-					chunk.map((row) => {
-						const columns = Object.keys(row);
-						const placeholders = columns.map(() => "?").join(", ");
-						return c.env.DB.prepare(
-							`INSERT OR REPLACE INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`,
-						).bind(...columns.map((column) => row[column] ?? null));
-					}),
-				);
-				restored += chunk.length;
-			}
-		}
-
-		audit(c, { action: "backup.restore", metadata: { id: backup.id, restored } });
-		return c.json({ restored });
+		audit(c, { action: "backup.restore_start", metadata: { id: backup.id, workflowId: id } });
+		return c.json({ workflowId: id }, 202);
 	})
 
 	.delete("/:id", async (c) => {
 		const row = await c.get("db").select().from(backups).where(eq(backups.id, c.req.param("id"))).get();
 		if (!row) notFound("Backup");
 
-		if (row.r2Key) await c.env.MAIL_BUCKET.delete(row.r2Key);
+		if (row.r2Key) await deleteBackupObjects(c.env, row.r2Key);
 		await c.get("db").delete(backups).where(eq(backups.id, row.id));
 
 		audit(c, { action: "backup.delete", metadata: { id: row.id } });

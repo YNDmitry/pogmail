@@ -55,6 +55,11 @@
       "name": "pogmail-backup",
       "binding": "BACKUP_WORKFLOW",
       "class_name": "DatabaseBackupWorkflow"
+    },
+    {
+      "name": "pogmail-restore",
+      "binding": "RESTORE_WORKFLOW",
+      "class_name": "DatabaseRestoreWorkflow"
     }
   ],
 
@@ -79,17 +84,14 @@
       "name": "EMAIL"
     }
   ],
-  "unsafe": {
-    "bindings": [
-      {
-        "name": "AUTH_RATE_LIMIT",
-        "type": "ratelimit",
-        "namespace_id": "1001",
-        "simple": {
-          "limit": 10,
-          "period": 60
-        }
+  "ratelimits": [
+    {
+      "name": "AUTH_RATE_LIMIT",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 10,
+        "period": 60
       }
-    ]
-  }
+    }
+  ]
 }

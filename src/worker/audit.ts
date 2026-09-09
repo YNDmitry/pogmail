@@ -16,8 +16,7 @@ export type AuditEntry = {
  */
 export function audit(c: Context<AppBindings>, entry: AuditEntry): void {
 	const user = c.get("user");
-
-	void c
+	const write = c
 		.get("db")
 		.insert(auditLogs)
 		.values({
@@ -30,4 +29,11 @@ export function audit(c: Context<AppBindings>, entry: AuditEntry): void {
 			ip: c.req.header("cf-connecting-ip") ?? null,
 		})
 		.catch((error: unknown) => console.error("audit write failed", entry.action, error));
+
+	try {
+		c.executionCtx.waitUntil(write);
+	} catch {
+		// Hono unit calls may omit an ExecutionContext; production fetches always have one.
+		void write;
+	}
 }

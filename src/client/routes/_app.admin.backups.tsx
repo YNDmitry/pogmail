@@ -78,11 +78,11 @@ function Backups() {
 						}
 
 						try {
-							const result = await api.post<{ restored: number }>(
+							await api.post<{ workflowId: string }>(
 								`/api/backups/${restoring}/restore`,
 								{ confirm: "restore" },
 							);
-							toast.ok(`Restored ${result.restored} rows`, "Reload to see the restored data.");
+							toast.ok("Restore started", "It runs in the background. Reload once it has finished.");
 							setRestoring(null);
 						} catch (error) {
 							toast.fail("Restore failed", String(error));

@@ -24,6 +24,7 @@ import { putRawMessage } from "./storage";
 
 export { RealtimeHub } from "./realtime/hub";
 export { DatabaseBackupWorkflow } from "./backups/workflow";
+export { DatabaseRestoreWorkflow } from "./backups/restore-workflow";
 
 /** Set on forwarded mail so a forward loop terminates instead of amplifying. */
 const FORWARDED_HEADER = "x-pogmail-forwarded";

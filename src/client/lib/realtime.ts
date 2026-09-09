@@ -47,4 +47,5 @@ export function connectRealtime(onEvent: (event: RealtimeEvent) => void): () => 
 export type RealtimeEvent =
 	| { type: "message.new"; mailboxId: string; messageId: string }
 	| { type: "message.sent"; mailboxId: string; messageId: string }
+	| { type: "message.delivery"; mailboxId: string; messageId: string }
 	| { type: "domain.status"; domainId: string; status: string };

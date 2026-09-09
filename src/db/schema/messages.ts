@@ -167,6 +167,39 @@ export const outboundDeliveries = sqliteTable(
 	],
 );
 
+/** Final Email Sending lifecycle events, deduplicated by Cloudflare's event id. */
+export const EMAIL_DELIVERY_EVENT_TYPES = [
+	"delivered",
+	"deferred",
+	"bounced",
+	"failed",
+	"rejected",
+	"complained",
+] as const;
+export type EmailDeliveryEventType = (typeof EMAIL_DELIVERY_EVENT_TYPES)[number];
+
+export const emailDeliveryEvents = sqliteTable(
+	"email_delivery_events",
+	{
+		/** Cloudflare's eventId makes Queues' at-least-once delivery safe to replay. */
+		eventId: text("event_id").primaryKey(),
+		outboundDeliveryId: text("outbound_delivery_id")
+			.notNull()
+			.references(() => outboundDeliveries.id, { onDelete: "cascade" }),
+		type: text("type", { enum: EMAIL_DELIVERY_EVENT_TYPES }).notNull(),
+		deliveryStatus: text("delivery_status").notNull(),
+		bounceType: text("bounce_type"),
+		terminal: integer("terminal", { mode: "boolean" }).notNull(),
+		/** Cloudflare's SMTP, bounce, failure or rejection explanation, capped before storage. */
+		detail: text("detail"),
+		occurredAt: integer("occurred_at", { mode: "timestamp_ms" }).notNull(),
+		...timestamps(),
+	},
+	(t) => [
+		index("email_delivery_events_delivery_idx").on(t.outboundDeliveryId, t.occurredAt),
+	],
+);
+
 export const emailTemplates = sqliteTable(
 	"email_templates",
 	{

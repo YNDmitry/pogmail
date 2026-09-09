@@ -69,6 +69,12 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 		 */
 		const messageId = row.message.messageId ?? `<${crypto.randomUUID()}@${domainOf(row.message.fromAddress)}>`;
 		mime.setHeader("Message-ID", messageId);
+		// Persist this before Email Sending sees the first recipient. Lifecycle events
+		// are asynchronous and may arrive even if a later recipient makes this queue
+		// job retry, so waiting until every send completes would lose their correlation.
+		if (!row.message.messageId) {
+			await db.update(messages).set({ messageId }).where(eq(messages.id, row.message.id));
+		}
 		/*
 		 * Plain first, HTML last. In `multipart/alternative` the *last* part is the
 		 * one a client is meant to prefer, so the order here is what decides whether

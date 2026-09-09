@@ -177,7 +177,7 @@ function AppLayout() {
   useEffect(
     () =>
       connectRealtime((event) => {
-        if (event.type === "message.new" || event.type === "message.sent") {
+		if (event.type === "message.new" || event.type === "message.sent" || event.type === "message.delivery") {
           void queryClient.invalidateQueries({ queryKey: ["messages"] });
         }
         if (event.type === "domain.status") {

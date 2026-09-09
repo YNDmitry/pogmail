@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
 import { and, count, desc, eq, inArray, isNotNull, like, lt, or } from "drizzle-orm";
 import { z } from "zod";
-import { MESSAGE_STATUSES, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
+import { emailDeliveryEvents, MESSAGE_STATUSES, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "../email/types";
 import { audit } from "../audit";
 import {
@@ -197,6 +197,7 @@ export const messageRoutes = new Hono<AppBindings>()
 			? await c
 					.get("db")
 					.select({
+						id: outboundDeliveries.id,
 						recipient: outboundDeliveries.recipient,
 						status: outboundDeliveries.status,
 						attempts: outboundDeliveries.attempts,
@@ -208,11 +209,40 @@ export const messageRoutes = new Hono<AppBindings>()
 					.orderBy(outboundDeliveries.createdAt)
 					.all()
 			: [];
+		const deliveryEvents = recipients.length
+			? await c
+					.get("db")
+					.select({
+						outboundDeliveryId: emailDeliveryEvents.outboundDeliveryId,
+						type: emailDeliveryEvents.type,
+						deliveryStatus: emailDeliveryEvents.deliveryStatus,
+						bounceType: emailDeliveryEvents.bounceType,
+						terminal: emailDeliveryEvents.terminal,
+						detail: emailDeliveryEvents.detail,
+						occurredAt: emailDeliveryEvents.occurredAt,
+					})
+					.from(emailDeliveryEvents)
+					.where(inArray(emailDeliveryEvents.outboundDeliveryId, recipients.map((recipient) => recipient.id)))
+					.orderBy(desc(emailDeliveryEvents.occurredAt))
+					.all()
+			: [];
+		const latestLifecycle = new Map<string, (typeof deliveryEvents)[number]>();
+		for (const event of deliveryEvents) {
+			if (!latestLifecycle.has(event.outboundDeliveryId)) latestLifecycle.set(event.outboundDeliveryId, event);
+		}
 
 		return c.json({
 			...message,
 			attachments,
-			delivery: delivery ? { ...delivery, recipients } : null,
+			delivery: delivery
+				? {
+						...delivery,
+						recipients: recipients.map(({ id, ...recipient }) => ({
+							...recipient,
+							lifecycle: latestLifecycle.get(id) ?? null,
+						})),
+					}
+				: null,
 		});
 	})
 

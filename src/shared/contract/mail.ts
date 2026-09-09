@@ -67,6 +67,15 @@ export type MessageDetail = MessageSummary & {
 			attempts: number;
 			lastError: string | null;
 			sentAt: string | null;
+			/** Latest final-or-intermediate event from Cloudflare Email Sending, if subscribed. */
+			lifecycle: {
+				type: "delivered" | "deferred" | "bounced" | "failed" | "rejected" | "complained";
+				deliveryStatus: string;
+				bounceType: "hard" | "soft" | null;
+				terminal: boolean;
+				detail: string | null;
+				occurredAt: string;
+			} | null;
 		}>;
 	} | null;
 };

@@ -3,7 +3,7 @@ import { getDb } from "@/db";
 import { mailboxAccess, mailboxes } from "@/db/schema";
 
 /** Everyone with access to the mailbox gets the event, not just its owner. */
-export async function notifyNewMessage(env: Env, mailboxId: string, messageId: string): Promise<void> {
+export async function notifyMailbox(env: Env, mailboxId: string, event: RealtimeEvent): Promise<void> {
 	const db = getDb(env.DB);
 
 	const rows = await db
@@ -21,9 +21,13 @@ export async function notifyNewMessage(env: Env, mailboxId: string, messageId: s
 
 	await Promise.all(
 		[...userIds].map((userId) =>
-			env.REALTIME.getByName(userId).broadcast({ type: "message.new", mailboxId, messageId }),
+			env.REALTIME.getByName(userId).broadcast(event),
 		),
 	);
+}
+
+export function notifyNewMessage(env: Env, mailboxId: string, messageId: string): Promise<void> {
+	return notifyMailbox(env, mailboxId, { type: "message.new", mailboxId, messageId });
 }
 
 /** Generic push for anything else the UI should refresh live. */
@@ -34,4 +38,5 @@ export async function notifyUser(env: Env, userId: string, event: RealtimeEvent)
 export type RealtimeEvent =
 	| { type: "message.new"; mailboxId: string; messageId: string }
 	| { type: "message.sent"; mailboxId: string; messageId: string }
+	| { type: "message.delivery"; mailboxId: string; messageId: string }
 	| { type: "domain.status"; domainId: string; status: string };

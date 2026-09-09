@@ -77,6 +77,19 @@ Email Sending / Edit` for the account that owns those zones. Limit its
 Zone Resources to the domains Pogmail will manage. Paste the token value without
 the `Bearer` prefix; Pogmail discovers the account and zones through it.
 
+### Final delivery events
+
+The Worker consumes Cloudflare Email Sending lifecycle events from the
+`pogmail-email-events` queue. After deploying this version, create one Event
+Subscription per sending domain in **Queues → pogmail-email-events →
+Subscriptions → Subscribe to events**. Choose **Email Sending** and enable
+`message.delivered`, `message.deferred`, `message.bounced`, `message.failed`,
+`message.rejected`, and `message.complained`.
+
+Pogmail records only events whose Message-ID and recipient match a message it
+sent. Cloudflare can redeliver Queue messages, so its event ID is stored once;
+unknown or malformed events are acknowledged without retaining recipient data.
+
 ## Updating
 
 The Deploy button makes a **copy** of this repository in your own account, not a

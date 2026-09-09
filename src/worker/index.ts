@@ -10,6 +10,12 @@ import {
 import { api } from "./api";
 import { readSessionCookie, resolveSession } from "./auth/session";
 import { processInboundMessage } from "./email/inbound";
+
+import {
+  EMAIL_EVENTS_QUEUE,
+  parseEmailSendingLifecycleEvent,
+  recordEmailSendingLifecycleEvent,
+} from "./email/lifecycle";
 import { resolveIncomingMail } from "./email/routing";
 import { processOutboundJob } from "./email/send";
 import {
@@ -22,6 +28,7 @@ import {
 import { runDelivery } from "./email/webhooks";
 import { putRawMessage } from "./storage";
 import { queueRetryDelay } from "./queue/retry";
+import { notifyMailbox } from "./realtime/notify";
 
 export { RealtimeHub } from "./realtime/hub";
 export { DatabaseBackupWorkflow } from "./backups/workflow";
@@ -123,8 +130,47 @@ export default {
     }
   },
 
-  /** One consumer for both queues; the `kind` discriminant decides what runs. */
+  /**
+   * The app queues carry a `kind` discriminant; Email Sending's subscription has
+   * Cloudflare's own schema and arrives through its dedicated queue.
+   */
   async queue(batch, env): Promise<void> {
+    if (batch.queue === EMAIL_EVENTS_QUEUE) {
+      const db = getDb(env.DB);
+      for (const item of batch.messages) {
+        const event = parseEmailSendingLifecycleEvent(item.body);
+        if (!event) {
+          // A malformed external event will not become valid by retrying it.
+          console.error(JSON.stringify({ message: "Ignoring invalid Email Sending lifecycle event", queueMessageId: item.id }));
+          item.ack();
+          continue;
+        }
+        try {
+          const result = await recordEmailSendingLifecycleEvent(db, event);
+          if (result.result === "unmatched") {
+            // A subscription can also observe mail sent outside Pogmail. Do not
+            // store its recipient data, but acknowledge it so it does not retry.
+            console.log(JSON.stringify({ message: "Ignoring unmatched Email Sending lifecycle event", eventId: event.payload.eventId, type: event.type }));
+          } else if (result.result === "recorded" && result.mailboxId && result.messageId) {
+            // A notification failure must not cause the already-durable event to
+            // retry indefinitely; the page will refresh normally on its next use.
+            await notifyMailbox(env, result.mailboxId, {
+              type: "message.delivery",
+              mailboxId: result.mailboxId,
+              messageId: result.messageId,
+            }).catch((error: unknown) =>
+              console.error(JSON.stringify({ message: "Lifecycle event notification failed", eventId: event.payload.eventId, error: error instanceof Error ? error.message : String(error) })),
+            );
+          }
+          item.ack();
+        } catch (error) {
+          console.error(JSON.stringify({ message: "Email Sending lifecycle event failed", eventId: event.payload.eventId, error: error instanceof Error ? error.message : String(error) }));
+          item.retry({ delaySeconds: queueRetryDelay(item.attempts) });
+        }
+      }
+      return;
+    }
+
     for (const item of batch.messages) {
       const payload = item.body as QueuePayload;
       try {

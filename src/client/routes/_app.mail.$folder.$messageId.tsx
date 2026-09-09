@@ -12,7 +12,7 @@ import {
 	Trash2,
 } from "lucide-react";
 import { Button } from "@/client/components/app/button";
-import { Machine, Tag } from "@/client/components/app/primitives";
+import { Machine, Tag, type Tone } from "@/client/components/app/primitives";
 import { Modal } from "@/client/components/app/modal";
 import { ReplyBox } from "@/client/components/app/reply-box";
 import { useToast } from "@/client/components/app/toast-host";
@@ -29,7 +29,7 @@ import {
 } from "@/client/lib/queries";
 import { canSend } from "@/shared/contract/permissions";
 import { cn } from "@/client/lib/utils";
-import type { Attachment, MessageStatus, MessageSummary } from "@/shared/contract/mail";
+import type { Attachment, MessageDetail, MessageStatus, MessageSummary } from "@/shared/contract/mail";
 
 export const Route = createFileRoute("/_app/mail/$folder/$messageId")({ component: Reader });
 
@@ -72,6 +72,20 @@ const SNOOZE_FORMAT = new Intl.DateTimeFormat(undefined, {
 	hour: "2-digit",
 	minute: "2-digit",
 });
+
+function deliverySummary(delivery: NonNullable<MessageDetail["delivery"]>): { label: string; tone: Tone } {
+	const lifecycle = delivery.recipients.flatMap((recipient) => recipient.lifecycle ? [recipient.lifecycle] : []);
+	if (lifecycle.some((event) => ["bounced", "failed", "rejected", "complained"].includes(event.type))) {
+		return { label: lifecycle.some((event) => event.type === "complained") ? "Complaint received" : "Delivery issue", tone: "fail" };
+	}
+	if (lifecycle.some((event) => event.type === "deferred")) return { label: "Delivery deferred", tone: "wait" };
+	if (delivery.recipients.length > 0 && lifecycle.filter((event) => event.type === "delivered").length === delivery.recipients.length) {
+		return { label: "Delivered", tone: "ok" };
+	}
+	if (delivery.status === "failed") return { label: "Delivery failed", tone: "fail" };
+	if (delivery.status === "sent") return { label: "Accepted", tone: "ok" };
+	return { label: "Sending", tone: "wait" };
+}
 
 function Reader() {
 	const { folder, messageId } = useParams({ from: "/_app/mail/$folder/$messageId" });
@@ -121,6 +135,7 @@ function Reader() {
 	const threadPosition = (thread.data?.findIndex((item) => item.id === mail.id) ?? -1) + 1;
 	const isLatest = threadPosition > 0 && threadPosition === thread.data?.length;
 	const title = conversations ? (thread.data?.[0]?.subject ?? mail.subject) : mail.subject;
+	const outboundSummary = mail.delivery ? deliverySummary(mail.delivery) : null;
 
 	function move(status: MessageStatus, done: string) {
 		patch.mutate(
@@ -183,14 +198,13 @@ function Reader() {
 
 				{mail.delivery ? (
 					<div className="flex flex-wrap items-center gap-2 rounded-panel border border-seam bg-recess px-3 py-2 text-xs">
-						<Tag tone={mail.delivery.status === "sent" ? "ok" : mail.delivery.status === "failed" ? "fail" : "wait"}>
-							{mail.delivery.status === "sent" ? "Delivered" : mail.delivery.status === "failed" ? "Delivery failed" : "Sending"}
-						</Tag>
+						<Tag tone={outboundSummary?.tone}>{outboundSummary?.label}</Tag>
 						{mail.delivery.attempts > 1 ? <span className="text-ink-3">Attempt {mail.delivery.attempts}</span> : null}
 						{mail.delivery.lastError ? <span className="min-w-0 truncate text-fail" title={mail.delivery.lastError}>{mail.delivery.lastError}</span> : null}
 						{mail.delivery.recipients.length > 0 ? (
 							<span className="text-ink-3" title={mail.delivery.recipients.map((entry) => `${entry.recipient}: ${entry.status}`).join("\n")}>
 								{mail.delivery.recipients.filter((entry) => entry.status === "sent").length}/{mail.delivery.recipients.length} recipients accepted
+								{mail.delivery.recipients.some((entry) => entry.lifecycle) ? ` · ${mail.delivery.recipients.filter((entry) => entry.lifecycle?.type === "delivered").length} delivered` : ""}
 							</span>
 						) : null}
 						{mail.delivery.status === "failed" ? (

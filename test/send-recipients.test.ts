@@ -23,4 +23,5 @@ describe("outbound envelope recipients", () => {
 		expect(isPermanentEmailError({ code: "E_RATE_LIMIT_EXCEEDED" })).toBe(false);
 		expect(isPermanentEmailError(new Error("network interrupted"))).toBe(false);
 	});
+
 });

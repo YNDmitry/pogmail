@@ -1,11 +1,14 @@
 import { createMimeMessage, Mailbox } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { getDb } from "@/db";
+import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { getDb, type Database } from "@/db";
 import { mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "./types";
 import { safeEmailHtml } from "./html-safety";
 import { nextScheduledDelay } from "./schedule";
+
+/** A crashed consumer can leave a recipient claimed; after this, another job recovers it. */
+const DELIVERY_LEASE_MS = 5 * 60 * 1000;
 
 /** The domain a Message-ID is minted under: it must be one the sender owns. */
 function domainOf(address: string): string {
@@ -118,6 +121,18 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			.insert(outboundDeliveries)
 			.values(recipients.map((recipient) => ({ outboundJobId: row.job.id, recipient })))
 			.onConflictDoNothing();
+		// Queues is at-least-once. Recover only expired claims; a live consumer keeps
+		// its lease and no second consumer can send to the same recipient meanwhile.
+		await db
+			.update(outboundDeliveries)
+			.set({ status: "failed", lastError: "Sending lease expired; retrying" })
+			.where(
+				and(
+					eq(outboundDeliveries.outboundJobId, row.job.id),
+					eq(outboundDeliveries.status, "sending"),
+					lt(outboundDeliveries.updatedAt, new Date(Date.now() - DELIVERY_LEASE_MS)),
+				),
+			);
 
 		const pending = await db
 			.select()
@@ -130,12 +145,9 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			)
 			.all();
 
-		let permanentFailure: string | null = null;
 		for (const delivery of pending) {
-			await db
-				.update(outboundDeliveries)
-				.set({ attempts: sql`${outboundDeliveries.attempts} + 1`, lastError: null })
-				.where(eq(outboundDeliveries.id, delivery.id));
+			const claimed = await claimOutboundDelivery(db, delivery.id);
+			if (!claimed) continue;
 
 			try {
 				await env.EMAIL.send(new EmailMessage(row.message.fromAddress, delivery.recipient, mime.asRaw()));
@@ -151,17 +163,32 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 					.set({ status: permanent ? "permanent" : "failed", lastError: message })
 					.where(eq(outboundDeliveries.id, delivery.id));
 				if (permanent) {
-					permanentFailure ??= message;
 					continue;
 				}
 				throw error;
 			}
 		}
 
+		const inFlight = await db
+			.select({ updatedAt: outboundDeliveries.updatedAt })
+			.from(outboundDeliveries)
+			.where(and(eq(outboundDeliveries.outboundJobId, row.job.id), eq(outboundDeliveries.status, "sending")))
+			.get();
+		if (inFlight) {
+			const leaseDelaySeconds = Math.max(1, Math.ceil((inFlight.updatedAt.getTime() + DELIVERY_LEASE_MS - Date.now()) / 1000));
+			await env.OUTBOUND_QUEUE.send(job, { delaySeconds: leaseDelaySeconds });
+			return;
+		}
+
+		const permanentFailure = await db
+			.select({ lastError: outboundDeliveries.lastError })
+			.from(outboundDeliveries)
+			.where(and(eq(outboundDeliveries.outboundJobId, row.job.id), eq(outboundDeliveries.status, "permanent")))
+			.get();
 		if (permanentFailure) {
 			await db
 				.update(outboundJobs)
-				.set({ status: "failed", lastError: permanentFailure })
+				.set({ status: "failed", lastError: permanentFailure.lastError ?? "A recipient was permanently rejected" })
 				.where(eq(outboundJobs.id, job.jobId));
 			return;
 		}
@@ -181,6 +208,16 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			.where(eq(outboundJobs.id, job.jobId));
 		throw error;
 	}
+}
+
+/** Atomically acquires one recipient so concurrent queue deliveries cannot double-send it. */
+export function claimOutboundDelivery(db: Database, deliveryId: string) {
+	return db
+		.update(outboundDeliveries)
+		.set({ status: "sending", attempts: sql`${outboundDeliveries.attempts} + 1`, lastError: null })
+		.where(and(eq(outboundDeliveries.id, deliveryId), inArray(outboundDeliveries.status, ["pending", "failed"])))
+		.returning({ id: outboundDeliveries.id })
+		.get();
 }
 
 /** Delivers To, CC and BCC once each; BCC stays out of the MIME headers. */

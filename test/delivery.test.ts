@@ -6,6 +6,7 @@ import { domains, mailboxes, messageAttachments, messages, outboundDeliveries, o
 import { api } from "@/worker/api";
 import { hashPassword } from "@/worker/auth/password";
 import { createSession, SESSION_COOKIE } from "@/worker/auth/session";
+import { claimOutboundDelivery } from "@/worker/email/send";
 
 const createdUsers: string[] = [];
 
@@ -33,6 +34,14 @@ describe("outbound delivery retry", () => {
 			{ outboundJobId: job.id, recipient: "retry@example.test", status: "failed", lastError: "Destination rejected" },
 			{ outboundJobId: job.id, recipient: "reconsider@example.test", status: "permanent", lastError: "Sender not verified" },
 		]);
+		const racing = await db
+			.insert(outboundDeliveries)
+			.values({ outboundJobId: job.id, recipient: "claim@example.test" })
+			.returning()
+			.get();
+		const claims = await Promise.all([claimOutboundDelivery(db, racing.id), claimOutboundDelivery(db, racing.id)]);
+		expect(claims.filter(Boolean)).toHaveLength(1);
+		expect(await db.select().from(outboundDeliveries).where(eq(outboundDeliveries.id, racing.id)).get()).toMatchObject({ status: "sending", attempts: 1 });
 		const session = await createSession(db, user.id);
 
 		const response = await api.fetch(new Request(`https://pogmail.test/api/messages/${message.id}/retry`, {

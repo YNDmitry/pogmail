@@ -22,6 +22,8 @@ gated behind a licence key.
 - **Search** — full-text over subject, body and sender, via SQLite FTS5 in D1.
 - **Webhooks** — HMAC-signed POSTs on delivery, with retry history and a test
   button; endpoints that keep failing are switched off automatically.
+- **Telegram alerts** — opt-in new-mail notifications for each user and their
+  shared mailboxes.
 - **Operations** — audit log, scheduled database backups to R2, import and export
   as NDJSON or mbox, a public `/api/v1` for API-key clients, and self-update via
   a GitHub Actions workflow.
@@ -137,6 +139,20 @@ If you rename the deployed Worker without changing `name` in `wrangler.jsonc`,
 adding a domain fails with *Workers Script Info not found*: Email Routing looks
 the Worker up by literal name. Fix the config and redeploy, or set the
 `EMAIL_WORKER_NAME` variable to the name the script actually has.
+
+### Telegram notifications
+
+Create a bot with [@BotFather](https://t.me/BotFather), then store its token as
+a Worker secret:
+
+```bash
+bun x wrangler secret put TELEGRAM_BOT_TOKEN
+```
+
+Each person who wants alerts must start a chat with that bot and enter their
+numeric chat ID (or a channel `@username`) in **Settings → Profile → Telegram
+notifications**. A missing token or chat ID simply leaves alerts off. The bot
+receives sender and subject only; Telegram failures never delay mail delivery.
 
 ## Commands
 

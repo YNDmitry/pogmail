@@ -15,6 +15,7 @@ const identity = {
 	role: users.role,
 	avatarKey: users.avatarKey,
 	mailLayout: users.mailLayout,
+	telegramChatId: users.telegramChatId,
 	canManageMailboxes: users.canManageMailboxes,
 	disabled: users.disabled,
 } as const;
@@ -63,6 +64,7 @@ export function toSessionUser(
 		role: row.role,
 		avatarKey: row.avatarKey,
 		mailLayout: row.mailLayout,
+		telegramChatId: row.telegramChatId,
 		canManageMailboxes: row.canManageMailboxes,
 	};
 }

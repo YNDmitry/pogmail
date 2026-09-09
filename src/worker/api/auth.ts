@@ -44,6 +44,7 @@ export const authRoutes = new Hono<AppBindings>()
 			role: user.role,
 			avatarKey: user.avatarKey,
 			mailLayout: user.mailLayout,
+			telegramChatId: user.telegramChatId,
 			canManageMailboxes: user.canManageMailboxes,
 		});
 		audit(c, { action: "auth.login" });
@@ -83,6 +84,8 @@ export const authRoutes = new Hono<AppBindings>()
 				name: user.name,
 				role: user.role,
 				avatarKey: user.avatarKey,
+				mailLayout: user.mailLayout,
+				telegramChatId: user.telegramChatId,
 				canManageMailboxes: user.canManageMailboxes,
 			},
 			201,

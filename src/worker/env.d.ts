@@ -18,6 +18,8 @@ interface PogmailSecrets {
 	 * deployed script was renamed away from the name in `wrangler.jsonc`.
 	 */
 	EMAIL_WORKER_NAME?: string;
+	/** Optional bot token used only to deliver configured Telegram notifications. */
+	TELEGRAM_BOT_TOKEN?: string;
 }
 
 interface Env extends PogmailSecrets {}

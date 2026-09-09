@@ -214,6 +214,8 @@ function ComposeForm({
 	const [state, setState] = useState<"idle" | "loading">("idle");
 	const [saveState, setSaveState] = useState<SaveState>("idle");
 	const [attaching, setAttaching] = useState(false);
+	/** URL replacement used by autosave is not a user leaving the composer. */
+	const internalNavigation = useRef(false);
 
 	const templates = useList<Template>(qk.templates, "/api/templates");
 	const editorRef = useRef<RichTextHandle>(null);
@@ -270,8 +272,14 @@ function ComposeForm({
 				id = row.id;
 				setDraftId(id);
 				// The id goes in the URL, so a reload reopens this draft rather than
-				// starting a second one beside it.
-				void navigate({ to: "/compose", search: { draftId: id }, replace: true });
+				// starting a second one beside it. This is an internal replace, not a
+				// request to leave the composer, so the blocker must stay out of its way.
+				internalNavigation.current = true;
+				try {
+					await navigate({ to: "/compose", search: { draftId: id }, replace: true });
+				} finally {
+					internalNavigation.current = false;
+				}
 			}
 
 			setSavedSnapshot(pending);
@@ -325,7 +333,7 @@ function ComposeForm({
 
 	/* In-app navigation gets a dialog instead, so the choice stays inside the app. */
 	const blocker = useBlocker({
-		shouldBlockFn: () => unsaved && !done,
+		shouldBlockFn: () => unsaved && !done && !internalNavigation.current,
 		withResolver: true,
 	});
 

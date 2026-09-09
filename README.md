@@ -70,12 +70,14 @@ press **Verify** after adding the Email Sending permission below.
 
 `CF_TOKEN` is a runtime token, separate from the credential Cloudflare uses for
 the deployment. Create a [custom API token](https://dash.cloudflare.com/profile/api-tokens)
-with `Zone / Zone / Read`, `Zone / DNS / Edit`, `Zone / Zone Settings / Edit`,
-`Zone / Email Routing Rules / Edit`, `Zone / Email Sending / Edit` and `Zone /
-Analytics / Read`. To use Administration → Suppressions, also add `Account /
-Email Sending / Edit` for the account that owns those zones. Limit its
-Zone Resources to the domains Pogmail will manage. Paste the token value without
-the `Bearer` prefix; Pogmail discovers the account and zones through it.
+with `Account / Email Sending / Edit`, `Zone / Zone / Read`, `Zone / DNS / Edit`,
+`Zone / Zone Settings / Edit`, `Zone / Email Routing Rules / Edit` and `Zone /
+Analytics / Read`. Analytics is only needed for Administration → Deliverability.
+The account-level Email Sending permission covers sending, sending-subdomain
+onboarding and Administration → Suppressions. Limit Account Resources to the
+account that owns these zones and Zone Resources to the domains Pogmail will
+manage. Paste the token value without the `Bearer` prefix; Pogmail discovers the
+account and zones through it.
 
 ### Final delivery events
 

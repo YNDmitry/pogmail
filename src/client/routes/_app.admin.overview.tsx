@@ -76,7 +76,7 @@ function Overview() {
 	return (
 		<div className="space-y-8">
 			<header className="flex items-center gap-3.5">
-				<Mark identity={identity} className="size-10" animate />
+				<Mark className="size-10" />
 				<div className="min-w-0">
 					<h1 className="display text-[1.375rem] text-ink">
 						{branding.data?.appName ?? "Pogmail"}

@@ -1,8 +1,8 @@
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
-import { ThemeProvider } from "next-themes";
+import { ThemeProvider, useTheme } from "next-themes";
 import { routeTree } from "./routeTree.gen";
 import "./styles.css";
 
@@ -37,6 +37,17 @@ declare module "@tanstack/react-router" {
 const root = document.getElementById("root");
 if (!root) throw new Error("#root missing from index.html");
 
+function ThemeFavicon() {
+	const { resolvedTheme } = useTheme();
+
+	useEffect(() => {
+		const favicon = document.getElementById("theme-favicon") as HTMLLinkElement | null;
+		if (favicon) favicon.href = resolvedTheme === "dark" ? "/logo.svg" : "/logo-light.svg";
+	}, [resolvedTheme]);
+
+	return null;
+}
+
 createRoot(root).render(
 	<StrictMode>
 		{/*
@@ -45,6 +56,7 @@ createRoot(root).render(
 		 * for the resolved system preference.
 		 */}
 		<ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+			<ThemeFavicon />
 			<QueryClientProvider client={queryClient}>
 				<RouterProvider router={router} />
 			</QueryClientProvider>

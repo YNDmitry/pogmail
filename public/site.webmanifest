@@ -1,0 +1,15 @@
+{
+  "name": "Pogmail",
+  "short_name": "Pogmail",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "theme_color": "#161513",
+  "background_color": "#161513",
+  "display": "standalone"
+}

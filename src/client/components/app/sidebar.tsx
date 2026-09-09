@@ -22,7 +22,6 @@ import { ScrollFade } from "@/client/components/ui";
 import { Mark } from "@/client/components/app/mark";
 import { AccountCard } from "@/client/components/app/shell/account-card";
 import { MailboxSwitcher } from "@/client/components/app/shell/mailbox-switcher";
-import { useInstanceIdentity } from "@/client/lib/identity-context";
 import { useLogout } from "@/client/lib/queries";
 import { interceptRouterLinks } from "@/client/lib/route-links";
 import { cn } from "@/client/lib/utils";
@@ -56,8 +55,6 @@ function ProductBrand({
 	iconUrl: string | null;
 	compact: boolean;
 }) {
-	const identity = useInstanceIdentity();
-
 	return (
 		<Link
 			to="/mail/$folder"
@@ -69,8 +66,7 @@ function ProductBrand({
 				{iconUrl ? (
 					<img src={iconUrl} alt="" aria-hidden className="size-4.5 rounded-sm object-cover" />
 				) : (
-					/* No logo uploaded: the instance wears the mark its own seed drew. */
-					<Mark identity={identity} className="size-4.5" animate />
+					<Mark className="size-4.5" />
 				)}
 			</span>
 			<motion.span

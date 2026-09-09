@@ -4,6 +4,7 @@ import {
 	AtSign,
 	DatabaseBackup,
 	Gauge,
+	GaugeCircle,
 	Globe,
 	Palette,
 	Route as RouteIcon,
@@ -25,6 +26,7 @@ export const Route = createFileRoute("/_app/admin")({
 
 const LINKS = [
 	{ to: "/admin/overview", label: "Overview", icon: Gauge },
+	{ to: "/admin/deliverability", label: "Delivery health", icon: GaugeCircle },
 	{ to: "/admin/domains", label: "Domains", icon: Globe },
 	{ to: "/admin/mailboxes", label: "Mailboxes", icon: AtSign },
 	{ to: "/admin/accounts", label: "Accounts", icon: Users },

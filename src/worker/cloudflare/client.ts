@@ -1,5 +1,7 @@
 const API_BASE = "https://api.cloudflare.com/client/v4";
 
+type GraphQLResult<T> = { data?: T; errors?: { message?: string }[] };
+
 export type CloudflareResult<T> = {
 	success: boolean;
 	result: T;
@@ -70,5 +72,25 @@ export class CloudflareClient {
 	}
 	delete<T>(path: string) {
 		return this.request<T>(path, { method: "DELETE" });
+	}
+
+	/** Cloudflare Analytics is GraphQL rather than a REST resource. */
+	async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+		const response = await fetch(`${API_BASE}/graphql`, {
+			method: "POST",
+			headers: {
+				authorization: `Bearer ${this.token}`,
+				"content-type": "application/json",
+			},
+			body: JSON.stringify({ query, variables }),
+		});
+		const body = (await response.json().catch(() => null)) as GraphQLResult<T> | null;
+		if (!response.ok || body?.errors?.length || !body?.data) {
+			throw new CloudflareError(
+				body?.errors?.[0]?.message?.trim() || `Cloudflare Analytics ${response.status}`,
+				response.status || 502,
+			);
+		}
+		return body.data;
 	}
 }

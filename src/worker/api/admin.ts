@@ -7,6 +7,8 @@ import { domains, mailboxes, messages, SINGLETON_ID, updateSettings, users } fro
 import { audit } from "../audit";
 import { BUILD_COMMIT, BUILD_REPOSITORY, UPSTREAM_REPOSITORY } from "../build";
 import { decryptSecret, encryptSecret } from "../auth/secrets";
+import { CloudflareClient } from "../cloudflare/client";
+import { getSendingMetrics } from "../cloudflare/email-analytics";
 import { applyPendingMigrations, pendingMigrations } from "../db/migrate";
 import { requireAdmin } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
@@ -119,6 +121,42 @@ async function explain404(input: UpdateInput): Promise<string> {
 
 export const adminRoutes = new Hono<AppBindings>()
 	.use("*", requireAdmin)
+
+	/** Cloudflare's aggregate delivery telemetry for the last 30 calendar days. */
+	.get("/deliverability", async (c) => {
+		const now = new Date();
+		const end = now.toISOString().slice(0, 10);
+		const start = new Date(now.getTime() - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+		const configured = await c
+			.get("db")
+			.select({ hostname: domains.hostname, zoneId: domains.zoneId, sendingEnabled: domains.sendingEnabled })
+			.from(domains)
+			.all();
+
+		if (!c.env.CF_TOKEN) {
+			return c.json({ start, end, domains: [], error: "Set CF_TOKEN with Zone / Analytics / Read to view delivery telemetry." });
+		}
+
+		const cf = CloudflareClient.fromEnv(c.env);
+		const reports = await Promise.all(
+			configured
+				.filter((domain) => domain.sendingEnabled)
+				.map(async (domain) => {
+					try {
+						return { hostname: domain.hostname, metrics: await getSendingMetrics(cf, domain.zoneId, start, end), error: null };
+					} catch (error) {
+						return { hostname: domain.hostname, metrics: [], error: error instanceof Error ? error.message : String(error) };
+					}
+				}),
+		);
+
+		return c.json({
+			start,
+			end,
+			domains: reports,
+			error: reports.length > 0 && reports.every((report) => report.error) ? "Add Zone / Analytics / Read to CF_TOKEN, then reload this page." : null,
+		});
+	})
 
 	.get("/overview", async (c) => {
 		const [userCount, domainCount, mailboxCount, messageCount, storage] = await Promise.all([

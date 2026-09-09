@@ -31,6 +31,7 @@ export const qk = {
 	activity: ["activity"] as const,
 	backups: ["backups"] as const,
 	adminOverview: ["admin", "overview"] as const,
+	adminDeliverability: ["admin", "deliverability"] as const,
 	adminVersion: ["admin", "version"] as const,
 	adminUpdateConfig: ["admin", "update", "config"] as const,
 	adminMigrations: ["admin", "migrations"] as const,

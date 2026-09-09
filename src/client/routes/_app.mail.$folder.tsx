@@ -11,12 +11,14 @@ import { Archive, MailOpen, Search, Trash2, X } from "lucide-react";
 import { z } from "zod";
 import { Loader } from "@/client/components/motion/loader";
 import { MessageList } from "@/client/components/app/message-list";
+import { useConfirm } from "@/client/components/app/confirm";
 import { Empty } from "@/client/components/app/primitives";
 import { Input } from "@/client/components/ui";
 import { Button } from "@/client/components/app/button";
 import { Machine } from "@/client/components/app/primitives";
 import {
 	useBulkPatch,
+	useDeleteMessage,
 	useMailboxes,
 	useSession,
 	useMessages,
@@ -79,6 +81,8 @@ function MailFolder() {
 	const navigate = useNavigate({ from: "/mail/$folder" });
 	const patch = usePatchMessage();
 	const bulk = useBulkPatch();
+	const remove = useDeleteMessage();
+	const confirm = useConfirm();
 	const toast = useToast();
 	const [selection, setSelection] = useState<{ scope: string; ids: Set<string> }>(() => ({
 		scope: "",
@@ -173,6 +177,21 @@ function MailFolder() {
 		setSelection({ scope, ids: new Set() });
 	}
 
+	function askPermanentDelete(ids: string[]) {
+		if (folder !== "trash" || ids.length === 0) return;
+		confirm.ask({
+			title: ids.length === 1 ? "Delete this message for good?" : `Delete ${ids.length} messages for good?`,
+			description: "These messages, their attachments and stored MIME data will be permanently removed. This cannot be undone.",
+			confirmLabel: ids.length === 1 ? "Delete for good" : "Delete all permanently",
+			onConfirm: () => {
+				void Promise.all(ids.map((id) => remove.mutateAsync(id))).then(() => {
+					setSelection({ scope, ids: new Set() });
+					toast.ok(ids.length === 1 ? "Deleted permanently" : `${ids.length} messages deleted permanently`);
+				});
+			},
+		});
+	}
+
 	function toggle(id: string) {
 		setSelection((current) => {
 			const ids = new Set(current.scope === scope ? current.ids : []);
@@ -218,7 +237,10 @@ function MailFolder() {
 					search: (prev) => prev,
 				});
 			} else if (key === "e") act(pickedOr(current.id), { status: "archived" }, "Archived");
-			else if (key === "#") act(pickedOr(current.id), { status: "trash" }, "Moved to trash");
+			else if (key === "#") {
+				if (folder === "trash") askPermanentDelete(pickedOr(current.id));
+				else act(pickedOr(current.id), { status: "trash" }, "Moved to trash");
+			}
 			else if (key === "s") act([current.id], { starred: !current.starred }, current.starred ? "Star removed" : "Starred");
 			else if (key === "u") act(pickedOr(current.id), { read: !current.read }, current.read ? "Marked unread" : "Marked read");
 			else if (key === "x") toggle(current.id);
@@ -282,6 +304,17 @@ function MailFolder() {
 								<Trash2 className="size-3.5" />
 								Trash
 							</Button>
+							{folder === "trash" ? (
+								<Button
+									size="sm"
+									variant="ghost"
+									className="text-fail hover:text-fail"
+									onClick={() => askPermanentDelete([...picked])}
+								>
+									<Trash2 className="size-3.5" />
+									Delete permanently
+								</Button>
+							) : null}
 							<Button
 								size="sm"
 								variant="ghost"
@@ -362,6 +395,7 @@ function MailFolder() {
 							onTogglePicked={(message) => toggle(message.id)}
 							onArchive={(message) => act([message.id], { status: "archived" }, "Archived")}
 							onTrash={(message) => act([message.id], { status: "trash" }, "Moved to trash")}
+							onDelete={folder === "trash" ? (message) => askPermanentDelete([message.id]) : undefined}
 							onToggleRead={(message) =>
 								act([message.id], { read: !message.read }, message.read ? "Marked unread" : "Marked read")
 							}
@@ -392,6 +426,8 @@ function MailFolder() {
 			<section className="hidden min-h-0 overflow-y-auto lg:block">
 				<Outlet />
 			</section>
+
+			{confirm.dialog}
 		</div>
 	);
 }

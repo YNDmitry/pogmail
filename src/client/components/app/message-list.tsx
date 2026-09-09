@@ -28,6 +28,7 @@ export function MessageList({
 	onTogglePicked,
 	onArchive,
 	onTrash,
+	onDelete,
 	onToggleRead,
 }: {
 	messages: MessageSummary[];
@@ -40,6 +41,7 @@ export function MessageList({
 	onTogglePicked: (message: MessageSummary) => void;
 	onArchive: (message: MessageSummary) => void;
 	onTrash: (message: MessageSummary) => void;
+	onDelete?: (message: MessageSummary) => void;
 	onToggleRead: (message: MessageSummary) => void;
 }) {
 	return (
@@ -209,13 +211,23 @@ export function MessageList({
 									<Archive className="size-3.5" />
 								</RowAction>
 
-								<RowAction
-									label="Move to trash"
-									className="opacity-0 group-hover/row:opacity-100 hover:text-fail"
-									onClick={() => onTrash(message)}
-								>
-									<Trash2 className="size-3.5" />
-								</RowAction>
+								{folder === "trash" && onDelete ? (
+									<RowAction
+										label="Delete permanently"
+										className="opacity-0 group-hover/row:opacity-100 hover:text-fail"
+										onClick={() => onDelete(message)}
+									>
+										<Trash2 className="size-3.5" />
+									</RowAction>
+								) : (
+									<RowAction
+										label="Move to trash"
+										className="opacity-0 group-hover/row:opacity-100 hover:text-fail"
+										onClick={() => onTrash(message)}
+									>
+										<Trash2 className="size-3.5" />
+									</RowAction>
+								)}
 
 								<RowAction
 									label={message.starred ? "Remove star" : "Add star"}

@@ -9,6 +9,7 @@ import type { AppBindings } from "../middleware/context";
 import { forbidden, notFound, parseBody } from "./_util";
 import { deleteObject, putUpload, serveObject } from "../storage";
 import type { OutboundSendMessage } from "../email/types";
+import { nextScheduledDelay } from "../email/schedule";
 
 /*
  * Cloudflare rejects an outbound message over 25 MB, and base64 inflates the
@@ -185,7 +186,7 @@ export const sendRoutes = new Hono<AppBindings>()
 		const payload: OutboundSendMessage = { kind: "outbound", jobId: job.id };
 		// A scheduled send waits in the queue rather than in a table someone has to poll.
 		const delaySeconds = input.scheduledFor
-			? Math.max(0, Math.round((input.scheduledFor - Date.now()) / 1000))
+			? nextScheduledDelay(new Date(input.scheduledFor))
 			: undefined;
 		await c.env.OUTBOUND_QUEUE.send(payload, delaySeconds ? { delaySeconds } : undefined);
 

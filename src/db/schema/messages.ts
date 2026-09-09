@@ -144,7 +144,7 @@ export const outboundJobs = sqliteTable(
 );
 
 /** One row per envelope recipient: queue retries skip recipients already accepted. */
-export const OUTBOUND_DELIVERY_STATUSES = ["pending", "sent", "failed"] as const;
+export const OUTBOUND_DELIVERY_STATUSES = ["pending", "sent", "failed", "permanent"] as const;
 export type OutboundDeliveryStatus = (typeof OUTBOUND_DELIVERY_STATUSES)[number];
 
 export const outboundDeliveries = sqliteTable(

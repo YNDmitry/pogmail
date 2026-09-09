@@ -288,6 +288,14 @@ export const messageRoutes = new Hono<AppBindings>()
 			.update(outboundJobs)
 			.set({ status: "queued", lastError: null, scheduledFor: null })
 			.where(eq(outboundJobs.id, job.id));
+		// Automatic retries deliberately skip permanent Cloudflare rejections. A
+		// person pressing Retry has made a fresh, explicit decision — perhaps the
+		// sender domain was just onboarded — so return those rows to the retry set.
+		await c
+			.get("db")
+			.update(outboundDeliveries)
+			.set({ status: "failed", lastError: null })
+			.where(and(eq(outboundDeliveries.outboundJobId, job.id), eq(outboundDeliveries.status, "permanent")));
 		await c.env.OUTBOUND_QUEUE.send({ kind: "outbound", jobId: job.id } satisfies OutboundSendMessage);
 		audit(c, { action: "message.retry", messageId: message.id, mailboxId: message.mailboxId });
 		return c.json({ ok: true });

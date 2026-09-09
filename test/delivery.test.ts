@@ -31,6 +31,7 @@ describe("outbound delivery retry", () => {
 		await db.insert(outboundDeliveries).values([
 			{ outboundJobId: job.id, recipient: "accepted@example.test", status: "sent", sentAt: new Date() },
 			{ outboundJobId: job.id, recipient: "retry@example.test", status: "failed", lastError: "Destination rejected" },
+			{ outboundJobId: job.id, recipient: "reconsider@example.test", status: "permanent", lastError: "Sender not verified" },
 		]);
 		const session = await createSession(db, user.id);
 
@@ -42,6 +43,7 @@ describe("outbound delivery retry", () => {
 		expect(await db.select().from(outboundDeliveries).where(eq(outboundDeliveries.outboundJobId, job.id)).all()).toEqual(expect.arrayContaining([
 			expect.objectContaining({ recipient: "accepted@example.test", status: "sent" }),
 			expect.objectContaining({ recipient: "retry@example.test", status: "failed" }),
+			expect.objectContaining({ recipient: "reconsider@example.test", status: "failed", lastError: null }),
 		]));
 	});
 

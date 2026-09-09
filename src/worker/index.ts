@@ -21,6 +21,7 @@ import {
 } from "./email/types";
 import { runDelivery } from "./email/webhooks";
 import { putRawMessage } from "./storage";
+import { queueRetryDelay } from "./queue/retry";
 
 export { RealtimeHub } from "./realtime/hub";
 export { DatabaseBackupWorkflow } from "./backups/workflow";
@@ -134,7 +135,7 @@ export default {
         item.ack();
       } catch (error) {
         console.error("Queue job failed", payload, error);
-        item.retry({ delaySeconds: 10 });
+        item.retry({ delaySeconds: queueRetryDelay(item.attempts) });
       }
     }
   },

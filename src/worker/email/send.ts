@@ -1,10 +1,11 @@
 import { createMimeMessage, Mailbox } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "./types";
 import { safeEmailHtml } from "./html-safety";
+import { nextScheduledDelay } from "./schedule";
 
 /** The domain a Message-ID is minted under: it must be one the sender owns. */
 function domainOf(address: string): string {
@@ -32,6 +33,14 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 		.get();
 
 	if (!row || row.job.status === "sent") return;
+
+	// A Queues delay cannot exceed 24 hours. A distant scheduled message advances
+	// itself one bounded interval at a time, without polling or sending early.
+	const delaySeconds = nextScheduledDelay(row.job.scheduledFor);
+	if (delaySeconds !== undefined) {
+		await env.OUTBOUND_QUEUE.send(job, { delaySeconds });
+		return;
+	}
 
 	await db
 		.update(outboundJobs)
@@ -113,9 +122,15 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 		const pending = await db
 			.select()
 			.from(outboundDeliveries)
-			.where(and(eq(outboundDeliveries.outboundJobId, row.job.id), ne(outboundDeliveries.status, "sent")))
+			.where(
+				and(
+					eq(outboundDeliveries.outboundJobId, row.job.id),
+					inArray(outboundDeliveries.status, ["pending", "failed"]),
+				),
+			)
 			.all();
 
+		let permanentFailure: string | null = null;
 		for (const delivery of pending) {
 			await db
 				.update(outboundDeliveries)
@@ -129,12 +144,26 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 					.set({ status: "sent", sentAt: new Date(), lastError: null })
 					.where(eq(outboundDeliveries.id, delivery.id));
 			} catch (error) {
+				const permanent = isPermanentEmailError(error);
+				const message = emailErrorMessage(error);
 				await db
 					.update(outboundDeliveries)
-					.set({ status: "failed", lastError: String(error).slice(0, 500) })
+					.set({ status: permanent ? "permanent" : "failed", lastError: message })
 					.where(eq(outboundDeliveries.id, delivery.id));
+				if (permanent) {
+					permanentFailure ??= message;
+					continue;
+				}
 				throw error;
 			}
+		}
+
+		if (permanentFailure) {
+			await db
+				.update(outboundJobs)
+				.set({ status: "failed", lastError: permanentFailure })
+				.where(eq(outboundJobs.id, job.jobId));
+			return;
 		}
 
 		await db
@@ -167,6 +196,37 @@ export function deliveryRecipients(
 		recipients.push(address.address);
 	}
 	return recipients;
+}
+
+type EmailSendingError = { code?: unknown; message?: unknown };
+
+/** Errors Cloudflare documents as requiring a changed message or configuration. */
+const PERMANENT_EMAIL_ERROR_CODES = new Set([
+	"E_VALIDATION_ERROR",
+	"E_FIELD_MISSING",
+	"E_TOO_MANY_RECIPIENTS",
+	"E_SENDER_NOT_VERIFIED",
+	"E_RECIPIENT_NOT_ALLOWED",
+	"E_RECIPIENT_SUPPRESSED",
+	"E_SENDER_DOMAIN_NOT_AVAILABLE",
+	"E_CONTENT_TOO_LARGE",
+	"E_HEADER_NOT_ALLOWED",
+	"E_HEADER_USE_API_FIELD",
+	"E_HEADER_VALUE_INVALID",
+	"E_HEADER_VALUE_TOO_LONG",
+	"E_HEADER_NAME_INVALID",
+	"E_HEADERS_TOO_LARGE",
+	"E_HEADERS_TOO_MANY",
+]);
+
+export function isPermanentEmailError(error: unknown): boolean {
+	return typeof error === "object" && error !== null &&
+		typeof (error as EmailSendingError).code === "string" &&
+		PERMANENT_EMAIL_ERROR_CODES.has((error as EmailSendingError).code as string);
+}
+
+function emailErrorMessage(error: unknown): string {
+	return (error instanceof Error ? error.message : String(error)).slice(0, 500);
 }
 
 function appendSignatureText(body: string | null, signature: string | null): string | null {

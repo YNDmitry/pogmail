@@ -74,11 +74,11 @@ function Domains() {
 					variant="secondary"
 					onClick={async () => {
 						try {
-							const result = await api.post<{ seeded: boolean }>("/api/demo/seed", {});
+							const result = await api.post<{ seeded: boolean; showcase?: boolean }>("/api/demo/seed", { showcase: true });
 							await domains.refetch();
-							toast.ok(result.seeded ? "Local demo loaded" : "Local demo is already loaded");
+							toast.ok(result.seeded ? "Showcase data loaded" : "Showcase data is already loaded");
 						} catch (error) {
-							toast.fail("Could not load local demo", error instanceof ApiError ? error.message : undefined);
+							toast.fail("Could not load showcase data", error instanceof ApiError ? error.message : undefined);
 						}
 					}}
 				>

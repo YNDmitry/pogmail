@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  BarChart3,
   Ban,
   Mail,
   Search,
@@ -87,6 +88,20 @@ type Campaign = {
   opens: number;
   clicks: number;
   scheduledFor: string | null;
+};
+type CampaignReport = {
+  campaign: Pick<Campaign, "id" | "subject" | "recipientCount" | "createdAt">;
+  summary: { queued: number; sending: number; sent: number; failed: number; opens: number; clicks: number };
+  recipients: Array<{
+    messageId: string;
+    email: string;
+    name: string | null;
+    status: "queued" | "pending" | "sending" | "sent" | "failed" | "permanent";
+    attempts: number;
+    lastError: string | null;
+    openedAt: string | null;
+    clicks: number;
+  }>;
 };
 
 function Contacts() {
@@ -352,6 +367,7 @@ function CampaignHistory({ campaigns }: { campaigns: Campaign[] }) {
   const toast = useToast();
   const queryClient = useQueryClient();
   const { ask, dialog } = useConfirm();
+  const [reportCampaignId, setReportCampaignId] = useState<string | null>(null);
   const cancel = useMutation({
     mutationFn: (id: string) =>
       api.post<{ ok: true }>(`/api/send/campaigns/${id}/cancel`),
@@ -402,6 +418,14 @@ function CampaignHistory({ campaigns }: { campaigns: Campaign[] }) {
                   {campaign.clicks} clicks · {pending} pending ·{" "}
                   {campaign.failed} failed
                 </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setReportCampaignId(campaign.id)}
+                >
+                  <BarChart3 className="size-3.5" />
+                  Report
+                </Button>
                 {campaign.state === "queued" || campaign.state === "sending" ? (
                   <Button
                     size="sm"
@@ -426,8 +450,61 @@ function CampaignHistory({ campaigns }: { campaigns: Campaign[] }) {
           })}
         </ul>
       </Card>
+      <CampaignReportDialog
+        campaignId={reportCampaignId}
+        onClose={() => setReportCampaignId(null)}
+      />
       {dialog}
     </section>
+  );
+}
+
+function CampaignReportDialog({
+  campaignId,
+  onClose,
+}: {
+  campaignId: string | null;
+  onClose: () => void;
+}) {
+  const report = useQuery({
+    queryKey: ["campaign-report", campaignId],
+    enabled: Boolean(campaignId),
+    queryFn: () => api.get<CampaignReport>(`/api/send/campaigns/${campaignId}`),
+  });
+  const data = report.data;
+  return (
+    <Modal
+      open={Boolean(campaignId)}
+      onClose={onClose}
+      title={data ? `Report: ${data.campaign.subject}` : "Campaign report"}
+      description="Each row is a private delivery; engagement counts only the first open and each tracked link click."
+      className="sm:max-w-3xl"
+    >
+      {report.isPending ? <div className="grid place-items-center py-12"><Loader /></div> : null}
+      {report.isError ? <p className="text-sm text-fail">Could not load this campaign report.</p> : null}
+      {data ? <div className="space-y-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {([
+            ["Sent", data.summary.sent], ["Pending", data.summary.queued + data.summary.sending],
+            ["Opened", data.summary.opens], ["Clicks", data.summary.clicks], ["Failed", data.summary.failed],
+            ["Recipients", data.recipients.length],
+          ] as const).map(([label, value]) => <div key={label} className="rounded-panel border border-seam bg-recess px-3 py-2">
+            <p className="machine text-lg text-ink">{value}</p><p className="text-xs text-ink-3">{label}</p>
+          </div>)}
+        </div>
+        <div className="max-h-80 overflow-y-auto rounded-panel border border-seam">
+          <ul className="divide-y divide-seam">
+            {data.recipients.map((recipient) => <li key={recipient.messageId} className="flex flex-wrap items-center gap-2 px-3 py-2.5 text-sm">
+              <div className="min-w-0 flex-1"><p className="truncate font-medium text-ink">{recipient.name || recipient.email}</p><Machine className="block truncate text-xs">{recipient.email}</Machine></div>
+              <Tag tone={recipient.status === "sent" ? "ok" : recipient.status === "failed" || recipient.status === "permanent" ? "fail" : "wait"}>{recipient.status}</Tag>
+              {recipient.openedAt ? <Tag tone="accent">opened</Tag> : null}
+              {recipient.clicks ? <Tag tone="accent">{recipient.clicks} clicks</Tag> : null}
+              {recipient.lastError ? <p className="basis-full truncate text-xs text-fail" title={recipient.lastError}>{recipient.lastError}</p> : null}
+            </li>)}
+          </ul>
+        </div>
+      </div> : null}
+    </Modal>
   );
 }
 

@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { and, count, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
-import { audienceMembers, audiences, campaignLinkClicks, contacts, domains, emailCampaigns, mailboxes, messageAttachments, messages, outboundJobs } from "@/db/schema";
+import { audienceMembers, audiences, campaignLinkClicks, contacts, domains, emailCampaigns, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import { audit } from "../audit";
 import { canSendFrom, getPermission, hasAtLeast } from "../mailboxes/access";
 import type { AppBindings } from "../middleware/context";
@@ -292,6 +292,61 @@ export const sendRoutes = new Hono<AppBindings>()
 							: "completed";
 				return { ...campaign, state, ...delivery, opens: opensByCampaign.get(campaign.id) ?? 0, clicks: clicksByCampaign.get(campaign.id) ?? 0 };
 			}),
+		});
+	})
+
+	/** Individual campaign copies remain private, but their delivery and engagement are auditable. */
+	.get("/campaigns/:id", async (c) => {
+		const campaign = await c.get("db").select().from(emailCampaigns).where(and(
+			eq(emailCampaigns.id, c.req.param("id")),
+			eq(emailCampaigns.userId, c.get("user").id),
+		)).get();
+		if (!campaign) notFound("Campaign");
+
+		const copies = await c.get("db").select({
+			messageId: messages.id,
+			toAddresses: messages.toAddresses,
+			openedAt: messages.openedAt,
+			jobStatus: outboundJobs.status,
+			attempts: outboundJobs.attempts,
+			lastError: outboundJobs.lastError,
+			deliveryStatus: outboundDeliveries.status,
+			deliveryError: outboundDeliveries.lastError,
+		}).from(messages)
+			.innerJoin(outboundJobs, eq(outboundJobs.messageId, messages.id))
+			.leftJoin(outboundDeliveries, eq(outboundDeliveries.outboundJobId, outboundJobs.id))
+			.where(eq(messages.campaignId, campaign.id))
+			.orderBy(desc(messages.createdAt))
+			.all();
+		const clickCounts = await c.get("db").select({ messageId: campaignLinkClicks.messageId, total: count() })
+			.from(campaignLinkClicks)
+			.where(and(inArray(campaignLinkClicks.messageId, copies.map((copy) => copy.messageId)), isNotNull(campaignLinkClicks.clickedAt)))
+			.groupBy(campaignLinkClicks.messageId).all();
+		const clicksByMessage = new Map(clickCounts.map((entry) => [entry.messageId, entry.total]));
+		const recipients = copies.map((copy) => {
+			const recipient = copy.toAddresses[0];
+			return {
+				messageId: copy.messageId,
+				email: recipient?.address ?? "Unknown recipient",
+				name: recipient?.name ?? null,
+				status: copy.deliveryStatus ?? copy.jobStatus,
+				attempts: copy.attempts,
+				lastError: copy.deliveryError ?? copy.lastError,
+				openedAt: copy.openedAt,
+				clicks: clicksByMessage.get(copy.messageId) ?? 0,
+			};
+		});
+		return c.json({
+			campaign,
+			summary: {
+				queued: recipients.filter((recipient) => recipient.status === "queued").length,
+				sending: recipients.filter((recipient) => recipient.status === "sending" || recipient.status === "pending").length,
+				sent: recipients.filter((recipient) => recipient.status === "sent").length,
+				failed: recipients.filter((recipient) => recipient.status === "failed" || recipient.status === "permanent").length,
+				opens: recipients.filter((recipient) => recipient.openedAt).length,
+				clicks: recipients.reduce((total, recipient) => total + recipient.clicks, 0),
+			},
+			recipients,
 		});
 	})
 

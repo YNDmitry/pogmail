@@ -103,6 +103,13 @@ describe("outbound delivery retry", () => {
 
 		const history = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", { headers: { cookie } }), env);
 		expect(await history.json()).toMatchObject({ items: [expect.objectContaining({ id: result.id, state: "queued", queued: 1, opens: 0, clicks: 0, scheduledFor: expect.any(String) })] });
+		const report = await api.fetch(new Request(`https://pogmail.test/api/send/campaigns/${result.id}`, { headers: { cookie } }), env);
+		expect(report.status).toBe(200);
+		expect(await report.json()).toMatchObject({
+			campaign: expect.objectContaining({ id: result.id, subject: "Hello" }),
+			summary: { queued: 1, sending: 0, sent: 0, failed: 0, opens: 0, clicks: 0 },
+			recipients: [expect.objectContaining({ email: "recipient@example.test", status: "queued", attempts: 0, clicks: 0 })],
+		});
 		const open = await api.fetch(new Request(`https://pogmail.test/api/public/open?token=${sent[0]!.openTrackingToken}`), env);
 		expect(open).toMatchObject({ status: 200 });
 		expect(open.headers.get("content-type")).toBe("image/gif");

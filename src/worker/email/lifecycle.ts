@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "@/db";
-import { domains, emailDeliveryEvents, mailboxes, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
+import { contacts, domains, emailCampaigns, emailDeliveryEvents, mailboxes, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 
 export const EMAIL_EVENTS_QUEUE = "pogmail-email-events";
 
@@ -67,6 +67,12 @@ function eventDetail(event: EmailSendingLifecycleEvent): string | null {
 	return detail?.slice(0, 500) ?? null;
 }
 
+/** A temporary delivery issue must not revoke consent; complaints and hard bounces must. */
+function shouldSuppressMarketing(event: EmailSendingLifecycleEvent) {
+	return event.type === "cf.email.sending.message.complained"
+		|| (event.type === "cf.email.sending.message.bounced" && event.payload.bounce?.type === "hard");
+}
+
 /**
  * Records one event only when it belongs to a local recipient delivery. The event
  * id is the primary key, so a Queue replay is a harmless no-op.
@@ -74,14 +80,20 @@ function eventDetail(event: EmailSendingLifecycleEvent): string | null {
 export async function recordEmailSendingLifecycleEvent(
 	db: Database,
 	event: EmailSendingLifecycleEvent,
-): Promise<{ result: "recorded" | "duplicate" | "unmatched"; mailboxId?: string; messageId?: string }> {
+): Promise<{ result: "recorded" | "duplicate" | "unmatched"; mailboxId?: string; messageId?: string; suppressed?: boolean }> {
 	const delivery = await db
-		.select({ id: outboundDeliveries.id, mailboxId: messages.mailboxId, messageId: messages.id })
+		.select({
+			id: outboundDeliveries.id,
+			mailboxId: messages.mailboxId,
+			messageId: messages.id,
+			campaignUserId: emailCampaigns.userId,
+		})
 		.from(outboundDeliveries)
 		.innerJoin(outboundJobs, eq(outboundJobs.id, outboundDeliveries.outboundJobId))
 		.innerJoin(messages, eq(messages.id, outboundJobs.messageId))
 		.innerJoin(mailboxes, eq(mailboxes.id, messages.mailboxId))
 		.innerJoin(domains, eq(domains.id, mailboxes.domainId))
+		.leftJoin(emailCampaigns, eq(emailCampaigns.id, messages.campaignId))
 		.where(
 			and(
 				inArray(messages.messageId, messageIdVariants(event.payload.messageId)),
@@ -109,5 +121,12 @@ export async function recordEmailSendingLifecycleEvent(
 		.returning({ eventId: emailDeliveryEvents.eventId })
 		.get();
 	if (!inserted) return { result: "duplicate" };
-	return { result: "recorded", mailboxId: delivery.mailboxId, messageId: delivery.messageId };
+	const suppressed = Boolean(delivery.campaignUserId && shouldSuppressMarketing(event));
+	if (suppressed) {
+		await db.update(contacts).set({ marketingStatus: "unsubscribed", unsubscribedAt: new Date() }).where(and(
+			eq(contacts.userId, delivery.campaignUserId!),
+			sql`lower(${contacts.email}) = ${event.payload.recipient.toLowerCase()}`,
+		));
+	}
+	return { result: "recorded", mailboxId: delivery.mailboxId, messageId: delivery.messageId, suppressed };
 }

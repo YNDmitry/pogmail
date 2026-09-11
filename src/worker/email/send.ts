@@ -2,7 +2,7 @@ import { createMimeMessage, Mailbox } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { getDb, type Database } from "@/db";
-import { mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
+import { contacts, domains, emailCampaigns, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "./types";
 import { safeEmailHtml } from "./html-safety";
 import { nextScheduledDelay } from "./schedule";
@@ -28,14 +28,26 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			message: messages,
 			signatureText: mailboxes.signature,
 			signatureHtml: mailboxes.signatureHtml,
+			campaignStatus: emailCampaigns.status,
+			campaignUserId: emailCampaigns.userId,
+			domainHostname: domains.hostname,
 		})
 		.from(outboundJobs)
 		.innerJoin(messages, eq(messages.id, outboundJobs.messageId))
 		.leftJoin(mailboxes, eq(mailboxes.id, messages.mailboxId))
+		.leftJoin(emailCampaigns, eq(emailCampaigns.id, messages.campaignId))
+		.leftJoin(domains, eq(domains.id, mailboxes.domainId))
 		.where(eq(outboundJobs.id, job.jobId))
 		.get();
 
 	if (!row || row.job.status === "sent") return;
+	// Cancellation is checked by the consumer as well as the API: a message may
+	// already be sitting in Queues when its campaign is stopped.
+	if (row.campaignStatus === "cancelled") {
+		await db.update(outboundJobs).set({ status: "failed", lastError: "Campaign cancelled" })
+			.where(eq(outboundJobs.id, job.jobId));
+		return;
+	}
 
 	// A Queues delay cannot exceed 24 hours. A distant scheduled message advances
 	// itself one bounded interval at a time, without polling or sending early.
@@ -58,6 +70,22 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			mime.setCc(row.message.ccAddresses.map((entry) => entry.address));
 		}
 		mime.setSubject(row.message.subject ?? "(no subject)");
+		// Campaign copies have exactly one recipient, enabling a standards-compliant
+		// opaque one-click opt-out without exposing anyone else in a list header.
+		if (row.message.campaignId && row.campaignUserId && row.domainHostname) {
+			const recipient = row.message.toAddresses[0]?.address;
+			if (recipient) {
+				const contact = await db.select({ unsubscribeToken: contacts.unsubscribeToken }).from(contacts).where(and(
+					eq(contacts.userId, row.campaignUserId),
+					sql`lower(${contacts.email}) = ${recipient.toLowerCase()}`,
+				)).get();
+				if (contact?.unsubscribeToken) {
+					const unsubscribeUrl = `https://${row.domainHostname}/api/public/unsubscribe?token=${contact.unsubscribeToken}`;
+					mime.setHeader("List-Unsubscribe", `<${unsubscribeUrl}>`);
+					mime.setHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
+				}
+			}
+		}
 		// mimetext validates address headers by type, so Reply-To has to be a Mailbox.
 		if (row.message.replyTo) mime.setHeader("Reply-To", new Mailbox(row.message.replyTo));
 

@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
-import { domains, emailDeliveryEvents, mailboxes, messages, outboundDeliveries, outboundJobs, users } from "@/db/schema";
+import { contacts, domains, emailCampaigns, emailDeliveryEvents, mailboxes, messages, outboundDeliveries, outboundJobs, users } from "@/db/schema";
 import { parseEmailSendingLifecycleEvent, recordEmailSendingLifecycleEvent } from "@/worker/email/lifecycle";
 import { hashPassword } from "@/worker/auth/password";
 
@@ -57,6 +57,32 @@ describe("Email Sending lifecycle events", () => {
 		expect(await recordEmailSendingLifecycleEvent(db, event)).toEqual({ result: "duplicate" });
 		expect(await db.select().from(emailDeliveryEvents).where(eq(emailDeliveryEvents.outboundDeliveryId, delivery.id)).all())
 			.toEqual([expect.objectContaining({ type: "delivered", deliveryStatus: "delivered", detail: "250 Accepted" })]);
+
+		const contact = await db.insert(contacts).values({
+			userId: user.id, email: "complaint@example.test", source: "manual", marketingStatus: "subscribed",
+		}).returning().get();
+		const campaign = await db.insert(emailCampaigns).values({
+			userId: user.id, mailboxId: mailbox.id, subject: "Newsletter", recipientCount: 1,
+		}).returning().get();
+		const campaignMessageId = `<${crypto.randomUUID()}@example.test>`;
+		const campaignMessage = await db.insert(messages).values({
+			mailboxId: mailbox.id, campaignId: campaign.id, authorUserId: user.id, direction: "outbound", status: "sent",
+			threadId: crypto.randomUUID(), messageId: campaignMessageId, fromAddress: "hello@example.test",
+			toAddresses: [{ address: contact.email }], receivedAt: new Date(),
+		}).returning().get();
+		const campaignJob = await db.insert(outboundJobs).values({ messageId: campaignMessage.id, status: "sent" }).returning().get();
+		await db.insert(outboundDeliveries).values({ outboundJobId: campaignJob.id, recipient: contact.email, status: "sent" });
+		const complaint = parseEmailSendingLifecycleEvent({
+			type: "cf.email.sending.message.complained",
+			source: { type: "email.sending", zoneId: "mock", domain: "example.test" },
+			payload: { eventId: crypto.randomUUID(), messageId: campaignMessageId, recipient: contact.email, terminal: true, delivery: { status: "complained" } },
+			metadata: { eventTimestamp: "2026-09-09T00:00:00.000Z" },
+		});
+		expect(complaint).not.toBeNull();
+		if (!complaint) return;
+		expect(await recordEmailSendingLifecycleEvent(db, complaint)).toMatchObject({ result: "recorded", suppressed: true });
+		expect(await db.select().from(contacts).where(eq(contacts.id, contact.id)).get())
+			.toMatchObject({ marketingStatus: "unsubscribed", unsubscribedAt: expect.any(Date) });
 	});
 
 	it("drops an event that does not belong to a local delivery", async () => {

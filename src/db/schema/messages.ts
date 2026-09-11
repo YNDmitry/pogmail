@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { id, timestamps } from "./_shared";
 import { folders, mailboxes } from "./mailboxes";
@@ -15,6 +16,54 @@ export type MessageDirection = (typeof MESSAGE_DIRECTIONS)[number];
 
 export type MailAddress = { address: string; name?: string };
 
+/** A campaign can be cancelled, while its per-recipient messages remain auditable. */
+export const CAMPAIGN_STATUSES = ["queued", "cancelled"] as const;
+export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
+
+export const emailCampaigns = sqliteTable(
+	"email_campaigns",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		mailboxId: text("mailbox_id")
+			.notNull()
+			.references(() => mailboxes.id, { onDelete: "cascade" }),
+		subject: text("subject").notNull(),
+		status: text("status", { enum: CAMPAIGN_STATUSES }).notNull().default("queued"),
+		recipientCount: integer("recipient_count").notNull(),
+		/** Campaign copies share this queue wake-up time, if one was selected. */
+		scheduledFor: integer("scheduled_for", { mode: "timestamp_ms" }),
+		...timestamps(),
+	},
+	(t) => [
+		index("email_campaigns_user_created_idx").on(t.userId, t.createdAt),
+		index("email_campaigns_mailbox_idx").on(t.mailboxId, t.createdAt),
+	],
+);
+
+/** A campaign draft never creates recipient messages or queue jobs until it is launched. */
+export const emailCampaignDrafts = sqliteTable(
+	"email_campaign_drafts",
+	{
+		id: id(),
+		userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+		mailboxId: text("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
+		contactIds: text("contact_ids", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+		audienceId: text("audience_id"),
+		tag: text("tag"),
+		subject: text("subject").notNull().default(""),
+		bodyText: text("body_text").notNull().default(""),
+		bodyHtml: text("body_html"),
+		trackOpens: integer("track_opens", { mode: "boolean" }).notNull().default(false),
+		trackClicks: integer("track_clicks", { mode: "boolean" }).notNull().default(false),
+		scheduledFor: integer("scheduled_for", { mode: "timestamp_ms" }),
+		...timestamps(),
+	},
+	(t) => [index("email_campaign_drafts_user_updated_idx").on(t.userId, t.updatedAt)],
+);
+
 export const messages = sqliteTable(
 	"messages",
 	{
@@ -22,6 +71,8 @@ export const messages = sqliteTable(
 		mailboxId: text("mailbox_id")
 			.notNull()
 			.references(() => mailboxes.id, { onDelete: "cascade" }),
+		/** Null for ordinary mail; campaign copies retain their immutable recipient record. */
+		campaignId: text("campaign_id").references(() => emailCampaigns.id, { onDelete: "set null" }),
 		/** Who composed it. Null for inbound mail, which nobody here authored. */
 		authorUserId: text("author_user_id").references(() => users.id, { onDelete: "set null" }),
 		direction: text("direction", { enum: MESSAGE_DIRECTIONS }).notNull(),
@@ -47,6 +98,10 @@ export const messages = sqliteTable(
 		snippet: text("snippet"),
 		bodyText: text("body_text"),
 		bodyHtml: text("body_html"),
+		/** Opaque capability embedded only in an opted-in campaign tracking pixel. */
+		openTrackingToken: text("open_tracking_token"),
+		/** First pixel request only; repeat loads do not inflate campaign engagement. */
+		openedAt: integer("opened_at", { mode: "timestamp_ms" }),
 
 		/** R2 key of the untouched MIME source, so the parse can be redone later. */
 		rawKey: text("raw_key"),
@@ -70,6 +125,27 @@ export const messages = sqliteTable(
 		index("messages_snoozed_idx").on(t.snoozedUntil),
 		// Redelivery of the same Message-ID into the same mailbox is a no-op.
 		uniqueIndex("messages_dedupe_unq").on(t.mailboxId, t.messageId),
+		uniqueIndex("messages_open_tracking_token_unq").on(t.openTrackingToken),
+		index("messages_campaign_opened_idx").on(t.campaignId, t.openedAt),
+	],
+);
+
+/** One opaque redirect token per tracked link in an individual campaign copy. */
+export const campaignLinkClicks = sqliteTable(
+	"campaign_link_clicks",
+	{
+		id: id(),
+		messageId: text("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+		token: text("token").notNull(),
+		destination: text("destination").notNull(),
+		/** First redirect only; repeat visits do not inflate the campaign count. */
+		clickedAt: integer("clicked_at", { mode: "timestamp_ms" }),
+		...timestamps(),
+	},
+	(t) => [
+		uniqueIndex("campaign_link_clicks_token_unq").on(t.token),
+		index("campaign_link_clicks_message_idx").on(t.messageId),
+		index("campaign_link_clicks_clicked_idx").on(t.clickedAt),
 	],
 );
 
@@ -101,6 +177,9 @@ export const messageAttachments = sqliteTable(
 export const CONTACT_SOURCES = ["manual", "inbound", "outbound"] as const;
 export type ContactSource = (typeof CONTACT_SOURCES)[number];
 
+export const MARKETING_STATUSES = ["pending", "subscribed", "unsubscribed"] as const;
+export type MarketingStatus = (typeof MARKETING_STATUSES)[number];
+
 export const contacts = sqliteTable(
 	"contacts",
 	{
@@ -113,13 +192,61 @@ export const contacts = sqliteTable(
 		source: text("source", { enum: CONTACT_SOURCES }).notNull().default("inbound"),
 		/** Blocked senders are rejected by the domain-scope routing phase. */
 		blocked: integer("blocked", { mode: "boolean" }).notNull().default(false),
+		/** A marketing opt-out never blocks ordinary inbound mail. */
+		unsubscribedAt: integer("unsubscribed_at", { mode: "timestamp_ms" }),
+		/** Opaque capability used only by the public unsubscribe page. */
+		unsubscribeToken: text("unsubscribe_token"),
+		/** New contacts require an explicit confirmation before campaign delivery. */
+		marketingStatus: text("marketing_status", { enum: MARKETING_STATUSES }).notNull().default("pending"),
+		/** Opaque capability sent in the double opt-in message. */
+		confirmationToken: text("confirmation_token"),
+		confirmedAt: integer("confirmed_at", { mode: "timestamp_ms" }),
+		/** Mailbox chosen for consent; it is also the sender of the transactional welcome. */
+		confirmationMailboxId: text("confirmation_mailbox_id").references(() => mailboxes.id, { onDelete: "set null" }),
+		/** Makes a confirmation-link replay unable to queue another welcome message. */
+		welcomeSentAt: integer("welcome_sent_at", { mode: "timestamp_ms" }),
+		/** Lightweight labels for audience segments, maintained by the account owner. */
+		tags: text("tags", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
 		messageCount: integer("message_count").notNull().default(0),
 		lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
 		...timestamps(),
 	},
 	(t) => [
 		uniqueIndex("contacts_email_unq").on(t.userId, t.email),
+		uniqueIndex("contacts_unsubscribe_token_unq").on(t.unsubscribeToken),
+		uniqueIndex("contacts_confirmation_token_unq").on(t.confirmationToken),
+		index("contacts_marketing_status_idx").on(t.userId, t.marketingStatus),
 		index("contacts_blocked_idx").on(t.blocked),
+	],
+);
+
+/** A reusable, owned subset of contacts for marketing campaigns. */
+export const audiences = sqliteTable(
+	"audiences",
+	{
+		id: id(),
+		userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		description: text("description").notNull().default(""),
+		...timestamps(),
+	},
+	(t) => [
+		uniqueIndex("audiences_user_name_unq").on(t.userId, t.name),
+		index("audiences_user_created_idx").on(t.userId, t.createdAt),
+	],
+);
+
+export const audienceMembers = sqliteTable(
+	"audience_members",
+	{
+		id: id(),
+		audienceId: text("audience_id").notNull().references(() => audiences.id, { onDelete: "cascade" }),
+		contactId: text("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
+		...timestamps(),
+	},
+	(t) => [
+		uniqueIndex("audience_members_member_unq").on(t.audienceId, t.contactId),
+		index("audience_members_contact_idx").on(t.contactId),
 	],
 );
 

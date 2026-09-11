@@ -198,6 +198,7 @@ async function upsertContact(
 			email: contact.email,
 			displayName: contact.name ?? null,
 			source: "inbound",
+			marketingStatus: "pending",
 			messageCount: 1,
 			lastSeenAt: new Date(),
 		})

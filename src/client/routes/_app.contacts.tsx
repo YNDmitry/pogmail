@@ -215,6 +215,7 @@ function Contacts() {
 			/>
 			<AudienceForm open={audienceOpen} contactIds={[...selected]} onClose={() => setAudienceOpen(false)} />
 			<TagForm open={tagOpen} contactIds={[...selected]} onClose={() => setTagOpen(false)} />
+			<AudienceLibrary contactIds={[...selected]} />
 			<CampaignHistory campaigns={campaigns.data ?? []} />
 		</div>
 	);
@@ -275,15 +276,17 @@ function AudienceForm({ open, contactIds, onClose }: { open: boolean; contactIds
 	const toast = useToast();
 	const queryClient = useQueryClient();
 	const [name, setName] = useState("");
+	const [description, setDescription] = useState("");
 	const [saving, setSaving] = useState(false);
 
 	async function submit() {
 		setSaving(true);
 		try {
-			await api.post("/api/contacts/audiences", { name, contactIds });
+			await api.post("/api/contacts/audiences", { name, description, contactIds });
 			await queryClient.invalidateQueries({ queryKey: qk.audiences });
 			toast.ok(`Audience "${name}" saved`);
 			setName("");
+			setDescription("");
 			onClose();
 		} catch (error) {
 			toast.fail("Could not save audience", error instanceof ApiError ? error.message : undefined);
@@ -295,9 +298,57 @@ function AudienceForm({ open, contactIds, onClose }: { open: boolean; contactIds
 	return <Modal open={open} onClose={onClose} title="Save audience" description={`${contactIds.length} selected contacts will be reusable in future campaigns.`}>
 		<form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
 			<Field label="Audience name"><Input required maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder="Newsletter subscribers" /></Field>
+			<Field label="Description" hint="Optional, for your team."><Input maxLength={300} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Customers who opted in at checkout" /></Field>
 			<div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || saving}>{saving ? "Saving…" : "Save audience"}</Button></div>
 		</form>
 	</Modal>;
+}
+
+function AudienceLibrary({ contactIds }: { contactIds: string[] }) {
+	const toast = useToast();
+	const queryClient = useQueryClient();
+	const { ask, dialog } = useConfirm();
+	const audiences = useList<Audience>(qk.audiences, "/api/contacts/audiences");
+	const addMembers = useMutation({
+		mutationFn: (audienceId: string) => api.post(`/api/contacts/audiences/${audienceId}/members`, { contactIds }),
+		onSuccess: async () => {
+			await queryClient.invalidateQueries({ queryKey: qk.audiences });
+			toast.ok(`Added ${contactIds.length} selected contact${contactIds.length === 1 ? "" : "s"}`);
+		},
+		onError: (error) => toast.fail("Could not update audience", error instanceof ApiError ? error.message : undefined),
+	});
+	const removeAudience = useMutation({
+		mutationFn: (audienceId: string) => api.delete(`/api/contacts/audiences/${audienceId}`),
+		onSuccess: async () => {
+			await queryClient.invalidateQueries({ queryKey: qk.audiences });
+			toast.ok("Audience deleted");
+		},
+		onError: (error) => toast.fail("Could not delete audience", error instanceof ApiError ? error.message : undefined),
+	});
+
+	if (audiences.isPending || !audiences.data?.length) return null;
+	return <section className="space-y-3">
+		<div>
+			<h2 className="display text-base">Audiences</h2>
+			<p className="mt-1 text-sm text-ink-2">Reusable contact lists for campaigns. Add the selected contacts without replacing existing members.</p>
+		</div>
+		<Card>
+			<ul className="divide-y divide-seam">
+				{audiences.data.map((audience) => <li key={audience.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+					<div className="min-w-0 flex-1"><p className="text-sm font-medium text-ink">{audience.name}</p>{audience.description ? <p className="mt-0.5 text-xs text-ink-3">{audience.description}</p> : null}</div>
+					<Tag tone="neutral">{audience.memberCount} members</Tag>
+					<Button size="sm" variant="secondary" disabled={contactIds.length === 0 || addMembers.isPending} onClick={() => addMembers.mutate(audience.id)}>Add selected</Button>
+					<Button size="sm" variant="ghost" disabled={removeAudience.isPending} className="hover:text-fail" onClick={() => ask({
+						title: `Delete ${audience.name}?`,
+						description: "This removes the saved audience, not its contacts.",
+						confirmLabel: "Delete audience",
+						onConfirm: () => removeAudience.mutate(audience.id),
+					})}>Delete</Button>
+				</li>)}
+			</ul>
+		</Card>
+		{dialog}
+	</section>;
 }
 
 function TagForm({ open, contactIds, onClose }: { open: boolean; contactIds: string[]; onClose: () => void }) {

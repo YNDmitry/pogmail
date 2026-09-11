@@ -99,9 +99,10 @@ export function MailyEditor({
 		  contentHtml={previewHtml || undefined}
 		  extensions={extensions}
           config={{
-            hasMenuBar: true,
-            // Compose has one stable toolbar. Block controls and a second
-            // selection toolbar turn a short email into a page-layout editor.
+            // Formatting is intentionally transient: choose text to reveal its
+            // controls, or type `/` for a command. A persistent toolbar takes
+            // space away from the message without adding another edit path.
+            hasMenuBar: false,
             hideContextMenu: true,
             spellCheck: true,
             immediatelyRender: false,
@@ -109,7 +110,6 @@ export function MailyEditor({
               "maily-compose-editor flex min-h-0 flex-1 flex-col",
               density === "compact" && "maily-editor-compact",
             ),
-            toolbarClassName: "maily-compose-toolbar",
             bodyClassName:
               density === "compact"
                 ? "maily-compose-canvas min-h-36 flex-1 border-0! p-0! shadow-none! bg-transparent!"

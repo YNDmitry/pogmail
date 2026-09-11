@@ -1619,28 +1619,8 @@
   content: "Write your message…" !important;
 }
 
-/* Maily keeps selection menus enabled even when its block controls are hidden.
-   Compose deliberately has one persistent toolbar; the floating duplicate
-   obscures the line being edited and offers no extra capability here. */
-.maily-compose-editor [data-tippy-root]:has(.mly\:gap-0\.5.mly\:shadow-md) {
-  display: none !important;
-}
-
-.maily-compose-toolbar {
-  gap: 0.5rem !important;
-  padding-block: 0.25rem;
-  order: 2;
-}
-
-/* The editing surface must remain usable on a phone: the controls scroll as one
-   row rather than wrapping into a tall, unstable stack above the cursor. */
+/* Preserve enough canvas height on a phone without a persistent toolbar. */
 @media (max-width: 640px) {
-  .maily-compose-toolbar {
-    overflow-x: auto;
-    overscroll-behavior-inline: contain;
-    scrollbar-width: none;
-  }
-
   .maily-editor-compact .maily-compose-canvas {
     min-height: 9rem !important;
   }

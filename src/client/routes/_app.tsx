@@ -18,6 +18,7 @@ import {
   Archive,
   CalendarDays,
   FileText,
+  Folder,
   Inbox,
   MailWarning,
   PenLine,
@@ -33,6 +34,7 @@ import { api, ApiError } from "@/client/lib/api";
 import {
   useBranding,
   useCounts,
+	useFolders,
   useMailboxes,
   useSession,
 } from "@/client/lib/queries";
@@ -138,6 +140,7 @@ function AppLayout() {
   const session = useSession();
   const branding = useBranding();
   const mailboxes = useMailboxes();
+  const folders = useFolders();
   const counts = useCounts();
 
   /*
@@ -192,7 +195,29 @@ function AppLayout() {
   }, [branding.data?.appName]);
 
   const nav = useMemo(
-    () => [
+    () => {
+		const visibleFolders = (folders.data ?? []).filter(
+			(folder) => !mailboxId || folder.mailboxId === mailboxId,
+		);
+		const folderMailboxes = mailboxId
+			? (mailboxes.data ?? []).filter((mailbox) => mailbox.id === mailboxId)
+			: (mailboxes.data ?? []);
+		const customFolderGroups = folderMailboxes.flatMap((mailbox) => {
+			const items = visibleFolders
+				.filter((folder) => folder.mailboxId === mailbox.id)
+				.map((folder) => ({
+					key: `folder-${folder.id}`,
+					label: folder.name,
+					icon: Folder,
+					color: folder.color,
+					href: `/mail/${folder.id}`,
+					badge: counts.data?.byFolder[folder.id] || undefined,
+				}));
+			if (items.length === 0) return [];
+			return [{ label: mailboxes.data?.length === 1 ? "Folders" : `Folders · ${mailbox.address}`, items }];
+		});
+
+		return [
       {
         label: "Mail",
         items: MAIL_VIEWS.map((view) => ({
@@ -211,6 +236,7 @@ function AppLayout() {
                 : undefined,
         })),
       },
+			...customFolderGroups,
       {
         label: "Workspace",
         items: [
@@ -250,15 +276,18 @@ function AppLayout() {
             : []),
         ],
       },
-    ],
-    [counts.data, session.data?.role, mailboxId],
+    ];
+	},
+    [counts.data, session.data?.role, mailboxId, folders.data, mailboxes.data],
   );
 
   /* The header says where you are; the sidebar says where you could go. */
   const pageTitle = useMemo(() => {
     const [, section, rest] = pathname.split("/");
     if (section === "mail") {
-      return MAIL_VIEWS.find((view) => view.slug === rest)?.label ?? "Mail";
+		return MAIL_VIEWS.find((view) => view.slug === rest)?.label
+			?? folders.data?.find((folder) => folder.id === rest)?.name
+			?? "Folder";
     }
     if (section === "compose") return "Write a message";
     if (section === "contacts") return "Contacts";
@@ -268,7 +297,7 @@ function AppLayout() {
     if (section === "admin")
       return ADMIN_TITLES[rest ?? ""] ?? "Administration";
     return branding.data?.appName ?? "Pogmail";
-  }, [pathname, branding.data?.appName]);
+  }, [pathname, branding.data?.appName, folders.data]);
 
   return (
     <IdentityProvider appName={branding.data?.appName}>
@@ -305,9 +334,12 @@ function AppLayout() {
                 onSelectMailbox={(next) => {
                   // Switching mailbox keeps the folder being read and drops the open
                   // message, which belongs to the mailbox just left.
-                  const folder = pathname.startsWith("/mail/")
-                    ? (pathname.split("/")[2] ?? "inbox")
-                    : "inbox";
+					const currentFolder = pathname.startsWith("/mail/")
+						? (pathname.split("/")[2] ?? "inbox")
+						: "inbox";
+					const folder = !next || !folders.data?.some((entry) => entry.id === currentFolder && entry.mailboxId !== next)
+						? currentFolder
+						: "inbox";
                   void navigate({
                     to: "/mail/$folder",
                     params: { folder },

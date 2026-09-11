@@ -32,6 +32,7 @@ export type NavItem = {
 	key: string;
 	label: string;
 	icon: LucideIcon;
+	color?: string | null;
 	href: string;
 	badge?: number | undefined;
 };
@@ -183,7 +184,7 @@ export function AppSidebar({
 													<AnimatedSidebarMenuButton
 														href={item.href}
 														isActive={active}
-														icon={<item.icon className="size-4" />}
+														icon={<item.icon className="size-4" style={item.color ? { color: item.color } : undefined} />}
 														badge={item.badge ? <Count value={item.badge} /> : undefined}
 														className={cn(
 															"rounded-md px-3",

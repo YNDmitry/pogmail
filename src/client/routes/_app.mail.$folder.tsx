@@ -15,10 +15,12 @@ import { useConfirm } from "@/client/components/app/confirm";
 import { Empty } from "@/client/components/app/primitives";
 import { Input } from "@/client/components/ui";
 import { Button } from "@/client/components/app/button";
+import { Choice } from "@/client/components/app/choice";
 import { Machine } from "@/client/components/app/primitives";
 import {
 	useBulkPatch,
 	useDeleteMessage,
+	useFolders,
 	useMailboxes,
 	useSession,
 	useMessages,
@@ -40,7 +42,7 @@ export const Route = createFileRoute("/_app/mail/$folder")({
 
 /** Folder slugs are the URL vocabulary; statuses are storage detail. */
 const FOLDER_FILTERS: Record<string, MessageFilters> = {
-	inbox: { status: "received" },
+	inbox: { status: "received", inbox: "true" },
 	starred: { starred: "true" },
 	snoozed: { snoozed: "true" },
 	drafts: { status: "draft" },
@@ -104,7 +106,7 @@ function MailFolder() {
 	}, [term, search.q, navigate]);
 
 	const filters: MessageFilters = {
-		...(FOLDER_FILTERS[folder] ?? { status: "received" as MessageStatus }),
+		...(FOLDER_FILTERS[folder] ?? { folderId: folder }),
 		...(search.mailboxId ? { mailboxId: search.mailboxId } : {}),
 		...(search.q ? { search: search.q } : {}),
 	};
@@ -160,14 +162,34 @@ function MailFolder() {
 	const scope = `${folder}|${search.mailboxId ?? ""}|${search.q ?? ""}`;
 	const picked = selection.scope === scope ? selection.ids : EMPTY_SELECTION;
 	const mailboxes = useMailboxes();
+	const folders = useFolders();
+	const customFolder = (folders.data ?? []).find((entry) => entry.id === folder) ?? null;
 	const filtered = (mailboxes.data ?? []).find((mailbox) => mailbox.id === search.mailboxId) ?? null;
-	const empty = EMPTY_COPY[folder] ?? { title: "Nothing here", body: "" };
+	const title = FOLDER_TITLES[folder] ?? customFolder?.name ?? "Folder";
+	const empty = EMPTY_COPY[folder] ?? { title: "Nothing here", body: "Move mail here to keep it out of the inbox." };
+	const pickedMessages = items.filter((message) => picked.has(message.id));
+	const selectedMailboxId = pickedMessages[0]?.mailboxId;
+	const canMoveSelection = Boolean(
+		selectedMailboxId && pickedMessages.every((message) => message.mailboxId === selectedMailboxId),
+	);
+	const moveTargets = canMoveSelection
+		? [
+				{ value: "inbox", label: "Inbox" },
+				...(folders.data ?? [])
+					.filter((entry) => entry.mailboxId === selectedMailboxId)
+					.map((entry) => ({ value: entry.id, label: entry.name })),
+			]
+		: [];
 
 	/*
 	 * One place decides what an action means, so the row buttons, the bulk bar and
 	 * the keyboard cannot drift apart.
 	 */
-	function act(ids: string[], change: { status?: MessageStatus; read?: boolean; starred?: boolean }, said: string) {
+	function act(
+		ids: string[],
+		change: { status?: MessageStatus; read?: boolean; starred?: boolean; folderId?: string | null },
+		said: string,
+	) {
 		if (ids.length === 0) return;
 		if (ids.length === 1 && ids[0]) {
 			patch.mutate({ id: ids[0], patch: change }, { onSuccess: () => toast.ok(said) });
@@ -236,10 +258,10 @@ function MailFolder() {
 					params: { folder, messageId: current.id },
 					search: (prev) => prev,
 				});
-			} else if (key === "e") act(pickedOr(current.id), { status: "archived" }, "Archived");
+			} else if (key === "e") act(pickedOr(current.id), { status: "archived", folderId: null }, "Archived");
 			else if (key === "#") {
 				if (folder === "trash") askPermanentDelete(pickedOr(current.id));
-				else act(pickedOr(current.id), { status: "trash" }, "Moved to trash");
+				else act(pickedOr(current.id), { status: "trash", folderId: null }, "Moved to trash");
 			}
 			else if (key === "s") act([current.id], { starred: !current.starred }, current.starred ? "Star removed" : "Starred");
 			else if (key === "u") act(pickedOr(current.id), { read: !current.read }, current.read ? "Marked unread" : "Marked read");
@@ -290,7 +312,7 @@ function MailFolder() {
 							<Button
 								size="sm"
 								variant="ghost"
-								onClick={() => act([...picked], { status: "archived" }, "Archived")}
+								onClick={() => act([...picked], { status: "archived", folderId: null }, "Archived")}
 							>
 								<Archive className="size-3.5" />
 								Archive
@@ -299,11 +321,29 @@ function MailFolder() {
 								size="sm"
 								variant="ghost"
 								className="hover:text-fail"
-								onClick={() => act([...picked], { status: "trash" }, "Moved to trash")}
+								onClick={() => act([...picked], { status: "trash", folderId: null }, "Moved to trash")}
 							>
 								<Trash2 className="size-3.5" />
 								Trash
 							</Button>
+							{moveTargets.length > 0 ? (
+								<Choice
+									placeholder="Move to…"
+									aria-label="Move selected mail to a folder"
+									size="sm"
+									className="w-auto min-w-32"
+									options={moveTargets}
+									onChange={(folderId) =>
+										act(
+											[...picked],
+											folderId === "inbox"
+												? { status: "received", folderId: null }
+												: { status: "received", folderId },
+											folderId === "inbox" ? "Moved to inbox" : "Moved to folder",
+										)
+									}
+								/>
+							) : null}
 							{folder === "trash" ? (
 								<Button
 									size="sm"
@@ -327,7 +367,7 @@ function MailFolder() {
 					) : (
 						<div className="flex items-baseline justify-between gap-3">
 							<span className="text-[0.8125rem] font-medium text-foreground">
-								{FOLDER_TITLES[folder] ?? folder}
+								{title}
 							</span>
 							{messages.data ? (
 								<span className="machine text-[0.6875rem] text-muted-foreground">
@@ -393,8 +433,8 @@ function MailFolder() {
 								patch.mutate({ id: message.id, patch: { starred: !message.starred } })
 							}
 							onTogglePicked={(message) => toggle(message.id)}
-							onArchive={(message) => act([message.id], { status: "archived" }, "Archived")}
-							onTrash={(message) => act([message.id], { status: "trash" }, "Moved to trash")}
+							onArchive={(message) => act([message.id], { status: "archived", folderId: null }, "Archived")}
+							onTrash={(message) => act([message.id], { status: "trash", folderId: null }, "Moved to trash")}
 							onDelete={folder === "trash" ? (message) => askPermanentDelete([message.id]) : undefined}
 							onToggleRead={(message) =>
 								act([message.id], { read: !message.read }, message.read ? "Marked unread" : "Marked read")
@@ -403,7 +443,7 @@ function MailFolder() {
 					) : search.q ? (
 						<Empty
 							title="Nothing matched"
-							body={`No mail in ${(FOLDER_TITLES[folder] ?? folder).toLowerCase()} matches \u201c${search.q}\u201d.`}
+							body={`No mail in ${title.toLowerCase()} matches \u201c${search.q}\u201d.`}
 							action={
 								<Button
 									size="sm"

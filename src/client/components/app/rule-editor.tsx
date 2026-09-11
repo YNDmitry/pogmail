@@ -141,7 +141,7 @@ export function RuleEditor({
 	owners: { id: string; label: string }[];
 	ownerLabel: string;
 	/** Forward addresses are free text; folders come from a list. */
-	targets?: { id: string; label: string }[];
+	targets?: { id: string; label: string; ownerId?: string }[];
 	targetLabel?: string;
 }) {
 	const toast = useToast();
@@ -150,6 +150,7 @@ export function RuleEditor({
 
 	const [open, setOpen] = useState(false);
 	const [conditions, setConditions] = useState<DraftCondition[]>([newCondition()]);
+	const [ownerId, setOwnerId] = useState(owners[0]?.id ?? "");
 	const [action, setAction] = useState(copy.actions[0].value as string);
 	const [matchAll, setMatchAll] = useState(true);
 
@@ -165,7 +166,7 @@ export function RuleEditor({
 					<h2 className="display text-base">{copy.title}</h2>
 					<p className="mt-1 max-w-prose text-sm text-ink-2">{copy.blurb}</p>
 				</div>
-				<Button size="sm" onClick={() => setOpen(true)} disabled={owners.length === 0}>
+				<Button size="sm" onClick={() => { setOwnerId(owners[0]?.id ?? ""); setOpen(true); }} disabled={owners.length === 0}>
 					<Plus className="size-3.5" />
 					New rule
 				</Button>
@@ -272,6 +273,8 @@ export function RuleEditor({
 							<Choice
 								name="owner"
 								required
+								value={ownerId}
+								onChange={setOwnerId}
 								options={owners.map((owner) => ({ value: owner.id, label: owner.label }))}
 							/>
 						</Field>
@@ -415,7 +418,7 @@ export function RuleEditor({
 								<Choice
 									name="actionTarget"
 									required
-									options={(targets ?? []).map((target) => ({
+									options={(targets ?? []).filter((target) => !target.ownerId || target.ownerId === ownerId).map((target) => ({
 										value: target.id,
 										label: target.label,
 									}))}

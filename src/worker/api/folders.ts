@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { folders } from "@/db/schema";
 import { getPermission, hasAtLeast, listAccessibleMailboxIds } from "../mailboxes/access";
@@ -37,7 +37,22 @@ export const folderRoutes = new Hono<AppBindings>()
 		const permission = await getPermission(c.get("db"), c.get("user"), input.mailboxId);
 		if (!hasAtLeast(permission, "full_access")) forbidden("Cannot create folders in this mailbox");
 
-		const row = await c.get("db").insert(folders).values(input).returning().get();
+		const last = input.position === undefined
+			? await c
+					.get("db")
+					.select({ position: folders.position })
+					.from(folders)
+					.where(eq(folders.mailboxId, input.mailboxId))
+					.orderBy(desc(folders.position))
+					.limit(1)
+					.get()
+			: null;
+		const row = await c
+			.get("db")
+			.insert(folders)
+			.values({ ...input, position: input.position ?? (last?.position ?? -1) + 1 })
+			.returning()
+			.get();
 		return c.json(row, 201);
 	})
 

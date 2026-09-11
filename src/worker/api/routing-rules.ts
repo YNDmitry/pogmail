@@ -8,6 +8,7 @@ import {
 	RULE_ACTIONS,
 	RULE_SCOPES,
 	domains,
+	folders,
 	routingRules,
 } from "@/db/schema";
 import { audit } from "../audit";
@@ -98,6 +99,7 @@ export const routingRuleRoutes = new Hono<AppBindings>()
 	.post("/", async (c) => {
 		const input = await parseBody(c, ruleInput);
 		await assertScopeAccess(c, input);
+		await assertMoveTarget(c, input);
 
 		const row = await c
 			.get("db")
@@ -125,8 +127,10 @@ export const routingRuleRoutes = new Hono<AppBindings>()
 			.get();
 		if (!existing) notFound("Rule");
 
-		await assertScopeAccess(c, existing);
 		const input = await parseBody(c, ruleInput.partial());
+		const next = { ...existing, ...input };
+		await assertScopeAccess(c, next);
+		await assertMoveTarget(c, next);
 
 		const row = await c
 			.get("db")
@@ -206,4 +210,21 @@ async function assertScopeAccess(
 	if (!rule.mailboxId) throw new HTTPException(400, { message: "mailboxId is required" });
 	const permission = await getPermission(c.get("db"), c.get("user"), rule.mailboxId);
 	if (!hasAtLeast(permission, "full_access")) forbidden("You do not have full access to this mailbox");
+}
+
+/** A mailbox filter may only name a folder in that same mailbox. */
+async function assertMoveTarget(
+	c: Context<AppBindings>,
+	rule: { scope: "domain" | "mailbox"; mailboxId?: string | null; action: string; actionTarget?: string | null },
+): Promise<void> {
+	if (rule.scope !== "mailbox" || rule.action !== "move") return;
+	if (!rule.actionTarget) throw new HTTPException(400, { message: "A move rule needs a target folder" });
+	const folder = await c
+		.get("db")
+		.select({ mailboxId: folders.mailboxId })
+		.from(folders)
+		.where(eq(folders.id, rule.actionTarget))
+		.get();
+	if (!folder) notFound("Folder");
+	if (folder.mailboxId !== rule.mailboxId) forbidden("A filter can only move mail into a folder in its mailbox");
 }

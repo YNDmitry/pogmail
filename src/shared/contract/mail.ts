@@ -83,6 +83,7 @@ export type MessageDetail = MessageSummary & {
 export type MessageCounts = {
   byStatus: Partial<Record<MessageStatus, number>>;
   byMailbox: Record<string, number>;
+  byFolder: Record<string, number>;
   starred: number;
 };
 

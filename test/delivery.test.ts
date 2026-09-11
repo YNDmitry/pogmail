@@ -26,9 +26,10 @@ describe("outbound delivery retry", () => {
 			hostname: `${crypto.randomUUID()}.test`, zoneId: "mock", userId: user.id, status: "active", sendingEnabled: true,
 		}).returning().get();
 		const mailbox = await db.insert(mailboxes).values({ domainId: domain.id, userId: user.id, localPart: "hello" }).returning().get();
-		const [recipient, blocked] = await db.insert(contacts).values([
-			{ userId: user.id, email: "recipient@example.test", displayName: "Recipient", source: "manual" },
+		const [recipient, blocked, pending] = await db.insert(contacts).values([
+			{ userId: user.id, email: "recipient@example.test", displayName: "Recipient", source: "manual", marketingStatus: "subscribed" },
 			{ userId: user.id, email: "blocked@example.test", blocked: true, source: "manual" },
+			{ userId: user.id, email: "pending@example.test", displayName: "Pending", source: "manual", marketingStatus: "pending" },
 		]).returning().all();
 		const session = await createSession(db, user.id);
 		const cookie = `${SESSION_COOKIE}=${session.token}`;
@@ -42,7 +43,7 @@ describe("outbound delivery retry", () => {
 		expect(imported.status).toBe(200);
 		expect(await imported.json()).toMatchObject({ imported: 1, skippedExisting: 1 });
 		expect(await db.select().from(contacts).where(eq(contacts.email, "imported@example.test")).get())
-			.toMatchObject({ displayName: "Imported", source: "manual" });
+			.toMatchObject({ displayName: "Imported", source: "manual", marketingStatus: "pending" });
 		expect(await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get())
 			.toMatchObject({ displayName: "Recipient" });
 		await db.run(sql`update contacts set tags = 'tags' where id = ${recipient!.id}`);
@@ -83,6 +84,22 @@ describe("outbound delivery retry", () => {
 		const jobs = await db.select().from(outboundJobs).where(eq(outboundJobs.messageId, sent[0]!.id)).all();
 		expect(jobs).toHaveLength(1);
 		expect(jobs[0]?.scheduledFor?.getTime()).toBe(scheduledFor);
+		const confirmation = await api.fetch(new Request("https://pogmail.test/api/contacts/confirmations", {
+			method: "POST", headers: { "content-type": "application/json", cookie },
+			body: JSON.stringify({ mailboxId: mailbox.id, contactIds: [pending!.id] }),
+		}), env);
+		expect(confirmation.status).toBe(202);
+		expect(await confirmation.json()).toMatchObject({ queued: 1 });
+		const pendingContact = await db.select().from(contacts).where(eq(contacts.id, pending!.id)).get();
+		expect(pendingContact?.confirmationToken).toMatch(/^[0-9a-f-]{36}$/);
+		const subscribePage = await api.fetch(new Request(`https://pogmail.test/api/public/subscribe?token=${pendingContact!.confirmationToken}`), env);
+		expect(subscribePage.status).toBe(200);
+		const subscribe = await api.fetch(new Request("https://pogmail.test/api/public/subscribe", {
+			method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: `token=${pendingContact!.confirmationToken}`,
+		}), env);
+		expect(subscribe.status).toBe(200);
+		expect(await db.select().from(contacts).where(eq(contacts.id, pending!.id)).get())
+			.toMatchObject({ marketingStatus: "subscribed", confirmedAt: expect.any(Date) });
 
 		const history = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", { headers: { cookie } }), env);
 		expect(await history.json()).toMatchObject({ items: [expect.objectContaining({ id: result.id, state: "queued", queued: 1, opens: 0, clicks: 0, scheduledFor: expect.any(String) })] });
@@ -130,7 +147,7 @@ describe("outbound delivery retry", () => {
 		}), env);
 		expect(unsubscribe.status).toBe(200);
 		expect(await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get())
-			.toMatchObject({ unsubscribedAt: expect.any(Date) });
+			.toMatchObject({ marketingStatus: "unsubscribed", unsubscribedAt: expect.any(Date) });
 		const audienceResponse = await api.fetch(new Request("https://pogmail.test/api/contacts/audiences", {
 			method: "POST", headers: { "content-type": "application/json", cookie },
 			body: JSON.stringify({ name: "Newsletter", contactIds: [recipient!.id] }),
@@ -143,6 +160,14 @@ describe("outbound delivery retry", () => {
 			body: JSON.stringify({ mailboxId: mailbox.id, audienceId: audience.id, subject: "Follow-up", bodyText: "Hello" }),
 		}), env);
 		expect(suppressed.status).toBe(422);
+		const preferences = await api.fetch(new Request(`https://pogmail.test/api/public/preferences?token=${contact!.unsubscribeToken}`), env);
+		expect(preferences.status).toBe(200);
+		const resume = await api.fetch(new Request("https://pogmail.test/api/public/preferences", {
+			method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: `token=${contact!.unsubscribeToken}&status=subscribed`,
+		}), env);
+		expect(resume.status).toBe(200);
+		expect(await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get())
+			.toMatchObject({ marketingStatus: "subscribed", unsubscribedAt: null });
 		const testSend = await api.fetch(new Request("https://pogmail.test/api/send/campaigns/test", {
 			method: "POST", headers: { "content-type": "application/json", cookie },
 			body: JSON.stringify({

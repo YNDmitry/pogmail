@@ -304,11 +304,11 @@ export const sendRoutes = new Hono<AppBindings>()
 			? await audienceRecipients(c, input.audienceId)
 			: await c.get("db").select({
 				id: contacts.id, email: contacts.email, displayName: contacts.displayName, blocked: contacts.blocked,
-				unsubscribedAt: contacts.unsubscribedAt, unsubscribeToken: contacts.unsubscribeToken, tags: contacts.tags,
+				unsubscribedAt: contacts.unsubscribedAt, unsubscribeToken: contacts.unsubscribeToken, marketingStatus: contacts.marketingStatus, tags: contacts.tags,
 			}).from(contacts).where(and(eq(contacts.userId, c.get("user").id), inArray(contacts.id, input.contactIds))).all();
-		const sendable = recipients.filter((contact) => !contact.blocked && !contact.unsubscribedAt && (!input.tag || contact.tags.includes(input.tag)));
+		const sendable = recipients.filter((contact) => !contact.blocked && !contact.unsubscribedAt && contact.marketingStatus === "subscribed" && (!input.tag || contact.tags.includes(input.tag)));
 		if (sendable.length === 0) {
-			throw new HTTPException(422, { message: "No subscribed, unblocked contacts match this segment" });
+			throw new HTTPException(422, { message: "No confirmed, unblocked contacts match this segment" });
 		}
 		const campaign = await c.get("db").insert(emailCampaigns).values({
 			userId: c.get("user").id,
@@ -325,10 +325,11 @@ export const sendRoutes = new Hono<AppBindings>()
 				await c.get("db").update(contacts).set({ unsubscribeToken }).where(eq(contacts.id, recipient.id));
 			}
 			const unsubscribeUrl = new URL(`/api/public/unsubscribe?token=${unsubscribeToken}`, c.req.url).toString();
+			const preferencesUrl = new URL(`/api/public/preferences?token=${unsubscribeToken}`, c.req.url).toString();
 			const openTrackingToken = input.trackOpens && input.bodyHtml ? crypto.randomUUID() : null;
 			const openUrl = openTrackingToken ? new URL(`/api/public/open?token=${openTrackingToken}`, c.req.url).toString() : null;
 			const linkClicks: Array<{ token: string; destination: string }> = [];
-			const body = personalisedCampaignBody(input.bodyText, input.bodyHtml ?? null, recipient, unsubscribeUrl, openUrl, input.trackClicks
+			const body = personalisedCampaignBody(input.bodyText, input.bodyHtml ?? null, recipient, unsubscribeUrl, preferencesUrl, openUrl, input.trackClicks
 				? (destination) => {
 					const token = crypto.randomUUID();
 					linkClicks.push({ token, destination });
@@ -383,13 +384,14 @@ export const sendRoutes = new Hono<AppBindings>()
 		const returned = new Set(recipients.map((recipient) => recipient.id));
 		const skippedBlocked = recipients.filter((recipient) => recipient.blocked).length;
 		const skippedUnsubscribed = recipients.filter((recipient) => recipient.unsubscribedAt).length;
+		const skippedUnconfirmed = recipients.filter((recipient) => recipient.marketingStatus === "pending").length;
 		const skippedMissing = [...requested].filter((id) => !returned.has(id)).length;
 		audit(c, {
 			action: "campaign.send",
 			mailboxId: mailbox.id,
-			metadata: { campaignId: campaign.id, queued: queued.length, skippedBlocked, skippedUnsubscribed, skippedMissing },
+			metadata: { campaignId: campaign.id, queued: queued.length, skippedBlocked, skippedUnsubscribed, skippedUnconfirmed, skippedMissing },
 		});
-		return c.json({ id: campaign.id, queued: queued.length, skippedBlocked, skippedUnsubscribed, skippedMissing }, 202);
+		return c.json({ id: campaign.id, queued: queued.length, skippedBlocked, skippedUnsubscribed, skippedUnconfirmed, skippedMissing }, 202);
 	})
 
 	/** Sends up to five clearly marked copies without touching an audience or its opt-out state. */
@@ -625,7 +627,7 @@ async function audienceRecipients(c: Context<AppBindings>, audienceId: string) {
 	if (!audience) notFound("Audience");
 	const recipients = await c.get("db").select({
 		id: contacts.id, email: contacts.email, displayName: contacts.displayName, blocked: contacts.blocked,
-		unsubscribedAt: contacts.unsubscribedAt, unsubscribeToken: contacts.unsubscribeToken, tags: contacts.tags,
+		unsubscribedAt: contacts.unsubscribedAt, unsubscribeToken: contacts.unsubscribeToken, marketingStatus: contacts.marketingStatus, tags: contacts.tags,
 	}).from(audienceMembers).innerJoin(contacts, eq(contacts.id, audienceMembers.contactId))
 		.where(eq(audienceMembers.audienceId, audience.id)).limit(501).all();
 	if (recipients.length > 500) {
@@ -639,16 +641,17 @@ function personalisedCampaignBody(
 	bodyHtml: string | null,
 	recipient: { email: string; displayName: string | null },
 	unsubscribeUrl: string,
+	preferencesUrl: string,
 	openUrl: string | null,
 	clickUrl: ((destination: string) => string) | null,
 ) {
 	const firstName = recipient.displayName?.trim().split(/\s+/)[0] || "there";
-	const text = replaceTokens(bodyText, { firstName, email: recipient.email, unsubscribeUrl }) + `\n\nUnsubscribe: ${unsubscribeUrl}`;
+	const text = replaceTokens(bodyText, { firstName, email: recipient.email, unsubscribeUrl }) + `\n\nManage preferences: ${preferencesUrl}\nUnsubscribe: ${unsubscribeUrl}`;
 	if (!bodyHtml) return { text, html: null };
 	const personalisedHtml = replaceTokens(bodyHtml, {
 		firstName: escapeHtml(firstName), email: escapeHtml(recipient.email), unsubscribeUrl: escapeHtml(unsubscribeUrl),
 	});
-	const html = `${clickUrl ? trackCampaignLinks(personalisedHtml, clickUrl) : personalisedHtml}<p style="margin-top:24px;font-size:12px;color:#666"><a href="${escapeHtml(unsubscribeUrl)}">Unsubscribe from these emails</a></p>${openUrl ? `<img src="${escapeHtml(openUrl)}" alt="" width="1" height="1" style="display:block;width:1px;height:1px;border:0" />` : ""}`;
+	const html = `${clickUrl ? trackCampaignLinks(personalisedHtml, clickUrl) : personalisedHtml}<p style="margin-top:24px;font-size:12px;color:#666"><a href="${escapeHtml(preferencesUrl)}">Manage preferences</a> · <a href="${escapeHtml(unsubscribeUrl)}">Unsubscribe from these emails</a></p>${openUrl ? `<img src="${escapeHtml(openUrl)}" alt="" width="1" height="1" style="display:block;width:1px;height:1px;border:0" />` : ""}`;
 	return { text, html };
 }
 

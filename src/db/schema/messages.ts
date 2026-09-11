@@ -156,6 +156,9 @@ export const messageAttachments = sqliteTable(
 export const CONTACT_SOURCES = ["manual", "inbound", "outbound"] as const;
 export type ContactSource = (typeof CONTACT_SOURCES)[number];
 
+export const MARKETING_STATUSES = ["pending", "subscribed", "unsubscribed"] as const;
+export type MarketingStatus = (typeof MARKETING_STATUSES)[number];
+
 export const contacts = sqliteTable(
 	"contacts",
 	{
@@ -172,6 +175,11 @@ export const contacts = sqliteTable(
 		unsubscribedAt: integer("unsubscribed_at", { mode: "timestamp_ms" }),
 		/** Opaque capability used only by the public unsubscribe page. */
 		unsubscribeToken: text("unsubscribe_token"),
+		/** New contacts require an explicit confirmation before campaign delivery. */
+		marketingStatus: text("marketing_status", { enum: MARKETING_STATUSES }).notNull().default("pending"),
+		/** Opaque capability sent in the double opt-in message. */
+		confirmationToken: text("confirmation_token"),
+		confirmedAt: integer("confirmed_at", { mode: "timestamp_ms" }),
 		/** Lightweight labels for audience segments, maintained by the account owner. */
 		tags: text("tags", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
 		messageCount: integer("message_count").notNull().default(0),
@@ -181,6 +189,8 @@ export const contacts = sqliteTable(
 	(t) => [
 		uniqueIndex("contacts_email_unq").on(t.userId, t.email),
 		uniqueIndex("contacts_unsubscribe_token_unq").on(t.unsubscribeToken),
+		uniqueIndex("contacts_confirmation_token_unq").on(t.confirmationToken),
+		index("contacts_marketing_status_idx").on(t.userId, t.marketingStatus),
 		index("contacts_blocked_idx").on(t.blocked),
 	],
 );

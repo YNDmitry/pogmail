@@ -1,8 +1,11 @@
 import { Hono, type Context } from "hono";
 import { and, count, desc, eq, inArray, like, or } from "drizzle-orm";
+import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import { audienceMembers, audiences, contacts } from "@/db/schema";
+import { audienceMembers, audiences, contacts, messages, outboundJobs } from "@/db/schema";
 import { audit } from "../audit";
+import { sendableMailbox } from "./send";
+import type { OutboundSendMessage } from "../email/types";
 import type { AppBindings } from "../middleware/context";
 import { notFound, parseBody, parseQuery } from "./_util";
 
@@ -30,13 +33,50 @@ const importInput = z.object({
 		displayName: z.string().trim().max(120).nullable().optional(),
 	})).min(1).max(500),
 });
+const confirmationInput = z.object({
+	mailboxId: z.string().min(1),
+	contactIds: z.array(z.string().min(1)).min(1).max(500),
+});
 
 export const contactRoutes = new Hono<AppBindings>()
+	.post("/confirmations", async (c) => {
+		const input = await parseBody(c, confirmationInput);
+		const mailbox = await sendableMailbox(c, input.mailboxId, { requireSending: true });
+		const owned = await c.get("db").select({
+			id: contacts.id, email: contacts.email, displayName: contacts.displayName, blocked: contacts.blocked,
+			marketingStatus: contacts.marketingStatus, confirmationToken: contacts.confirmationToken,
+		}).from(contacts).where(and(eq(contacts.userId, c.get("user").id), inArray(contacts.id, input.contactIds))).all();
+		if (owned.length !== new Set(input.contactIds).size) notFound("Contact");
+		const pending = owned.filter((contact) => !contact.blocked && contact.marketingStatus === "pending");
+		if (pending.length === 0) throw new HTTPException(422, { message: "Choose at least one pending, unblocked contact" });
+		const queued: OutboundSendMessage[] = [];
+		for (const contact of pending) {
+			const confirmationToken = contact.confirmationToken ?? crypto.randomUUID();
+			if (!contact.confirmationToken) {
+				await c.get("db").update(contacts).set({ confirmationToken }).where(eq(contacts.id, contact.id));
+			}
+			const confirmationUrl = new URL(`/api/public/subscribe?token=${confirmationToken}`, c.req.url).toString();
+			const sender = mailbox.displayName ?? mailbox.address;
+			const message = await c.get("db").insert(messages).values({
+				mailboxId: mailbox.id, authorUserId: c.get("user").id, direction: "outbound", status: "sent",
+				threadId: crypto.randomUUID(), subject: "Confirm your email subscription", fromAddress: mailbox.address,
+				fromName: mailbox.displayName, toAddresses: [{ address: contact.email, ...(contact.displayName ? { name: contact.displayName } : {}) }], ccAddresses: [], bccAddresses: [],
+				bodyText: `Confirm that you want to receive marketing email from ${sender}.\n\nConfirm subscription: ${confirmationUrl}`,
+				bodyHtml: `<p>Confirm that you want to receive marketing email from ${escapeHtml(sender)}.</p><p><a href="${confirmationUrl}">Confirm subscription</a></p>`,
+				snippet: "Confirm your email subscription", read: true, receivedAt: new Date(),
+			}).returning().get();
+			const job = await c.get("db").insert(outboundJobs).values({ messageId: message.id }).returning().get();
+			queued.push({ kind: "outbound", jobId: job.id });
+		}
+		for (let index = 0; index < queued.length; index += 100) await c.env.OUTBOUND_QUEUE.sendBatch(queued.slice(index, index + 100).map((body) => ({ body })));
+		audit(c, { action: "contact.confirmation.send", mailboxId: mailbox.id, metadata: { recipients: queued.length } });
+		return c.json({ queued: queued.length }, 202);
+	})
 	.post("/import", async (c) => {
 		const input = await parseBody(c, importInput);
 		const unique = [...new Map(input.contacts.map((contact) => [contact.email, contact])).values()];
 		const inserted = await c.get("db").insert(contacts).values(unique.map((contact) => ({
-			userId: c.get("user").id, email: contact.email, displayName: contact.displayName ?? null, source: "manual" as const,
+			userId: c.get("user").id, email: contact.email, displayName: contact.displayName ?? null, source: "manual" as const, marketingStatus: "pending" as const,
 		}))).onConflictDoNothing().returning({ id: contacts.id }).all();
 		audit(c, { action: "contact.import", metadata: { imported: inserted.length, skippedExisting: unique.length - inserted.length } });
 		return c.json({ imported: inserted.length, skippedExisting: unique.length - inserted.length });
@@ -129,6 +169,7 @@ export const contactRoutes = new Hono<AppBindings>()
 				displayName: input.displayName ?? null,
 				blocked: input.blocked ?? false,
 				source: "manual",
+				marketingStatus: "pending",
 			})
 			.onConflictDoUpdate({
 				target: [contacts.userId, contacts.email],
@@ -173,6 +214,10 @@ export const contactRoutes = new Hono<AppBindings>()
 		if (!row) notFound("Contact");
 		return c.json({ ok: true });
 });
+
+function escapeHtml(value: string) {
+	return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
+}
 
 async function ownedAudience(c: Context<AppBindings>, id: string) {
 	const audience = await c.get("db").select().from(audiences).where(and(

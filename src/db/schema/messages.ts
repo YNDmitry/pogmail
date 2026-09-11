@@ -140,13 +140,48 @@ export const contacts = sqliteTable(
 		source: text("source", { enum: CONTACT_SOURCES }).notNull().default("inbound"),
 		/** Blocked senders are rejected by the domain-scope routing phase. */
 		blocked: integer("blocked", { mode: "boolean" }).notNull().default(false),
+		/** A marketing opt-out never blocks ordinary inbound mail. */
+		unsubscribedAt: integer("unsubscribed_at", { mode: "timestamp_ms" }),
+		/** Opaque capability used only by the public unsubscribe page. */
+		unsubscribeToken: text("unsubscribe_token"),
 		messageCount: integer("message_count").notNull().default(0),
 		lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
 		...timestamps(),
 	},
 	(t) => [
 		uniqueIndex("contacts_email_unq").on(t.userId, t.email),
+		uniqueIndex("contacts_unsubscribe_token_unq").on(t.unsubscribeToken),
 		index("contacts_blocked_idx").on(t.blocked),
+	],
+);
+
+/** A reusable, owned subset of contacts for marketing campaigns. */
+export const audiences = sqliteTable(
+	"audiences",
+	{
+		id: id(),
+		userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		description: text("description").notNull().default(""),
+		...timestamps(),
+	},
+	(t) => [
+		uniqueIndex("audiences_user_name_unq").on(t.userId, t.name),
+		index("audiences_user_created_idx").on(t.userId, t.createdAt),
+	],
+);
+
+export const audienceMembers = sqliteTable(
+	"audience_members",
+	{
+		id: id(),
+		audienceId: text("audience_id").notNull().references(() => audiences.id, { onDelete: "cascade" }),
+		contactId: text("contact_id").notNull().references(() => contacts.id, { onDelete: "cascade" }),
+		...timestamps(),
+	},
+	(t) => [
+		uniqueIndex("audience_members_member_unq").on(t.audienceId, t.contactId),
+		index("audience_members_contact_idx").on(t.contactId),
 	],
 );
 

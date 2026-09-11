@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { contacts, domains, emailCampaigns, mailboxes, messageAttachments, messages, outboundJobs } from "@/db/schema";
+import { audienceMembers, audiences, contacts, domains, emailCampaigns, mailboxes, messageAttachments, messages, outboundJobs } from "@/db/schema";
 import { audit } from "../audit";
 import { canSendFrom, getPermission, hasAtLeast } from "../mailboxes/access";
 import type { AppBindings } from "../middleware/context";
@@ -59,11 +59,15 @@ const composeInput = composeShape.superRefine(validateRecipientLimit);
  */
 const campaignInput = z.object({
 	mailboxId: z.string().min(1),
-	contactIds: z.array(z.string().min(1)).min(1).max(500),
+	contactIds: z.array(z.string().min(1)).max(500).default([]),
+	audienceId: z.string().min(1).optional(),
 	subject: z.string().min(1).max(300),
 	bodyText: z.string().min(1).max(500_000),
 	bodyHtml: z.string().max(1_000_000).nullable().optional(),
 }).superRefine((input, ctx) => {
+	if (input.contactIds.length === 0 && !input.audienceId) {
+		ctx.addIssue({ code: "custom", message: "Choose contacts or an audience" });
+	}
 	if (new Set(input.contactIds).size !== input.contactIds.length) {
 		ctx.addIssue({ code: "custom", message: "Choose each contact only once" });
 	}
@@ -262,15 +266,15 @@ export const sendRoutes = new Hono<AppBindings>()
 		const input = await parseBody(c, campaignInput);
 		const mailbox = await sendableMailbox(c, input.mailboxId, { requireSending: true });
 		const requested = new Set(input.contactIds);
-		const recipients = await c
-			.get("db")
-			.select({ id: contacts.id, email: contacts.email, displayName: contacts.displayName, blocked: contacts.blocked })
-			.from(contacts)
-			.where(and(eq(contacts.userId, c.get("user").id), inArray(contacts.id, input.contactIds)))
-			.all();
-		const sendable = recipients.filter((contact) => !contact.blocked);
+		const recipients = input.audienceId
+			? await audienceRecipients(c, input.audienceId)
+			: await c.get("db").select({
+				id: contacts.id, email: contacts.email, displayName: contacts.displayName, blocked: contacts.blocked,
+				unsubscribedAt: contacts.unsubscribedAt, unsubscribeToken: contacts.unsubscribeToken,
+			}).from(contacts).where(and(eq(contacts.userId, c.get("user").id), inArray(contacts.id, input.contactIds))).all();
+		const sendable = recipients.filter((contact) => !contact.blocked && !contact.unsubscribedAt);
 		if (sendable.length === 0) {
-			throw new HTTPException(422, { message: "Choose at least one contact that is not blocked" });
+			throw new HTTPException(422, { message: "Choose at least one subscribed contact that is not blocked" });
 		}
 		const campaign = await c.get("db").insert(emailCampaigns).values({
 			userId: c.get("user").id,
@@ -281,6 +285,12 @@ export const sendRoutes = new Hono<AppBindings>()
 
 		const queued: Array<{ messageId: string; jobId: string }> = [];
 		for (const recipient of sendable) {
+			const unsubscribeToken = recipient.unsubscribeToken ?? crypto.randomUUID();
+			if (!recipient.unsubscribeToken) {
+				await c.get("db").update(contacts).set({ unsubscribeToken }).where(eq(contacts.id, recipient.id));
+			}
+			const unsubscribeUrl = new URL(`/api/public/unsubscribe?token=${unsubscribeToken}`, c.req.url).toString();
+			const body = personalisedCampaignBody(input.bodyText, input.bodyHtml ?? null, recipient, unsubscribeUrl);
 			const message = await c
 				.get("db")
 				.insert(messages)
@@ -297,9 +307,9 @@ export const sendRoutes = new Hono<AppBindings>()
 					toAddresses: [{ address: recipient.email, ...(recipient.displayName ? { name: recipient.displayName } : {}) }],
 					ccAddresses: [],
 					bccAddresses: [],
-					bodyText: input.bodyText,
-					bodyHtml: input.bodyHtml ?? null,
-					snippet: input.bodyText.replace(/\s+/g, " ").trim().slice(0, 200),
+					bodyText: body.text,
+					bodyHtml: body.html,
+					snippet: body.text.replace(/\s+/g, " ").trim().slice(0, 200),
 					read: true,
 					receivedAt: new Date(),
 				})
@@ -317,13 +327,14 @@ export const sendRoutes = new Hono<AppBindings>()
 
 		const returned = new Set(recipients.map((recipient) => recipient.id));
 		const skippedBlocked = recipients.filter((recipient) => recipient.blocked).length;
+		const skippedUnsubscribed = recipients.filter((recipient) => recipient.unsubscribedAt).length;
 		const skippedMissing = [...requested].filter((id) => !returned.has(id)).length;
 		audit(c, {
 			action: "campaign.send",
 			mailboxId: mailbox.id,
-			metadata: { campaignId: campaign.id, queued: queued.length, skippedBlocked, skippedMissing },
+			metadata: { campaignId: campaign.id, queued: queued.length, skippedBlocked, skippedUnsubscribed, skippedMissing },
 		});
-		return c.json({ id: campaign.id, queued: queued.length, skippedBlocked, skippedMissing }, 202);
+		return c.json({ id: campaign.id, queued: queued.length, skippedBlocked, skippedUnsubscribed, skippedMissing }, 202);
 	})
 
 	/** Stops queue consumers before they send the remaining private copies. */
@@ -520,6 +531,48 @@ function chunks<T>(items: T[], size: number): T[][] {
 	const result: T[][] = [];
 	for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
 	return result;
+}
+
+async function audienceRecipients(c: Context<AppBindings>, audienceId: string) {
+	const audience = await c.get("db").select({ id: audiences.id }).from(audiences).where(and(
+		eq(audiences.id, audienceId), eq(audiences.userId, c.get("user").id),
+	)).get();
+	if (!audience) notFound("Audience");
+	const recipients = await c.get("db").select({
+		id: contacts.id, email: contacts.email, displayName: contacts.displayName, blocked: contacts.blocked,
+		unsubscribedAt: contacts.unsubscribedAt, unsubscribeToken: contacts.unsubscribeToken,
+	}).from(audienceMembers).innerJoin(contacts, eq(contacts.id, audienceMembers.contactId))
+		.where(eq(audienceMembers.audienceId, audience.id)).limit(501).all();
+	if (recipients.length > 500) {
+		throw new HTTPException(422, { message: "An audience may have at most 500 contacts per campaign" });
+	}
+	return recipients;
+}
+
+function personalisedCampaignBody(
+	bodyText: string,
+	bodyHtml: string | null,
+	recipient: { email: string; displayName: string | null },
+	unsubscribeUrl: string,
+) {
+	const firstName = recipient.displayName?.trim().split(/\s+/)[0] || "there";
+	const text = replaceTokens(bodyText, { firstName, email: recipient.email, unsubscribeUrl }) + `\n\nUnsubscribe: ${unsubscribeUrl}`;
+	if (!bodyHtml) return { text, html: null };
+	const html = replaceTokens(bodyHtml, {
+		firstName: escapeHtml(firstName), email: escapeHtml(recipient.email), unsubscribeUrl: escapeHtml(unsubscribeUrl),
+	}) + `<p style="margin-top:24px;font-size:12px;color:#666"><a href="${escapeHtml(unsubscribeUrl)}">Unsubscribe from these emails</a></p>`;
+	return { text, html };
+}
+
+function replaceTokens(value: string, variables: { firstName: string; email: string; unsubscribeUrl: string }) {
+	return value
+		.replaceAll("{{first_name}}", variables.firstName)
+		.replaceAll("{{email}}", variables.email)
+		.replaceAll("{{unsubscribe_url}}", variables.unsubscribeUrl);
+}
+
+function escapeHtml(value: string) {
+	return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
 }
 
 /** Removes CID blobs when their image was removed from the rich-text document. */

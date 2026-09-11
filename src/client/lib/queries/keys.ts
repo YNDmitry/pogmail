@@ -14,6 +14,7 @@ export const qk = {
 
 	folders: ["folders"] as const,
 	contacts: (filters: Record<string, unknown> = {}) => ["contacts", filters] as const,
+	audiences: ["audiences"] as const,
 	campaigns: ["campaigns"] as const,
 	templates: ["templates"] as const,
 	calendar: (from: number, to: number) => ["calendar", from, to] as const,

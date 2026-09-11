@@ -29,12 +29,14 @@ type Contact = {
 	displayName: string | null;
 	source: "manual" | "inbound" | "outbound";
 	blocked: boolean;
+	unsubscribedAt: string | null;
 	messageCount: number;
 	lastSeenAt: string | null;
 };
 
 type Template = { id: string; name: string; subject: string; bodyText: string; bodyHtml: string | null };
-type CampaignResult = { id: string; queued: number; skippedBlocked: number; skippedMissing: number };
+type CampaignResult = { id: string; queued: number; skippedBlocked: number; skippedMissing: number; skippedUnsubscribed: number };
+type Audience = { id: string; name: string; description: string; memberCount: number };
 type Campaign = {
 	id: string;
 	subject: string;
@@ -52,6 +54,7 @@ function Contacts() {
 	const [search, setSearch] = useState("");
 	const [selected, setSelected] = useState<Set<string>>(new Set());
 	const [campaignOpen, setCampaignOpen] = useState(false);
+	const [audienceOpen, setAudienceOpen] = useState(false);
 
 	const contacts = useList<Contact>(qk.contacts(), "/api/contacts", {
 		search: search || undefined,
@@ -63,7 +66,7 @@ function Contacts() {
 		queryFn: async () => (await api.get<{ items: Campaign[] }>("/api/send/campaigns")).items,
 		refetchInterval: 5_000,
 	});
-	const selectable = (contacts.data ?? []).filter((contact) => !contact.blocked);
+	const selectable = (contacts.data ?? []).filter((contact) => !contact.blocked && !contact.unsubscribedAt);
 	const allSelected = selectable.length > 0 && selectable.every((contact) => selected.has(contact.id));
 
 	function toggleContact(id: string, checked: boolean) {
@@ -79,13 +82,11 @@ function Contacts() {
 		<div className="mx-auto max-w-4xl space-y-6 px-6 py-8">
 			<PageHeader
 				title="Contacts"
-				description="Everyone you have exchanged mail with. Select contacts to send a private campaign, or block an address at the door."
-				actions={
-					<Button size="sm" disabled={selected.size === 0} onClick={() => setCampaignOpen(true)}>
-						<Send className="size-3.5" />
-						Campaign{selected.size ? ` (${selected.size})` : ""}
-					</Button>
-				}
+				description="Everyone you have exchanged mail with. Campaigns only include contacts who are neither blocked nor unsubscribed."
+				actions={<>
+					<Button size="sm" variant="secondary" disabled={selected.size === 0} onClick={() => setAudienceOpen(true)}>Save audience</Button>
+					<Button size="sm" disabled={selected.size === 0} onClick={() => setCampaignOpen(true)}><Send className="size-3.5" />Campaign{selected.size ? ` (${selected.size})` : ""}</Button>
+				</>}
 			/>
 
 			<div className="relative max-w-sm">
@@ -135,7 +136,7 @@ function Contacts() {
 							>
 								<Checkbox
 									checked={selected.has(contact.id)}
-									disabled={contact.blocked}
+									disabled={contact.blocked || Boolean(contact.unsubscribedAt)}
 									aria-label={`Select ${contact.email} for campaign`}
 									onCheckedChange={(checked) => toggleContact(contact.id, checked === true)}
 								/>
@@ -148,6 +149,7 @@ function Contacts() {
 
 								<Tag tone="neutral">{contact.source}</Tag>
 								{contact.blocked ? <Tag tone="fail">Blocked</Tag> : null}
+								{contact.unsubscribedAt ? <Tag tone="neutral">Unsubscribed</Tag> : null}
 
 								<span className="machine w-16 text-right text-xs text-ink-3 tabular-nums">
 									{contact.messageCount}
@@ -205,6 +207,7 @@ function Contacts() {
 					void campaigns.refetch();
 				}}
 			/>
+			<AudienceForm open={audienceOpen} contactIds={[...selected]} onClose={() => setAudienceOpen(false)} />
 			<CampaignHistory campaigns={campaigns.data ?? []} />
 		</div>
 	);
@@ -261,6 +264,35 @@ function CampaignHistory({ campaigns }: { campaigns: Campaign[] }) {
 	</section>;
 }
 
+function AudienceForm({ open, contactIds, onClose }: { open: boolean; contactIds: string[]; onClose: () => void }) {
+	const toast = useToast();
+	const queryClient = useQueryClient();
+	const [name, setName] = useState("");
+	const [saving, setSaving] = useState(false);
+
+	async function submit() {
+		setSaving(true);
+		try {
+			await api.post("/api/contacts/audiences", { name, contactIds });
+			await queryClient.invalidateQueries({ queryKey: qk.audiences });
+			toast.ok(`Audience "${name}" saved`);
+			setName("");
+			onClose();
+		} catch (error) {
+			toast.fail("Could not save audience", error instanceof ApiError ? error.message : undefined);
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	return <Modal open={open} onClose={onClose} title="Save audience" description={`${contactIds.length} selected contacts will be reusable in future campaigns.`}>
+		<form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+			<Field label="Audience name"><Input required maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder="Newsletter subscribers" /></Field>
+			<div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || saving}>{saving ? "Saving…" : "Save audience"}</Button></div>
+		</form>
+	</Modal>;
+}
+
 function campaignTone(state: Campaign["state"]): "wait" | "ok" | "fail" | "neutral" {
 	if (state === "completed") return "ok";
 	if (state === "cancelled") return "neutral";
@@ -282,12 +314,14 @@ function CampaignComposer({
 	const toast = useToast();
 	const mailboxes = useMailboxes();
 	const templates = useList<Template>(qk.templates, "/api/templates");
+	const audiences = useList<Audience>(qk.audiences, "/api/contacts/audiences");
 	const sendable = (mailboxes.data ?? []).filter((mailbox) => canSend(mailbox.permission));
 	const [mailboxId, setMailboxId] = useState("");
 	const selectedMailboxId = mailboxId || sendable[0]?.id || "";
 	const [subject, setSubject] = useState("");
 	const [body, setBody] = useState({ html: "", text: "" });
 	const [templateId, setTemplateId] = useState("none");
+	const [audienceId, setAudienceId] = useState("none");
 	const [editorKey, setEditorKey] = useState(0);
 	const [confirmed, setConfirmed] = useState(false);
 	const [sending, setSending] = useState(false);
@@ -307,12 +341,13 @@ function CampaignComposer({
 		try {
 			const result = await api.post<CampaignResult>("/api/send/campaigns", {
 				mailboxId: selectedMailboxId,
-				contactIds,
+				contactIds: audienceId === "none" ? contactIds : [],
+				...(audienceId === "none" ? {} : { audienceId }),
 				subject,
 				bodyText: body.text,
 				bodyHtml: body.html || null,
 			});
-			const skipped = result.skippedBlocked + result.skippedMissing;
+			const skipped = result.skippedBlocked + result.skippedMissing + (result.skippedUnsubscribed ?? 0);
 			toast.ok(`Queued ${result.queued} private email${result.queued === 1 ? "" : "s"}${skipped ? `; skipped ${skipped}` : ""}`);
 			onSent();
 		} catch (error) {
@@ -341,6 +376,9 @@ function CampaignComposer({
 								placeholder="Choose a mailbox"
 								required
 							/>
+						</Field>
+						<Field label="Audience" hint="Unsubscribed and blocked contacts are always excluded.">
+							<Choice value={audienceId} onChange={setAudienceId} options={[{ value: "none", label: `Selected contacts (${contactIds.length})` }, ...(audiences.data ?? []).map((audience) => ({ value: audience.id, label: `${audience.name} (${audience.memberCount})` }))]} />
 						</Field>
 						<Field label="Start from a template" hint="Template images are not available in campaigns yet.">
 							<Choice

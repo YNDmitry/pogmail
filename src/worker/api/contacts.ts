@@ -1,7 +1,7 @@
-import { Hono } from "hono";
-import { and, desc, eq, like, or } from "drizzle-orm";
+import { Hono, type Context } from "hono";
+import { and, count, desc, eq, inArray, like, or } from "drizzle-orm";
 import { z } from "zod";
-import { contacts } from "@/db/schema";
+import { audienceMembers, audiences, contacts } from "@/db/schema";
 import { audit } from "../audit";
 import type { AppBindings } from "../middleware/context";
 import { notFound, parseBody, parseQuery } from "./_util";
@@ -17,8 +17,58 @@ const upsertInput = z.object({
 	displayName: z.string().max(120).nullable().optional(),
 	blocked: z.boolean().optional(),
 });
+const audienceInput = z.object({
+	name: z.string().trim().min(1).max(80),
+	description: z.string().trim().max(300).default(""),
+	contactIds: z.array(z.string().min(1)).min(1).max(500),
+});
+const memberInput = z.object({ contactIds: z.array(z.string().min(1)).min(1).max(500) });
 
 export const contactRoutes = new Hono<AppBindings>()
+	.get("/audiences", async (c) => {
+		const rows = await c.get("db").select({
+			id: audiences.id,
+			name: audiences.name,
+			description: audiences.description,
+			createdAt: audiences.createdAt,
+			memberCount: count(audienceMembers.id),
+		})
+			.from(audiences)
+			.leftJoin(audienceMembers, eq(audienceMembers.audienceId, audiences.id))
+			.where(eq(audiences.userId, c.get("user").id))
+			.groupBy(audiences.id)
+			.orderBy(desc(audiences.createdAt)).all();
+		return c.json({ items: rows });
+	})
+	.post("/audiences", async (c) => {
+		const input = await parseBody(c, audienceInput);
+		const owned = await c.get("db").select({ id: contacts.id }).from(contacts).where(and(
+			eq(contacts.userId, c.get("user").id), inArray(contacts.id, input.contactIds),
+		)).all();
+		if (owned.length !== new Set(input.contactIds).size) notFound("Contact");
+		const audience = await c.get("db").insert(audiences).values({
+			userId: c.get("user").id, name: input.name, description: input.description,
+		}).returning().get();
+		await c.get("db").insert(audienceMembers).values(owned.map((contact) => ({ audienceId: audience.id, contactId: contact.id })));
+		audit(c, { action: "audience.create", metadata: { audienceId: audience.id, members: owned.length } });
+		return c.json({ ...audience, memberCount: owned.length }, 201);
+	})
+	.post("/audiences/:id/members", async (c) => {
+		const input = await parseBody(c, memberInput);
+		const audience = await ownedAudience(c, c.req.param("id"));
+		const owned = await c.get("db").select({ id: contacts.id }).from(contacts).where(and(
+			eq(contacts.userId, c.get("user").id), inArray(contacts.id, input.contactIds),
+		)).all();
+		if (owned.length !== new Set(input.contactIds).size) notFound("Contact");
+		await c.get("db").insert(audienceMembers).values(owned.map((contact) => ({ audienceId: audience.id, contactId: contact.id }))).onConflictDoNothing();
+		return c.json({ ok: true });
+	})
+	.delete("/audiences/:id", async (c) => {
+		const audience = await ownedAudience(c, c.req.param("id"));
+		await c.get("db").delete(audiences).where(eq(audiences.id, audience.id));
+		audit(c, { action: "audience.delete", metadata: { audienceId: audience.id } });
+		return c.json({ ok: true });
+	})
 	.get("/", async (c) => {
 		const query = await parseQuery(c, listQuery);
 		const term = query.search ? `%${query.search}%` : null;
@@ -96,7 +146,15 @@ export const contactRoutes = new Hono<AppBindings>()
 
 		if (!row) notFound("Contact");
 		return c.json({ ok: true });
-	});
+});
+
+async function ownedAudience(c: Context<AppBindings>, id: string) {
+	const audience = await c.get("db").select().from(audiences).where(and(
+		eq(audiences.id, id), eq(audiences.userId, c.get("user").id),
+	)).get();
+	if (!audience) notFound("Audience");
+	return audience;
+}
 
 /** Blocked addresses for one user, used by the inbound reject phase. */
 export async function blockedAddresses(

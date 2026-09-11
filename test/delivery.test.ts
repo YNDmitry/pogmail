@@ -67,6 +67,28 @@ describe("outbound delivery retry", () => {
 		await processOutboundJob(env, { kind: "outbound", jobId: jobs[0]!.id });
 		expect(await db.select().from(outboundJobs).where(eq(outboundJobs.id, jobs[0]!.id)).get())
 			.toMatchObject({ status: "failed", lastError: "Campaign cancelled" });
+		const contact = await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get();
+		expect(contact?.unsubscribeToken).toMatch(/^[0-9a-f-]{36}$/);
+		const unsubscribe = await api.fetch(new Request("https://pogmail.test/api/public/unsubscribe", {
+			method: "POST",
+			headers: { "content-type": "application/x-www-form-urlencoded" },
+			body: `token=${encodeURIComponent(contact!.unsubscribeToken!)}`,
+		}), env);
+		expect(unsubscribe.status).toBe(200);
+		expect(await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get())
+			.toMatchObject({ unsubscribedAt: expect.any(Date) });
+		const audienceResponse = await api.fetch(new Request("https://pogmail.test/api/contacts/audiences", {
+			method: "POST", headers: { "content-type": "application/json", cookie },
+			body: JSON.stringify({ name: "Newsletter", contactIds: [recipient!.id] }),
+		}), env);
+		expect(audienceResponse.status).toBe(201);
+		const audience = await audienceResponse.json() as { id: string; memberCount: number };
+		expect(audience.memberCount).toBe(1);
+		const suppressed = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", {
+			method: "POST", headers: { "content-type": "application/json", cookie },
+			body: JSON.stringify({ mailboxId: mailbox.id, audienceId: audience.id, subject: "Follow-up", bodyText: "Hello" }),
+		}), env);
+		expect(suppressed.status).toBe(422);
 	});
 
 	it("requeues a failed delivery for a mailbox owner", async () => {

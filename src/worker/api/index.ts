@@ -18,6 +18,7 @@ import { fileRoutes } from "./files";
 import { folderRoutes } from "./folders";
 import { imapRoutes } from "./imap";
 import { importExportRoutes } from "./import-export";
+import { publicRoutes } from "./public";
 import { mailboxRoutes } from "./mailboxes";
 import { messageRoutes } from "./messages";
 import { routingRuleRoutes } from "./routing-rules";
@@ -51,6 +52,7 @@ api.onError((error, c) => {
 // Public: no session required.
 api.route("/setup", setupRoutes);
 api.route("/auth", authRoutes);
+api.route("/public", publicRoutes);
 // Branding is public: the login screen needs the app name and icon before anyone
 // has signed in. The write routes inside it enforce admin themselves.
 api.route("/branding", brandingRoutes);

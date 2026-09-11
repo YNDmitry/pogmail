@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { and, count, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
-import { audienceMembers, audiences, contacts, domains, emailCampaigns, mailboxes, messageAttachments, messages, outboundJobs } from "@/db/schema";
+import { audienceMembers, audiences, campaignLinkClicks, contacts, domains, emailCampaigns, mailboxes, messageAttachments, messages, outboundJobs } from "@/db/schema";
 import { audit } from "../audit";
 import { canSendFrom, getPermission, hasAtLeast } from "../mailboxes/access";
 import type { AppBindings } from "../middleware/context";
@@ -67,6 +67,8 @@ const campaignInput = z.object({
 	bodyHtml: z.string().max(1_000_000).nullable().optional(),
 	/** Adds a pixel only to HTML campaign copies; disabled by default for privacy. */
 	trackOpens: z.boolean().default(false),
+	/** Rewrites ordinary web links to an opaque redirect; disabled by default for privacy. */
+	trackClicks: z.boolean().default(false),
 	/** Epoch ms; each recipient waits in Queues until this campaign begins. */
 	scheduledFor: z.number().int().nullable().optional(),
 }).superRefine((input, ctx) => {
@@ -88,6 +90,9 @@ const campaignInput = z.object({
 	}
 	if (input.trackOpens && !input.bodyHtml) {
 		ctx.addIssue({ code: "custom", message: "Open tracking requires an HTML campaign" });
+	}
+	if (input.trackClicks && !input.bodyHtml) {
+		ctx.addIssue({ code: "custom", message: "Click tracking requires an HTML campaign" });
 	}
 });
 
@@ -269,6 +274,11 @@ export const sendRoutes = new Hono<AppBindings>()
 			.where(and(inArray(messages.campaignId, campaigns.map((campaign) => campaign.id)), isNotNull(messages.openedAt)))
 			.groupBy(messages.campaignId).all();
 		const opensByCampaign = new Map(openCounts.flatMap((row) => row.campaignId ? [[row.campaignId, row.total] as const] : []));
+		const clickCounts = await c.get("db").select({ campaignId: messages.campaignId, total: count() })
+			.from(campaignLinkClicks).innerJoin(messages, eq(messages.id, campaignLinkClicks.messageId))
+			.where(and(inArray(messages.campaignId, campaigns.map((campaign) => campaign.id)), isNotNull(campaignLinkClicks.clickedAt)))
+			.groupBy(messages.campaignId).all();
+		const clicksByCampaign = new Map(clickCounts.flatMap((row) => row.campaignId ? [[row.campaignId, row.total] as const] : []));
 
 		return c.json({
 			items: campaigns.map((campaign) => {
@@ -280,7 +290,7 @@ export const sendRoutes = new Hono<AppBindings>()
 						: delivery.queued > 0
 							? "queued"
 							: "completed";
-				return { ...campaign, state, ...delivery, opens: opensByCampaign.get(campaign.id) ?? 0 };
+				return { ...campaign, state, ...delivery, opens: opensByCampaign.get(campaign.id) ?? 0, clicks: clicksByCampaign.get(campaign.id) ?? 0 };
 			}),
 		});
 	})
@@ -317,7 +327,14 @@ export const sendRoutes = new Hono<AppBindings>()
 			const unsubscribeUrl = new URL(`/api/public/unsubscribe?token=${unsubscribeToken}`, c.req.url).toString();
 			const openTrackingToken = input.trackOpens && input.bodyHtml ? crypto.randomUUID() : null;
 			const openUrl = openTrackingToken ? new URL(`/api/public/open?token=${openTrackingToken}`, c.req.url).toString() : null;
-			const body = personalisedCampaignBody(input.bodyText, input.bodyHtml ?? null, recipient, unsubscribeUrl, openUrl);
+			const linkClicks: Array<{ token: string; destination: string }> = [];
+			const body = personalisedCampaignBody(input.bodyText, input.bodyHtml ?? null, recipient, unsubscribeUrl, openUrl, input.trackClicks
+				? (destination) => {
+					const token = crypto.randomUUID();
+					linkClicks.push({ token, destination });
+					return new URL(`/api/public/click?token=${token}`, c.req.url).toString();
+				}
+				: null);
 			const message = await c
 				.get("db")
 				.insert(messages)
@@ -343,6 +360,9 @@ export const sendRoutes = new Hono<AppBindings>()
 				})
 				.returning()
 				.get();
+			if (linkClicks.length > 0) {
+				await c.get("db").insert(campaignLinkClicks).values(linkClicks.map((click) => ({ ...click, messageId: message.id }))).onConflictDoNothing();
+			}
 			const job = await c.get("db").insert(outboundJobs).values({
 				messageId: message.id,
 				scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
@@ -620,14 +640,27 @@ function personalisedCampaignBody(
 	recipient: { email: string; displayName: string | null },
 	unsubscribeUrl: string,
 	openUrl: string | null,
+	clickUrl: ((destination: string) => string) | null,
 ) {
 	const firstName = recipient.displayName?.trim().split(/\s+/)[0] || "there";
 	const text = replaceTokens(bodyText, { firstName, email: recipient.email, unsubscribeUrl }) + `\n\nUnsubscribe: ${unsubscribeUrl}`;
 	if (!bodyHtml) return { text, html: null };
-	const html = replaceTokens(bodyHtml, {
+	const personalisedHtml = replaceTokens(bodyHtml, {
 		firstName: escapeHtml(firstName), email: escapeHtml(recipient.email), unsubscribeUrl: escapeHtml(unsubscribeUrl),
-	}) + `<p style="margin-top:24px;font-size:12px;color:#666"><a href="${escapeHtml(unsubscribeUrl)}">Unsubscribe from these emails</a></p>${openUrl ? `<img src="${escapeHtml(openUrl)}" alt="" width="1" height="1" style="display:block;width:1px;height:1px;border:0" />` : ""}`;
+	});
+	const html = `${clickUrl ? trackCampaignLinks(personalisedHtml, clickUrl) : personalisedHtml}<p style="margin-top:24px;font-size:12px;color:#666"><a href="${escapeHtml(unsubscribeUrl)}">Unsubscribe from these emails</a></p>${openUrl ? `<img src="${escapeHtml(openUrl)}" alt="" width="1" height="1" style="display:block;width:1px;height:1px;border:0" />` : ""}`;
 	return { text, html };
+}
+
+/** Rewrites at most 50 quoted http(s) anchors; mailto, CID and unsubscribe links stay untouched. */
+function trackCampaignLinks(html: string, clickUrl: (destination: string) => string) {
+	let tracked = 0;
+	return html.replace(/<a\b([^>]*?)\bhref\s*=\s*(["'])(https?:\/\/[^"'<>\s]+)\2([^>]*)>/gi, (anchor, before: string, quote: string, encodedDestination: string, after: string) => {
+		if (tracked >= 50) return anchor;
+		tracked += 1;
+		const destination = encodedDestination.replaceAll("&amp;", "&");
+		return `<a${before}href=${quote}${escapeHtml(clickUrl(destination))}${quote}${after}>`;
+	});
 }
 
 function testCampaignBody(bodyText: string, bodyHtml: string | null, recipient: { address: string; name?: string }) {

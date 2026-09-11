@@ -109,6 +109,25 @@ export const messages = sqliteTable(
 	],
 );
 
+/** One opaque redirect token per tracked link in an individual campaign copy. */
+export const campaignLinkClicks = sqliteTable(
+	"campaign_link_clicks",
+	{
+		id: id(),
+		messageId: text("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+		token: text("token").notNull(),
+		destination: text("destination").notNull(),
+		/** First redirect only; repeat visits do not inflate the campaign count. */
+		clickedAt: integer("clicked_at", { mode: "timestamp_ms" }),
+		...timestamps(),
+	},
+	(t) => [
+		uniqueIndex("campaign_link_clicks_token_unq").on(t.token),
+		index("campaign_link_clicks_message_idx").on(t.messageId),
+		index("campaign_link_clicks_clicked_idx").on(t.clickedAt),
+	],
+);
+
 export const ATTACHMENT_DISPOSITIONS = ["attachment", "inline"] as const;
 export type AttachmentDisposition = (typeof ATTACHMENT_DISPOSITIONS)[number];
 

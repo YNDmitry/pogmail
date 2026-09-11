@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { contacts, messages } from "@/db/schema";
+import { campaignLinkClicks, contacts, messages } from "@/db/schema";
 import type { AppBindings } from "../middleware/context";
 import { parseQuery } from "./_util";
 
@@ -18,6 +18,17 @@ const transparentGif = new Uint8Array([
  * account, and the token is an opaque capability rather than an email address.
  */
 export const publicRoutes = new Hono<AppBindings>()
+	.get("/click", async (c) => {
+		const parsed = tokenQuery.safeParse(c.req.query());
+		if (!parsed.success) return redirectHome(c.req.url);
+		const click = await c.get("db").select({ id: campaignLinkClicks.id, destination: campaignLinkClicks.destination })
+			.from(campaignLinkClicks).where(eq(campaignLinkClicks.token, parsed.data.token)).get();
+		if (!click) return redirectHome(c.req.url);
+		await c.get("db").update(campaignLinkClicks).set({ clickedAt: new Date() }).where(and(
+			eq(campaignLinkClicks.id, click.id), isNull(campaignLinkClicks.clickedAt),
+		));
+		return new Response(null, { status: 302, headers: { "cache-control": "no-store, max-age=0", location: click.destination } });
+	})
 	.get("/open", async (c) => {
 		const parsed = tokenQuery.safeParse(c.req.query());
 		if (parsed.success) {
@@ -49,4 +60,8 @@ function page(message: string, token?: string) {
 		? `<form method="post" action="/api/public/unsubscribe"><input type="hidden" name="token" value="${token}"><button>Unsubscribe</button></form>`
 		: "";
 	return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Email preferences</title><body style="font-family:system-ui,sans-serif;margin:3rem;max-width:34rem;color:#202020"><h1>Email preferences</h1><p>${message}</p>${action}</body></html>`;
+}
+
+function redirectHome(requestUrl: string) {
+	return new Response(null, { status: 302, headers: { "cache-control": "no-store, max-age=0", location: new URL("/", requestUrl).toString() } });
 }

@@ -505,6 +505,11 @@ function CampaignComposer({
 	const [testRecipient, setTestRecipient] = useState("");
 	const [testing, setTesting] = useState(false);
 	const [sending, setSending] = useState(false);
+	const selectedAudience = audienceId === "none" ? null : audiences.data?.find((audience) => audience.id === audienceId) ?? null;
+	const recipientCount = selectedAudience?.memberCount ?? contactIds.length;
+	const recipientDescription = selectedAudience
+		? `${selectedAudience.name} has ${recipientCount} contact${recipientCount === 1 ? "" : "s"}. Each receives an individual email and cannot see the other recipients.`
+		: `${contactIds.length} selected contact${contactIds.length === 1 ? "" : "s"}. Each receives an individual email and cannot see the other recipients.`;
 
 	function useTemplate(id: string) {
 		setTemplateId(id);
@@ -562,7 +567,7 @@ function CampaignComposer({
 			open={open}
 			onClose={onClose}
 			title="New campaign"
-			description={`${contactIds.length} selected contact${contactIds.length === 1 ? "" : "s"}. Each receives an individual email and cannot see the other recipients.`}
+			description={recipientDescription}
 			className="sm:max-w-6xl"
 		>
 			<form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
@@ -613,14 +618,14 @@ function CampaignComposer({
 				</div>
 				<label className="flex items-start gap-2.5 text-sm text-ink-2">
 					<Checkbox checked={confirmed} onCheckedChange={(checked) => setConfirmed(checked === true)} aria-label="Confirm campaign recipients" />
-					<span>I confirm that these contacts expect this email and I want to queue {contactIds.length} individual deliveries.</span>
+					<span>I confirm that these contacts expect this email and I want to queue up to {recipientCount} individual deliveries{segmentTag.trim() ? " that match this tag" : ""}.</span>
 				</label>
 				<div className="flex justify-end gap-2 pt-2">
 					<Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
 					<Button type="button" variant="outline" onClick={() => void sendTest()} disabled={!testRecipient.trim() || !selectedMailboxId || !subject.trim() || !body.text.trim() || testing}>{testing ? "Sending test…" : "Send test"}</Button>
 					<Button type="submit" disabled={!confirmed || !selectedMailboxId || !subject.trim() || !body.text.trim() || sending}>
 						<Mail className="size-3.5" />
-						{sending ? "Queueing…" : scheduled ? "Schedule campaign" : `Queue ${contactIds.length} emails`}
+						{sending ? "Queueing…" : scheduled ? "Schedule campaign" : `Queue up to ${recipientCount} emails`}
 					</Button>
 				</div>
 			</form>

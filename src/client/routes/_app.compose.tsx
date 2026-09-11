@@ -683,8 +683,8 @@ function ComposeForm({
 
 				<span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
 					<SaveIndicator state={saveState} unsaved={unsaved} />
-					<kbd className="machine rounded border border-border bg-[var(--pogpin-shell-fill-soft)] px-1.5 py-0.5 text-[0.625rem]">
-						⌘↵
+					<kbd className="machine flex h-7 shrink-0 items-center justify-center rounded-md border border-border bg-[var(--pogpin-shell-fill-soft)] px-2 text-xs leading-none text-muted-foreground">
+						⌘ + ↵
 					</kbd>
 				</span>
 			</footer>

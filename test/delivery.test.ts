@@ -92,6 +92,16 @@ describe("outbound delivery retry", () => {
 			body: JSON.stringify({ mailboxId: mailbox.id, audienceId: audience.id, subject: "Follow-up", bodyText: "Hello" }),
 		}), env);
 		expect(suppressed.status).toBe(422);
+		const testSend = await api.fetch(new Request("https://pogmail.test/api/send/campaigns/test", {
+			method: "POST", headers: { "content-type": "application/json", cookie },
+			body: JSON.stringify({
+				mailboxId: mailbox.id, to: [{ address: "reviewer@example.test", name: "Reviewer" }],
+				subject: "Review me", bodyText: "Hi {{first_name}}", bodyHtml: "<p>Hi {{first_name}}</p>",
+			}),
+		}), env);
+		expect(testSend.status).toBe(202);
+		const testMessage = await db.select().from(messages).where(eq(messages.subject, "[Test] Review me")).get();
+		expect(testMessage).toMatchObject({ bodyText: expect.stringContaining("Hi Reviewer"), bodyHtml: expect.stringContaining("test email") });
 	});
 
 	it("requeues a failed delivery for a mailbox owner", async () => {

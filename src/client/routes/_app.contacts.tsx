@@ -329,6 +329,8 @@ function CampaignComposer({
 	const [scheduled, setScheduled] = useState(false);
 	const [openedAt] = useState(() => Date.now());
 	const [scheduledFor, setScheduledFor] = useState(() => new Date(Date.now() + 60 * 60_000));
+	const [testRecipient, setTestRecipient] = useState("");
+	const [testing, setTesting] = useState(false);
 	const [sending, setSending] = useState(false);
 
 	function useTemplate(id: string) {
@@ -360,6 +362,24 @@ function CampaignComposer({
 			toast.fail("Could not queue campaign", error instanceof ApiError ? error.message : undefined);
 		} finally {
 			setSending(false);
+		}
+	}
+
+	async function sendTest() {
+		setTesting(true);
+		try {
+			const result = await api.post<{ queued: number }>("/api/send/campaigns/test", {
+				mailboxId: selectedMailboxId,
+				to: testRecipient.split(/[,;\s]+/).filter(Boolean).map((address) => ({ address })),
+				subject,
+				bodyText: body.text,
+				bodyHtml: body.html || null,
+			});
+			toast.ok(`Queued ${result.queued} test email${result.queued === 1 ? "" : "s"}`);
+		} catch (error) {
+			toast.fail("Could not send test", error instanceof ApiError ? error.message : undefined);
+		} finally {
+			setTesting(false);
 		}
 	}
 
@@ -397,6 +417,9 @@ function CampaignComposer({
 						<Field label="Message">
 							<MailyEditor key={editorKey} initialHtml={body.html} onChange={(html, text) => setBody({ html, text })} ariaLabel="Campaign message" density="compact" className="rounded-panel border border-seam px-3" />
 						</Field>
+						<Field label="Test recipients" hint="Send up to five private test copies before launching.">
+							<Input type="text" value={testRecipient} onChange={(event) => setTestRecipient(event.target.value)} placeholder="you@example.com, teammate@example.com" />
+						</Field>
 						<div className="flex items-center justify-between gap-3 rounded-panel border border-seam px-3 py-2.5">
 							<div><p className="text-sm font-medium text-ink">Schedule delivery</p><p className="text-xs text-ink-3">Queue this campaign for a future time.</p></div>
 							<Switch checked={scheduled} onCheckedChange={setScheduled} aria-label="Schedule campaign delivery" />
@@ -417,6 +440,7 @@ function CampaignComposer({
 				</label>
 				<div className="flex justify-end gap-2 pt-2">
 					<Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+					<Button type="button" variant="outline" onClick={() => void sendTest()} disabled={!testRecipient.trim() || !selectedMailboxId || !subject.trim() || !body.text.trim() || testing}>{testing ? "Sending test…" : "Send test"}</Button>
 					<Button type="submit" disabled={!confirmed || !selectedMailboxId || !subject.trim() || !body.text.trim() || sending}>
 						<Mail className="size-3.5" />
 						{sending ? "Queueing…" : scheduled ? "Schedule campaign" : `Queue ${contactIds.length} emails`}

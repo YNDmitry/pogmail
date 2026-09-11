@@ -85,6 +85,14 @@ const campaignInput = z.object({
 	}
 });
 
+const campaignTestInput = z.object({
+	mailboxId: z.string().min(1),
+	to: z.array(address).min(1).max(5),
+	subject: z.string().min(1).max(300),
+	bodyText: z.string().min(1).max(500_000),
+	bodyHtml: z.string().max(1_000_000).nullable().optional(),
+});
+
 // A draft is an unfinished envelope: body, attachment, or a CID image may be
 // saved before the recipient is known. The actual send endpoint keeps the
 // stricter `composeInput` and will still refuse an empty `To` list.
@@ -350,6 +358,36 @@ export const sendRoutes = new Hono<AppBindings>()
 		return c.json({ id: campaign.id, queued: queued.length, skippedBlocked, skippedUnsubscribed, skippedMissing }, 202);
 	})
 
+	/** Sends up to five clearly marked copies without touching an audience or its opt-out state. */
+	.post("/campaigns/test", async (c) => {
+		const input = await parseBody(c, campaignTestInput);
+		const mailbox = await sendableMailbox(c, input.mailboxId, { requireSending: true });
+		const unique = [...new Map(input.to.map((recipient) => [recipient.address.toLowerCase(), recipient])).values()];
+		const queued: Array<{ jobId: string }> = [];
+		for (const recipient of unique) {
+			const body = testCampaignBody(input.bodyText, input.bodyHtml ?? null, recipient);
+			const message = await c.get("db").insert(messages).values({
+				mailboxId: mailbox.id,
+				authorUserId: c.get("user").id,
+				direction: "outbound",
+				status: "sent",
+				threadId: crypto.randomUUID(),
+				subject: `[Test] ${input.subject}`,
+				fromAddress: mailbox.address,
+				fromName: mailbox.displayName,
+				toAddresses: [recipient], ccAddresses: [], bccAddresses: [],
+				bodyText: body.text, bodyHtml: body.html,
+				snippet: body.text.replace(/\s+/g, " ").trim().slice(0, 200),
+				read: true, receivedAt: new Date(),
+			}).returning().get();
+			const job = await c.get("db").insert(outboundJobs).values({ messageId: message.id }).returning().get();
+			queued.push({ jobId: job.id });
+		}
+		await c.env.OUTBOUND_QUEUE.sendBatch(queued.map(({ jobId }) => ({ body: { kind: "outbound", jobId } satisfies OutboundSendMessage })));
+		audit(c, { action: "campaign.test_send", mailboxId: mailbox.id, metadata: { recipients: unique.length } });
+		return c.json({ queued: unique.length }, 202);
+	})
+
 	/** Stops queue consumers before they send the remaining private copies. */
 	.post("/campaigns/:id/cancel", async (c) => {
 		const campaign = await c.get("db").select().from(emailCampaigns).where(and(
@@ -574,6 +612,15 @@ function personalisedCampaignBody(
 	const html = replaceTokens(bodyHtml, {
 		firstName: escapeHtml(firstName), email: escapeHtml(recipient.email), unsubscribeUrl: escapeHtml(unsubscribeUrl),
 	}) + `<p style="margin-top:24px;font-size:12px;color:#666"><a href="${escapeHtml(unsubscribeUrl)}">Unsubscribe from these emails</a></p>`;
+	return { text, html };
+}
+
+function testCampaignBody(bodyText: string, bodyHtml: string | null, recipient: { address: string; name?: string }) {
+	const firstName = recipient.name?.trim().split(/\s+/)[0] || "there";
+	const text = `[This is a test email]\n\n${replaceTokens(bodyText, { firstName, email: recipient.address, unsubscribeUrl: "" })}`;
+	const html = bodyHtml
+		? `<p style="margin:0 0 20px;padding:10px;background:#fff4e5;color:#7a4500;font-size:13px">This is a test email. It was not sent to your audience.</p>${replaceTokens(bodyHtml, { firstName: escapeHtml(firstName), email: escapeHtml(recipient.address), unsubscribeUrl: "" })}`
+		: null;
 	return { text, html };
 }
 

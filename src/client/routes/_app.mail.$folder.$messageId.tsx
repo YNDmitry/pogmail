@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/client/components/app/button";
 import { Choice } from "@/client/components/app/choice";
+import { EmailFrame } from "@/client/components/app/email-frame";
 import { Machine, Tag, type Tone } from "@/client/components/app/primitives";
 import { Modal } from "@/client/components/app/modal";
 import { ReplyBox } from "@/client/components/app/reply-box";
@@ -561,15 +562,7 @@ function MessageBody({
 				`/api/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachment.id)}`,
 			);
 		}, html);
-		return (
-			<iframe
-				title="Message body"
-				sandbox=""
-				referrerPolicy="no-referrer"
-				className="min-h-96 w-full rounded-panel border border-seam bg-white"
-				srcDoc={body}
-			/>
-		);
+		return <EmailFrame title="Message body" html={body} className="rounded-panel border border-seam" />;
 	}
 
 	return (

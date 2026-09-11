@@ -3,6 +3,7 @@ import { createFileRoute, useBlocker, useNavigate, useSearch } from "@tanstack/r
 import { z } from "zod";
 import { Eye, Image, Paperclip, Save, Send, X } from "lucide-react";
 import { Button, SubmitButton } from "@/client/components/app/button";
+import { EmailFrame } from "@/client/components/app/email-frame";
 import { Input } from "@/client/components/ui";
 import { Choice } from "@/client/components/app/choice";
 import { Modal } from "@/client/components/app/modal";
@@ -737,7 +738,7 @@ function ComposeForm({
 				</div>
 				<div data-preview-width={previewMode} className={cn("mx-auto overflow-hidden rounded-panel border border-seam bg-white transition-[width]", previewMode === "mobile" ? "w-[23.4375rem] max-w-full" : "w-full")}>
 					<p className="border-b border-seam px-4 py-3 text-sm font-medium text-black">{subject.trim() || "(No subject)"}</p>
-					<iframe title="Message body preview" sandbox="" referrerPolicy="no-referrer" className="h-[32rem] w-full bg-white" srcDoc={previewHtml} />
+					<EmailFrame title="Message body preview" html={previewHtml} />
 				</div>
 			</Modal>
 		</form>

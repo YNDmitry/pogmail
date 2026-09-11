@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import { PageHeader } from "@/client/components/app/primitives";
-import { SectionNav, type SectionLink } from "@/client/components/app/section-nav";
+import {
+  SectionNav,
+  type SectionLink,
+} from "@/client/components/app/section-nav";
 
 /**
  * The shape Settings and Administration share: a heading, a column of tabs, and
@@ -13,24 +16,28 @@ import { SectionNav, type SectionLink } from "@/client/components/app/section-na
  * them changes; see `styles.css`.
  */
 export function SectionLayout({
-	title,
-	description,
-	links,
-	children,
+  title,
+  description,
+  links,
+  children,
 }: {
-	title: string;
-	description: string;
-	links: SectionLink[];
-	children: ReactNode;
+  title: string;
+  description: string;
+  links: SectionLink[];
+  children: ReactNode;
 }) {
-	return (
-		<div className="mx-auto max-w-5xl space-y-6 px-6 py-8">
-			<PageHeader transitionName="section-heading" title={title} description={description} />
+  return (
+    <div className="mx-auto space-y-6 px-4 py-8">
+      <PageHeader
+        transitionName="section-heading"
+        title={title}
+        description={description}
+      />
 
-			<div className="grid gap-8 lg:grid-cols-[11rem_minmax(0,1fr)]">
-				<SectionNav links={links} />
-				<div className="min-w-0">{children}</div>
-			</div>
-		</div>
-	);
+      <div className="grid gap-8 lg:grid-cols-[11rem_minmax(0,1fr)]">
+        <SectionNav links={links} />
+        <div className="min-w-0">{children}</div>
+      </div>
+    </div>
+  );
 }

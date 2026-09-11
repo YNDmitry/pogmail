@@ -1,18 +1,32 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { contacts } from "@/db/schema";
+import { contacts, messages } from "@/db/schema";
 import type { AppBindings } from "../middleware/context";
 import { parseQuery } from "./_util";
 
 const tokenQuery = z.object({ token: z.string().uuid() });
 const unsubscribeInput = z.object({ token: z.string().uuid() });
 
+const transparentGif = new Uint8Array([
+	71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 128, 0, 0, 0, 0, 0, 255, 255, 255,
+	33, 249, 4, 1, 0, 0, 0, 0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 68, 1, 0, 59,
+]);
+
 /**
  * This is intentionally a tiny server-rendered page: recipients do not need an
  * account, and the token is an opaque capability rather than an email address.
  */
 export const publicRoutes = new Hono<AppBindings>()
+	.get("/open", async (c) => {
+		const parsed = tokenQuery.safeParse(c.req.query());
+		if (parsed.success) {
+			await c.get("db").update(messages).set({ openedAt: new Date() }).where(and(
+				eq(messages.openTrackingToken, parsed.data.token), isNull(messages.openedAt),
+		));
+		}
+		return new Response(transparentGif, { headers: { "cache-control": "no-store, max-age=0", "content-type": "image/gif" } });
+	})
 	.get("/unsubscribe", async (c) => {
 		const { token } = await parseQuery(c, tokenQuery);
 		const contact = await c.get("db").select({ unsubscribedAt: contacts.unsubscribedAt })

@@ -59,6 +59,7 @@ describe("outbound delivery retry", () => {
 				subject: "Hello",
 				bodyText: "A private update",
 				bodyHtml: "<p>A private update</p>",
+				trackOpens: true,
 				scheduledFor,
 			}),
 		}), env);
@@ -73,12 +74,21 @@ describe("outbound delivery retry", () => {
 			ccAddresses: [],
 			bccAddresses: [],
 		});
+		expect(sent[0]?.openTrackingToken).toMatch(/^[0-9a-f-]{36}$/);
+		expect(sent[0]?.bodyHtml).toContain(`/api/public/open?token=${sent[0]?.openTrackingToken}`);
 		const jobs = await db.select().from(outboundJobs).where(eq(outboundJobs.messageId, sent[0]!.id)).all();
 		expect(jobs).toHaveLength(1);
 		expect(jobs[0]?.scheduledFor?.getTime()).toBe(scheduledFor);
 
 		const history = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", { headers: { cookie } }), env);
-		expect(await history.json()).toMatchObject({ items: [expect.objectContaining({ id: result.id, state: "queued", queued: 1, scheduledFor: expect.any(String) })] });
+		expect(await history.json()).toMatchObject({ items: [expect.objectContaining({ id: result.id, state: "queued", queued: 1, opens: 0, scheduledFor: expect.any(String) })] });
+		const open = await api.fetch(new Request(`https://pogmail.test/api/public/open?token=${sent[0]!.openTrackingToken}`), env);
+		expect(open).toMatchObject({ status: 200 });
+		expect(open.headers.get("content-type")).toBe("image/gif");
+		expect(await db.select().from(messages).where(eq(messages.id, sent[0]!.id)).get())
+			.toMatchObject({ openedAt: expect.any(Date) });
+		const openedHistory = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", { headers: { cookie } }), env);
+		expect(await openedHistory.json()).toMatchObject({ items: [expect.objectContaining({ id: result.id, opens: 1 })] });
 		const stopped = await api.fetch(new Request(`https://pogmail.test/api/send/campaigns/${result.id}/cancel`, {
 			method: "POST", headers: { cookie },
 		}), env);

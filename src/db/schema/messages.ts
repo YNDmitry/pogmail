@@ -77,6 +77,10 @@ export const messages = sqliteTable(
 		snippet: text("snippet"),
 		bodyText: text("body_text"),
 		bodyHtml: text("body_html"),
+		/** Opaque capability embedded only in an opted-in campaign tracking pixel. */
+		openTrackingToken: text("open_tracking_token"),
+		/** First pixel request only; repeat loads do not inflate campaign engagement. */
+		openedAt: integer("opened_at", { mode: "timestamp_ms" }),
 
 		/** R2 key of the untouched MIME source, so the parse can be redone later. */
 		rawKey: text("raw_key"),
@@ -100,6 +104,8 @@ export const messages = sqliteTable(
 		index("messages_snoozed_idx").on(t.snoozedUntil),
 		// Redelivery of the same Message-ID into the same mailbox is a no-op.
 		uniqueIndex("messages_dedupe_unq").on(t.mailboxId, t.messageId),
+		uniqueIndex("messages_open_tracking_token_unq").on(t.openTrackingToken),
+		index("messages_campaign_opened_idx").on(t.campaignId, t.openedAt),
 	],
 );
 

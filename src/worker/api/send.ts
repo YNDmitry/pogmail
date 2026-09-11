@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { audienceMembers, audiences, contacts, domains, emailCampaigns, mailboxes, messageAttachments, messages, outboundJobs } from "@/db/schema";
 import { audit } from "../audit";
@@ -65,6 +65,8 @@ const campaignInput = z.object({
 	subject: z.string().min(1).max(300),
 	bodyText: z.string().min(1).max(500_000),
 	bodyHtml: z.string().max(1_000_000).nullable().optional(),
+	/** Adds a pixel only to HTML campaign copies; disabled by default for privacy. */
+	trackOpens: z.boolean().default(false),
 	/** Epoch ms; each recipient waits in Queues until this campaign begins. */
 	scheduledFor: z.number().int().nullable().optional(),
 }).superRefine((input, ctx) => {
@@ -83,6 +85,9 @@ const campaignInput = z.object({
 	}
 	if (input.scheduledFor && input.scheduledFor <= Date.now()) {
 		ctx.addIssue({ code: "custom", message: "Choose a future send time" });
+	}
+	if (input.trackOpens && !input.bodyHtml) {
+		ctx.addIssue({ code: "custom", message: "Open tracking requires an HTML campaign" });
 	}
 });
 
@@ -259,6 +264,11 @@ export const sendRoutes = new Hono<AppBindings>()
 			current[row.status] = row.total;
 			byCampaign.set(row.campaignId, current);
 		}
+		const openCounts = await c.get("db").select({ campaignId: messages.campaignId, total: count() })
+			.from(messages)
+			.where(and(inArray(messages.campaignId, campaigns.map((campaign) => campaign.id)), isNotNull(messages.openedAt)))
+			.groupBy(messages.campaignId).all();
+		const opensByCampaign = new Map(openCounts.flatMap((row) => row.campaignId ? [[row.campaignId, row.total] as const] : []));
 
 		return c.json({
 			items: campaigns.map((campaign) => {
@@ -270,7 +280,7 @@ export const sendRoutes = new Hono<AppBindings>()
 						: delivery.queued > 0
 							? "queued"
 							: "completed";
-				return { ...campaign, state, ...delivery };
+				return { ...campaign, state, ...delivery, opens: opensByCampaign.get(campaign.id) ?? 0 };
 			}),
 		});
 	})
@@ -305,7 +315,9 @@ export const sendRoutes = new Hono<AppBindings>()
 				await c.get("db").update(contacts).set({ unsubscribeToken }).where(eq(contacts.id, recipient.id));
 			}
 			const unsubscribeUrl = new URL(`/api/public/unsubscribe?token=${unsubscribeToken}`, c.req.url).toString();
-			const body = personalisedCampaignBody(input.bodyText, input.bodyHtml ?? null, recipient, unsubscribeUrl);
+			const openTrackingToken = input.trackOpens && input.bodyHtml ? crypto.randomUUID() : null;
+			const openUrl = openTrackingToken ? new URL(`/api/public/open?token=${openTrackingToken}`, c.req.url).toString() : null;
+			const body = personalisedCampaignBody(input.bodyText, input.bodyHtml ?? null, recipient, unsubscribeUrl, openUrl);
 			const message = await c
 				.get("db")
 				.insert(messages)
@@ -324,6 +336,7 @@ export const sendRoutes = new Hono<AppBindings>()
 					bccAddresses: [],
 					bodyText: body.text,
 					bodyHtml: body.html,
+					openTrackingToken,
 					snippet: body.text.replace(/\s+/g, " ").trim().slice(0, 200),
 					read: true,
 					receivedAt: new Date(),
@@ -606,13 +619,14 @@ function personalisedCampaignBody(
 	bodyHtml: string | null,
 	recipient: { email: string; displayName: string | null },
 	unsubscribeUrl: string,
+	openUrl: string | null,
 ) {
 	const firstName = recipient.displayName?.trim().split(/\s+/)[0] || "there";
 	const text = replaceTokens(bodyText, { firstName, email: recipient.email, unsubscribeUrl }) + `\n\nUnsubscribe: ${unsubscribeUrl}`;
 	if (!bodyHtml) return { text, html: null };
 	const html = replaceTokens(bodyHtml, {
 		firstName: escapeHtml(firstName), email: escapeHtml(recipient.email), unsubscribeUrl: escapeHtml(unsubscribeUrl),
-	}) + `<p style="margin-top:24px;font-size:12px;color:#666"><a href="${escapeHtml(unsubscribeUrl)}">Unsubscribe from these emails</a></p>`;
+	}) + `<p style="margin-top:24px;font-size:12px;color:#666"><a href="${escapeHtml(unsubscribeUrl)}">Unsubscribe from these emails</a></p>${openUrl ? `<img src="${escapeHtml(openUrl)}" alt="" width="1" height="1" style="display:block;width:1px;height:1px;border:0" />` : ""}`;
 	return { text, html };
 }
 

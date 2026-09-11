@@ -50,6 +50,7 @@ type Campaign = {
 	sending: number;
 	sent: number;
 	failed: number;
+	opens: number;
 	scheduledFor: string | null;
 };
 
@@ -254,7 +255,7 @@ function CampaignHistory({ campaigns }: { campaigns: Campaign[] }) {
 							<p className="mt-1 text-xs text-ink-3">{campaign.scheduledFor ? `Scheduled for ${new Date(campaign.scheduledFor).toLocaleString()} · ` : ""}{shortDate(campaign.createdAt)} · {campaign.recipientCount} recipients</p>
 						</div>
 						<Tag tone={campaignTone(campaign.state)}>{campaign.state}</Tag>
-						<span className="machine text-xs text-ink-3">{campaign.sent} sent · {pending} pending · {campaign.failed} failed</span>
+						<span className="machine text-xs text-ink-3">{campaign.sent} sent · {campaign.opens} opens · {pending} pending · {campaign.failed} failed</span>
 						{campaign.state === "queued" || campaign.state === "sending" ? <Button
 							size="sm"
 							variant="secondary"
@@ -500,6 +501,7 @@ function CampaignComposer({
 	const [editorKey, setEditorKey] = useState(0);
 	const [confirmed, setConfirmed] = useState(false);
 	const [scheduled, setScheduled] = useState(false);
+	const [trackOpens, setTrackOpens] = useState(false);
 	const [openedAt] = useState(() => Date.now());
 	const [scheduledFor, setScheduledFor] = useState(() => new Date(Date.now() + 60 * 60_000));
 	const [testRecipient, setTestRecipient] = useState("");
@@ -529,6 +531,7 @@ function CampaignComposer({
 				contactIds: audienceId === "none" ? contactIds : [],
 				...(audienceId === "none" ? {} : { audienceId }),
 				...(segmentTag.trim() ? { tag: segmentTag.trim() } : {}),
+				trackOpens,
 				subject,
 				bodyText: body.text,
 				bodyHtml: body.html || null,
@@ -605,6 +608,10 @@ function CampaignComposer({
 						<div className="flex items-center justify-between gap-3 rounded-panel border border-seam px-3 py-2.5">
 							<div><p className="text-sm font-medium text-ink">Schedule delivery</p><p className="text-xs text-ink-3">Queue this campaign for a future time.</p></div>
 							<Switch checked={scheduled} onCheckedChange={setScheduled} aria-label="Schedule campaign delivery" />
+						</div>
+						<div className="flex items-center justify-between gap-3 rounded-panel border border-seam px-3 py-2.5">
+							<div><p className="text-sm font-medium text-ink">Track opens</p><p className="text-xs text-ink-3">Adds a 1px image to HTML emails. Some clients block it, so this is approximate.</p></div>
+							<Switch checked={trackOpens} disabled={!body.html} onCheckedChange={setTrackOpens} aria-label="Track campaign opens" />
 						</div>
 						{scheduled ? <Field label="Send at"><DateTimePicker value={scheduledFor} onChange={setScheduledFor} allDay={false} label="Campaign send time" invalid={scheduledFor.getTime() <= openedAt} /></Field> : null}
 					</div>

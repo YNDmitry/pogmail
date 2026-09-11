@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createFileRoute, useBlocker, useNavigate, useSearch } from "@tanstack/react-router";
 import { z } from "zod";
-import { Image, Paperclip, Save, Send, X } from "lucide-react";
+import { Eye, Image, Paperclip, Save, Send, X } from "lucide-react";
 import { Button, SubmitButton } from "@/client/components/app/button";
 import { Input } from "@/client/components/ui";
 import { Choice } from "@/client/components/app/choice";
@@ -214,6 +214,7 @@ function ComposeForm({
 	const [state, setState] = useState<"idle" | "loading">("idle");
 	const [saveState, setSaveState] = useState<SaveState>("idle");
 	const [attaching, setAttaching] = useState(false);
+	const [previewOpen, setPreviewOpen] = useState(false);
 	/** URL replacement used by autosave is not a user leaving the composer. */
 	const internalNavigation = useRef(false);
 
@@ -227,6 +228,10 @@ function ComposeForm({
 				.map((attachment) => [`cid:${attachment.contentId}`, draftAttachmentUrl(draftId, attachment.id)]),
 			)
 		: undefined;
+	const previewHtml = Object.entries(imagePreviewSources ?? {}).reduce(
+		(html, [source, preview]) => html.replaceAll(source, preview),
+		body,
+	);
 
 	const values: FormValues = { mailboxId, to, cc, bcc, subject, body };
 	const snapshot = JSON.stringify(values);
@@ -647,6 +652,11 @@ function ComposeForm({
 					{attaching ? "Attaching…" : "Attach"}
 				</Button>
 
+				<Button type="button" variant="ghost" onClick={() => setPreviewOpen(true)}>
+					<Eye className="size-3.5" />
+					Preview
+				</Button>
+
 				{/*
 				 * Templates are written in Settings and were, until now, unusable —
 				 * saved replies with nowhere to go. This is the "one click" that screen
@@ -710,6 +720,27 @@ function ComposeForm({
 					>
 						Save and leave
 					</Button>
+				</div>
+			</Modal>
+
+			<Modal
+				open={previewOpen}
+				onClose={() => setPreviewOpen(false)}
+				title="Message preview"
+				description="This is how the message body and subject will appear to its recipient."
+				className="sm:max-w-3xl"
+			>
+				<div className="overflow-hidden rounded-panel border border-seam bg-white">
+					<p className="border-b border-seam px-4 py-3 text-sm font-medium text-black">
+						{subject.trim() || "(No subject)"}
+					</p>
+					<iframe
+						title="Message body preview"
+						sandbox=""
+						referrerPolicy="no-referrer"
+						className="h-[32rem] w-full bg-white"
+						srcDoc={previewHtml}
+					/>
 				</div>
 			</Modal>
 		</form>

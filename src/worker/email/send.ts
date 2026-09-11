@@ -2,7 +2,7 @@ import { createMimeMessage, Mailbox } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { getDb, type Database } from "@/db";
-import { mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
+import { emailCampaigns, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "./types";
 import { safeEmailHtml } from "./html-safety";
 import { nextScheduledDelay } from "./schedule";
@@ -28,14 +28,23 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			message: messages,
 			signatureText: mailboxes.signature,
 			signatureHtml: mailboxes.signatureHtml,
+			campaignStatus: emailCampaigns.status,
 		})
 		.from(outboundJobs)
 		.innerJoin(messages, eq(messages.id, outboundJobs.messageId))
 		.leftJoin(mailboxes, eq(mailboxes.id, messages.mailboxId))
+		.leftJoin(emailCampaigns, eq(emailCampaigns.id, messages.campaignId))
 		.where(eq(outboundJobs.id, job.jobId))
 		.get();
 
 	if (!row || row.job.status === "sent") return;
+	// Cancellation is checked by the consumer as well as the API: a message may
+	// already be sitting in Queues when its campaign is stopped.
+	if (row.campaignStatus === "cancelled") {
+		await db.update(outboundJobs).set({ status: "failed", lastError: "Campaign cancelled" })
+			.where(eq(outboundJobs.id, job.jobId));
+		return;
+	}
 
 	// A Queues delay cannot exceed 24 hours. A distant scheduled message advances
 	// itself one bounded interval at a time, without polling or sending early.

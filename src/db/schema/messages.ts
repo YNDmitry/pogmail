@@ -15,6 +15,31 @@ export type MessageDirection = (typeof MESSAGE_DIRECTIONS)[number];
 
 export type MailAddress = { address: string; name?: string };
 
+/** A campaign can be cancelled, while its per-recipient messages remain auditable. */
+export const CAMPAIGN_STATUSES = ["queued", "cancelled"] as const;
+export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
+
+export const emailCampaigns = sqliteTable(
+	"email_campaigns",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		mailboxId: text("mailbox_id")
+			.notNull()
+			.references(() => mailboxes.id, { onDelete: "cascade" }),
+		subject: text("subject").notNull(),
+		status: text("status", { enum: CAMPAIGN_STATUSES }).notNull().default("queued"),
+		recipientCount: integer("recipient_count").notNull(),
+		...timestamps(),
+	},
+	(t) => [
+		index("email_campaigns_user_created_idx").on(t.userId, t.createdAt),
+		index("email_campaigns_mailbox_idx").on(t.mailboxId, t.createdAt),
+	],
+);
+
 export const messages = sqliteTable(
 	"messages",
 	{
@@ -22,6 +47,8 @@ export const messages = sqliteTable(
 		mailboxId: text("mailbox_id")
 			.notNull()
 			.references(() => mailboxes.id, { onDelete: "cascade" }),
+		/** Null for ordinary mail; campaign copies retain their immutable recipient record. */
+		campaignId: text("campaign_id").references(() => emailCampaigns.id, { onDelete: "set null" }),
 		/** Who composed it. Null for inbound mail, which nobody here authored. */
 		authorUserId: text("author_user_id").references(() => users.id, { onDelete: "set null" }),
 		direction: text("direction", { enum: MESSAGE_DIRECTIONS }).notNull(),

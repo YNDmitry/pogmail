@@ -1,8 +1,8 @@
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { domains, mailboxes, messageAttachments, messages, outboundJobs } from "@/db/schema";
+import { contacts, domains, emailCampaigns, mailboxes, messageAttachments, messages, outboundJobs } from "@/db/schema";
 import { audit } from "../audit";
 import { canSendFrom, getPermission, hasAtLeast } from "../mailboxes/access";
 import type { AppBindings } from "../middleware/context";
@@ -49,6 +49,32 @@ const composeShape = z.object({
 });
 
 const composeInput = composeShape.superRefine(validateRecipientLimit);
+
+/*
+ * A campaign intentionally makes one message per contact. Apart from keeping
+ * recipients private from one another, that lets the existing delivery ledger
+ * tell the sender exactly which address accepted or rejected its own mail.
+ * Queues absorb the delivery rate, but capping a request keeps one click from
+ * monopolising a Worker invocation.
+ */
+const campaignInput = z.object({
+	mailboxId: z.string().min(1),
+	contactIds: z.array(z.string().min(1)).min(1).max(500),
+	subject: z.string().min(1).max(300),
+	bodyText: z.string().min(1).max(500_000),
+	bodyHtml: z.string().max(1_000_000).nullable().optional(),
+}).superRefine((input, ctx) => {
+	if (new Set(input.contactIds).size !== input.contactIds.length) {
+		ctx.addIssue({ code: "custom", message: "Choose each contact only once" });
+	}
+	/* Template images use private URLs until they are copied into a draft as CID parts. */
+	if (input.bodyHtml?.includes("/api/templates/")) {
+		ctx.addIssue({
+			code: "custom",
+			message: "Campaigns cannot use template images yet. Remove the image or send from a draft.",
+		});
+	}
+});
 
 // A draft is an unfinished envelope: body, attachment, or a CID image may be
 // saved before the recipient is known. The actual send endpoint keeps the
@@ -192,6 +218,133 @@ export const sendRoutes = new Hono<AppBindings>()
 
 		audit(c, { action: "message.send", mailboxId: mailbox.id, messageId: message.id });
 		return c.json({ ...message, jobId: job.id }, 202);
+	})
+
+	/** Recent campaigns, with delivery progress calculated from their individual jobs. */
+	.get("/campaigns", async (c) => {
+		const campaigns = await c.get("db").select().from(emailCampaigns)
+			.where(eq(emailCampaigns.userId, c.get("user").id))
+			.orderBy(desc(emailCampaigns.createdAt)).limit(50).all();
+		if (campaigns.length === 0) return c.json({ items: [] });
+
+		const deliveryCounts = await c.get("db")
+			.select({ campaignId: messages.campaignId, status: outboundJobs.status, total: count() })
+			.from(messages)
+			.innerJoin(outboundJobs, eq(outboundJobs.messageId, messages.id))
+			.where(inArray(messages.campaignId, campaigns.map((campaign) => campaign.id)))
+			.groupBy(messages.campaignId, outboundJobs.status)
+			.all();
+		const byCampaign = new Map<string, { queued: number; sending: number; sent: number; failed: number }>();
+		for (const row of deliveryCounts) {
+			if (!row.campaignId) continue;
+			const current = byCampaign.get(row.campaignId) ?? { queued: 0, sending: 0, sent: 0, failed: 0 };
+			current[row.status] = row.total;
+			byCampaign.set(row.campaignId, current);
+		}
+
+		return c.json({
+			items: campaigns.map((campaign) => {
+				const delivery = byCampaign.get(campaign.id) ?? { queued: 0, sending: 0, sent: 0, failed: 0 };
+				const state = campaign.status === "cancelled"
+					? "cancelled"
+					: delivery.sending > 0
+						? "sending"
+						: delivery.queued > 0
+							? "queued"
+							: "completed";
+				return { ...campaign, state, ...delivery };
+			}),
+		});
+	})
+
+	/** Queues a private, individually addressed copy for every selected contact. */
+	.post("/campaigns", async (c) => {
+		const input = await parseBody(c, campaignInput);
+		const mailbox = await sendableMailbox(c, input.mailboxId, { requireSending: true });
+		const requested = new Set(input.contactIds);
+		const recipients = await c
+			.get("db")
+			.select({ id: contacts.id, email: contacts.email, displayName: contacts.displayName, blocked: contacts.blocked })
+			.from(contacts)
+			.where(and(eq(contacts.userId, c.get("user").id), inArray(contacts.id, input.contactIds)))
+			.all();
+		const sendable = recipients.filter((contact) => !contact.blocked);
+		if (sendable.length === 0) {
+			throw new HTTPException(422, { message: "Choose at least one contact that is not blocked" });
+		}
+		const campaign = await c.get("db").insert(emailCampaigns).values({
+			userId: c.get("user").id,
+			mailboxId: mailbox.id,
+			subject: input.subject,
+			recipientCount: sendable.length,
+		}).returning().get();
+
+		const queued: Array<{ messageId: string; jobId: string }> = [];
+		for (const recipient of sendable) {
+			const message = await c
+				.get("db")
+				.insert(messages)
+				.values({
+					mailboxId: mailbox.id,
+					campaignId: campaign.id,
+					authorUserId: c.get("user").id,
+					direction: "outbound",
+					status: "sent",
+					threadId: crypto.randomUUID(),
+					subject: input.subject,
+					fromAddress: mailbox.address,
+					fromName: mailbox.displayName,
+					toAddresses: [{ address: recipient.email, ...(recipient.displayName ? { name: recipient.displayName } : {}) }],
+					ccAddresses: [],
+					bccAddresses: [],
+					bodyText: input.bodyText,
+					bodyHtml: input.bodyHtml ?? null,
+					snippet: input.bodyText.replace(/\s+/g, " ").trim().slice(0, 200),
+					read: true,
+					receivedAt: new Date(),
+				})
+				.returning()
+				.get();
+			const job = await c.get("db").insert(outboundJobs).values({ messageId: message.id }).returning().get();
+			queued.push({ messageId: message.id, jobId: job.id });
+		}
+
+		// Queue batches accept at most 100 messages. Separate batches avoid a burst
+		// of HTTP calls while preserving normal at-least-once delivery semantics.
+		for (const batch of chunks(queued, 100)) {
+			await c.env.OUTBOUND_QUEUE.sendBatch(batch.map(({ jobId }) => ({ body: { kind: "outbound", jobId } satisfies OutboundSendMessage })));
+		}
+
+		const returned = new Set(recipients.map((recipient) => recipient.id));
+		const skippedBlocked = recipients.filter((recipient) => recipient.blocked).length;
+		const skippedMissing = [...requested].filter((id) => !returned.has(id)).length;
+		audit(c, {
+			action: "campaign.send",
+			mailboxId: mailbox.id,
+			metadata: { campaignId: campaign.id, queued: queued.length, skippedBlocked, skippedMissing },
+		});
+		return c.json({ id: campaign.id, queued: queued.length, skippedBlocked, skippedMissing }, 202);
+	})
+
+	/** Stops queue consumers before they send the remaining private copies. */
+	.post("/campaigns/:id/cancel", async (c) => {
+		const campaign = await c.get("db").select().from(emailCampaigns).where(and(
+			eq(emailCampaigns.id, c.req.param("id")),
+			eq(emailCampaigns.userId, c.get("user").id),
+		)).get();
+		if (!campaign) notFound("Campaign");
+		if (campaign.status === "cancelled") return c.json({ ok: true });
+
+		await c.get("db").update(emailCampaigns).set({ status: "cancelled" })
+			.where(eq(emailCampaigns.id, campaign.id));
+		const campaignMessages = await c.get("db").select({ id: messages.id }).from(messages)
+			.where(eq(messages.campaignId, campaign.id)).all();
+		if (campaignMessages.length > 0) {
+			await c.get("db").update(outboundJobs).set({ status: "failed", lastError: "Campaign cancelled" })
+				.where(and(inArray(outboundJobs.messageId, campaignMessages.map((message) => message.id)), eq(outboundJobs.status, "queued")));
+		}
+		audit(c, { action: "campaign.cancel", mailboxId: campaign.mailboxId, metadata: { campaignId: campaign.id } });
+		return c.json({ ok: true });
 	})
 
 	/**
@@ -361,6 +514,12 @@ async function attachedBytes(c: Context<AppBindings>, messageId: string): Promis
 		.all();
 
 	return rows.reduce((total, row) => total + row.sizeBytes, 0);
+}
+
+function chunks<T>(items: T[], size: number): T[][] {
+	const result: T[][] = [];
+	for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
+	return result;
 }
 
 /** Removes CID blobs when their image was removed from the rich-text document. */

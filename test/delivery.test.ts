@@ -2,11 +2,11 @@ import { env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
-import { domains, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs, templateAttachments, users } from "@/db/schema";
+import { contacts, domains, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs, templateAttachments, users } from "@/db/schema";
 import { api } from "@/worker/api";
 import { hashPassword } from "@/worker/auth/password";
 import { createSession, SESSION_COOKIE } from "@/worker/auth/session";
-import { claimOutboundDelivery } from "@/worker/email/send";
+import { claimOutboundDelivery, processOutboundJob } from "@/worker/email/send";
 
 const createdUsers: string[] = [];
 
@@ -16,6 +16,59 @@ afterEach(async () => {
 });
 
 describe("outbound delivery retry", () => {
+	it("queues a private copy for each unblocked campaign contact", async () => {
+		const db = getDb(env.DB);
+		const user = await db.insert(users).values({
+			email: `campaign-${crypto.randomUUID()}@example.test`, name: "Campaign", passwordHash: await hashPassword("test password"),
+		}).returning().get();
+		createdUsers.push(user.id);
+		const domain = await db.insert(domains).values({
+			hostname: `${crypto.randomUUID()}.test`, zoneId: "mock", userId: user.id, status: "active", sendingEnabled: true,
+		}).returning().get();
+		const mailbox = await db.insert(mailboxes).values({ domainId: domain.id, userId: user.id, localPart: "hello" }).returning().get();
+		const [recipient, blocked] = await db.insert(contacts).values([
+			{ userId: user.id, email: "recipient@example.test", displayName: "Recipient", source: "manual" },
+			{ userId: user.id, email: "blocked@example.test", blocked: true, source: "manual" },
+		]).returning().all();
+		const session = await createSession(db, user.id);
+		const cookie = `${SESSION_COOKIE}=${session.token}`;
+		const response = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", {
+			method: "POST",
+			headers: { "content-type": "application/json", cookie },
+			body: JSON.stringify({
+				mailboxId: mailbox.id,
+				contactIds: [recipient!.id, blocked!.id, "removed-contact"],
+				subject: "Hello",
+				bodyText: "A private update",
+				bodyHtml: "<p>A private update</p>",
+			}),
+		}), env);
+
+		expect(response.status).toBe(202);
+		const result = await response.json() as { id: string; queued: number; skippedBlocked: number; skippedMissing: number };
+		expect(result).toMatchObject({ id: expect.any(String), queued: 1, skippedBlocked: 1, skippedMissing: 1 });
+		const sent = await db.select().from(messages).where(eq(messages.authorUserId, user.id)).all();
+		expect(sent).toHaveLength(1);
+		expect(sent[0]).toMatchObject({
+			toAddresses: [{ address: "recipient@example.test", name: "Recipient" }],
+			ccAddresses: [],
+			bccAddresses: [],
+		});
+		const jobs = await db.select().from(outboundJobs).where(eq(outboundJobs.messageId, sent[0]!.id)).all();
+		expect(jobs).toHaveLength(1);
+
+		const history = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", { headers: { cookie } }), env);
+		expect(await history.json()).toMatchObject({ items: [expect.objectContaining({ id: result.id, state: "queued", queued: 1 })] });
+		const stopped = await api.fetch(new Request(`https://pogmail.test/api/send/campaigns/${result.id}/cancel`, {
+			method: "POST", headers: { cookie },
+		}), env);
+		expect(stopped.status).toBe(200);
+		// A Queue message already in flight checks cancellation before it can reach Email Sending.
+		await processOutboundJob(env, { kind: "outbound", jobId: jobs[0]!.id });
+		expect(await db.select().from(outboundJobs).where(eq(outboundJobs.id, jobs[0]!.id)).get())
+			.toMatchObject({ status: "failed", lastError: "Campaign cancelled" });
+	});
+
 	it("requeues a failed delivery for a mailbox owner", async () => {
 		const db = getDb(env.DB);
 		const user = await db.insert(users).values({

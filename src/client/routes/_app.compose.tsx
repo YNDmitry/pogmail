@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createFileRoute, useBlocker, useNavigate, useSearch } from "@tanstack/react-router";
 import { z } from "zod";
-import { Image, Paperclip, Save, Send, X } from "lucide-react";
+import { Eye, Image, Paperclip, Save, Send, X } from "lucide-react";
 import { Button, SubmitButton } from "@/client/components/app/button";
 import { Input } from "@/client/components/ui";
 import { Choice } from "@/client/components/app/choice";
@@ -214,6 +214,8 @@ function ComposeForm({
 	const [state, setState] = useState<"idle" | "loading">("idle");
 	const [saveState, setSaveState] = useState<SaveState>("idle");
 	const [attaching, setAttaching] = useState(false);
+	const [previewOpen, setPreviewOpen] = useState(false);
+	const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop");
 	/** URL replacement used by autosave is not a user leaving the composer. */
 	const internalNavigation = useRef(false);
 
@@ -227,6 +229,10 @@ function ComposeForm({
 				.map((attachment) => [`cid:${attachment.contentId}`, draftAttachmentUrl(draftId, attachment.id)]),
 			)
 		: undefined;
+	const previewHtml = Object.entries(imagePreviewSources ?? {}).reduce(
+		(html, [source, preview]) => html.replaceAll(source, preview),
+		body,
+	);
 
 	const values: FormValues = { mailboxId, to, cc, bcc, subject, body };
 	const snapshot = JSON.stringify(values);
@@ -647,6 +653,11 @@ function ComposeForm({
 					{attaching ? "Attaching…" : "Attach"}
 				</Button>
 
+				<Button type="button" variant="ghost" onClick={() => setPreviewOpen(true)}>
+					<Eye className="size-3.5" />
+					Preview
+				</Button>
+
 				{/*
 				 * Templates are written in Settings and were, until now, unusable —
 				 * saved replies with nowhere to go. This is the "one click" that screen
@@ -673,8 +684,8 @@ function ComposeForm({
 
 				<span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
 					<SaveIndicator state={saveState} unsaved={unsaved} />
-					<kbd className="machine rounded border border-border bg-[var(--pogpin-shell-fill-soft)] px-1.5 py-0.5 text-[0.625rem]">
-						⌘↵
+					<kbd className="machine flex h-7 shrink-0 items-center justify-center rounded-md border border-border bg-[var(--pogpin-shell-fill-soft)] px-2 text-xs leading-none text-muted-foreground">
+						⌘ + ↵
 					</kbd>
 				</span>
 			</footer>
@@ -710,6 +721,23 @@ function ComposeForm({
 					>
 						Save and leave
 					</Button>
+				</div>
+			</Modal>
+
+			<Modal
+				open={previewOpen}
+				onClose={() => setPreviewOpen(false)}
+				title="Message preview"
+				description="Preview the subject and body before sending. Rendering can vary between email clients."
+				className="sm:max-w-3xl"
+			>
+				<div className="flex justify-end gap-1" role="group" aria-label="Preview width">
+					<Button type="button" size="sm" variant={previewMode === "desktop" ? "secondary" : "ghost"} aria-pressed={previewMode === "desktop"} onClick={() => setPreviewMode("desktop")}>Desktop</Button>
+					<Button type="button" size="sm" variant={previewMode === "mobile" ? "secondary" : "ghost"} aria-pressed={previewMode === "mobile"} onClick={() => setPreviewMode("mobile")}>Mobile</Button>
+				</div>
+				<div data-preview-width={previewMode} className={cn("mx-auto overflow-hidden rounded-panel border border-seam bg-white transition-[width]", previewMode === "mobile" ? "w-[23.4375rem] max-w-full" : "w-full")}>
+					<p className="border-b border-seam px-4 py-3 text-sm font-medium text-black">{subject.trim() || "(No subject)"}</p>
+					<iframe title="Message body preview" sandbox="" referrerPolicy="no-referrer" className="h-[32rem] w-full bg-white" srcDoc={previewHtml} />
 				</div>
 			</Modal>
 		</form>

@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono";
-import { and, count, desc, eq, inArray, isNotNull, like, lt, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, isNull, like, lt, or } from "drizzle-orm";
 import { z } from "zod";
-import { emailDeliveryEvents, MESSAGE_STATUSES, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
+import { emailDeliveryEvents, folders, MESSAGE_STATUSES, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "../email/types";
 import { messageSnippet, needsSnippetRepair } from "../email/snippet";
 import { audit } from "../audit";
@@ -19,6 +19,7 @@ const listQuery = z.object({
 	status: z.enum(MESSAGE_STATUSES).optional(),
 	mailboxId: z.string().optional(),
 	folderId: z.string().optional(),
+	inbox: z.enum(["true"]).optional(),
 	starred: z.enum(["true", "false"]).optional(),
 	snoozed: z.enum(["true", "false"]).optional(),
 	unread: z.enum(["true", "false"]).optional(),
@@ -77,6 +78,7 @@ export const messageRoutes = new Hono<AppBindings>()
 					inArray(messages.mailboxId, scope),
 					query.status ? eq(messages.status, query.status) : undefined,
 					query.folderId ? eq(messages.folderId, query.folderId) : undefined,
+					query.inbox ? isNull(messages.folderId) : undefined,
 					query.starred ? eq(messages.starred, query.starred === "true") : undefined,
 					query.unread ? eq(messages.read, query.unread !== "true") : undefined,
 					query.snoozed === "true" ? isNotNull(messages.snoozedUntil) : undefined,
@@ -105,17 +107,17 @@ export const messageRoutes = new Hono<AppBindings>()
 	/** Unread counts per folder view, for the sidebar badges. */
 	.get("/counts", async (c) => {
 		const scope = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
-		if (scope.length === 0) return c.json({ byStatus: {}, byMailbox: {}, starred: 0 });
+		if (scope.length === 0) return c.json({ byStatus: {}, byMailbox: {}, byFolder: {}, starred: 0 });
 
-		const byStatus = await c
+		const [byStatus, byMailbox, byFolder, inbox, starred] = await Promise.all([
+			c
 			.get("db")
 			.select({ status: messages.status, unread: count() })
 			.from(messages)
 			.where(and(inArray(messages.mailboxId, scope), eq(messages.read, false)))
 			.groupBy(messages.status)
-			.all();
-
-		const byMailbox = await c
+			.all(),
+			c
 			.get("db")
 			.select({ mailboxId: messages.mailboxId, unread: count() })
 			.from(messages)
@@ -124,21 +126,39 @@ export const messageRoutes = new Hono<AppBindings>()
 					inArray(messages.mailboxId, scope),
 					eq(messages.read, false),
 					eq(messages.status, "received"),
+					isNull(messages.folderId),
 				),
 			)
 			.groupBy(messages.mailboxId)
-			.all();
-
-		const starred = await c
+			.all(),
+			c
+				.get("db")
+				.select({ folderId: messages.folderId, unread: count() })
+				.from(messages)
+				.where(and(inArray(messages.mailboxId, scope), eq(messages.read, false), isNotNull(messages.folderId)))
+				.groupBy(messages.folderId)
+				.all(),
+			c
+				.get("db")
+				.select({ total: count() })
+				.from(messages)
+				.where(and(inArray(messages.mailboxId, scope), eq(messages.read, false), eq(messages.status, "received"), isNull(messages.folderId)))
+				.get(),
+			c
 			.get("db")
 			.select({ total: count() })
 			.from(messages)
 			.where(and(inArray(messages.mailboxId, scope), eq(messages.starred, true)))
-			.get();
+			.get(),
+		]);
+
+		const statuses = Object.fromEntries(byStatus.map((row) => [row.status, row.unread]));
+		statuses.received = inbox?.total ?? 0;
 
 		return c.json({
-			byStatus: Object.fromEntries(byStatus.map((row) => [row.status, row.unread])),
+			byStatus: statuses,
 			byMailbox: Object.fromEntries(byMailbox.map((row) => [row.mailboxId, row.unread])),
+			byFolder: Object.fromEntries(byFolder.map((row) => [row.folderId, row.unread])),
 			starred: starred?.total ?? 0,
 		});
 	})
@@ -150,6 +170,7 @@ export const messageRoutes = new Hono<AppBindings>()
 		// Filter to messages the caller may actually write, then update in one statement.
 		const scope = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
 		if (scope.length === 0) return c.json({ updated: 0 });
+		await assertFolderMatchesMessages(c, patch.folderId, ids, scope);
 
 		const result = await c
 			.get("db")
@@ -293,6 +314,7 @@ export const messageRoutes = new Hono<AppBindings>()
 	.patch("/:id", async (c) => {
 		const input = await parseBody(c, patchInput);
 		const message = await writable(c, c.req.param("id"));
+		await assertFolderMatchesMessages(c, input.folderId, [message.id], [message.mailboxId]);
 
 		const row = await c
 			.get("db")
@@ -356,15 +378,43 @@ export const messageRoutes = new Hono<AppBindings>()
 	});
 
 function toUpdate(patch: z.infer<typeof patchInput>) {
+	// A message has one location. Filing it puts it in the received stream; a
+	// system view such as Archive or Trash clears any previous custom folder.
+	const movesToFolder = patch.folderId !== undefined && patch.folderId !== null;
+	const movesToSystemView = !movesToFolder && patch.status !== undefined && patch.status !== "received";
 	return {
 		...(patch.read !== undefined ? { read: patch.read } : {}),
 		...(patch.starred !== undefined ? { starred: patch.starred } : {}),
-		...(patch.status !== undefined ? { status: patch.status } : {}),
-		...(patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
+		...(movesToFolder ? { status: "received" as const } : patch.status !== undefined ? { status: patch.status } : {}),
+		...(movesToSystemView ? { folderId: null } : patch.folderId !== undefined ? { folderId: patch.folderId } : {}),
 		...(patch.snoozedUntil !== undefined
 			? { snoozedUntil: patch.snoozedUntil === null ? null : new Date(patch.snoozedUntil) }
 			: {}),
 	};
+}
+
+/** A folder belongs to one mailbox; accepting another mailbox's id would make
+ * a message disappear into a view its owner cannot open. */
+async function assertFolderMatchesMessages(
+	c: Context<AppBindings>,
+	folderId: string | null | undefined,
+	messageIds: string[],
+	scope: string[],
+): Promise<void> {
+	if (!folderId) return;
+
+	const folder = await c.get("db").select({ mailboxId: folders.mailboxId }).from(folders).where(eq(folders.id, folderId)).get();
+	if (!folder) notFound("Folder");
+
+	const rows = await c
+		.get("db")
+		.select({ mailboxId: messages.mailboxId })
+		.from(messages)
+		.where(and(inArray(messages.id, messageIds), inArray(messages.mailboxId, scope)))
+		.all();
+	if (rows.some((message) => message.mailboxId !== folder.mailboxId)) {
+		forbidden("A folder can only contain mail from its own mailbox");
+	}
 }
 
 /**

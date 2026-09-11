@@ -12,6 +12,7 @@ import {
 	Trash2,
 } from "lucide-react";
 import { Button } from "@/client/components/app/button";
+import { Choice } from "@/client/components/app/choice";
 import { Machine, Tag, type Tone } from "@/client/components/app/primitives";
 import { Modal } from "@/client/components/app/modal";
 import { ReplyBox } from "@/client/components/app/reply-box";
@@ -21,6 +22,7 @@ import { api } from "@/client/lib/api";
 import { bytes, fullDate, initials, senderLabel } from "@/client/lib/format";
 import {
 	useDeleteMessage,
+	useFolders,
 	useMailboxes,
 	useMessage,
 	usePatchMessage,
@@ -94,6 +96,7 @@ function Reader() {
 
 	const session = useSession();
 	const mailboxes = useMailboxes();
+	const folders = useFolders();
 	const conversations = session.data?.mailLayout === "conversations";
 
 	const [purging, setPurging] = useState(false);
@@ -139,7 +142,7 @@ function Reader() {
 
 	function move(status: MessageStatus, done: string) {
 		patch.mutate(
-			{ id: mail.id, patch: { status } },
+			{ id: mail.id, patch: { status, folderId: null } },
 			{
 				onSuccess: () => {
 					toast.ok(done);
@@ -149,6 +152,22 @@ function Reader() {
 			},
 		);
 	}
+
+	function moveToFolder(folderId: string) {
+		const destination = folderId === "inbox" ? "inbox" : folderId;
+		patch.mutate(
+			{ id: mail.id, patch: { status: "received", folderId: folderId === "inbox" ? null : folderId } },
+			{
+				onSuccess: () => {
+					toast.ok(folderId === "inbox" ? "Moved to inbox" : "Moved to folder");
+					void navigate({ to: "/mail/$folder", params: { folder: destination } });
+				},
+				onError: (error) => toast.fail("Could not move the message", String(error)),
+			},
+		);
+	}
+
+	const moveTargets = (folders.data ?? []).filter((entry) => entry.mailboxId === mail.mailboxId);
 
 	return (
 		<article className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-6">
@@ -185,6 +204,19 @@ function Reader() {
 								<Trash2 className="size-4" />
 							</IconAction>
 						)}
+						{moveTargets.length > 0 ? (
+							<Choice
+								placeholder="Move to…"
+								aria-label="Move this message to a folder"
+								size="sm"
+								className="w-auto min-w-32"
+								options={[
+									{ value: "inbox", label: "Inbox" },
+									...moveTargets.map((entry) => ({ value: entry.id, label: entry.name })),
+								]}
+								onChange={moveToFolder}
+							/>
+						) : null}
 					</div>
 				</div>
 

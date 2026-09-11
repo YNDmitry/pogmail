@@ -19,7 +19,7 @@ function Rules() {
 			ownerLabel="Mailbox"
 			owners={(mailboxes.data ?? []).map((mailbox) => ({ id: mailbox.id, label: mailbox.address }))}
 			targetLabel="Folder"
-			targets={(folders.data ?? []).map((folder) => ({ id: folder.id, label: folder.name }))}
+			targets={(folders.data ?? []).map((folder) => ({ id: folder.id, label: folder.name, ownerId: folder.mailboxId }))}
 		/>
 	);
 }

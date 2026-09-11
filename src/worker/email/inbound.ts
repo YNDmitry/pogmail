@@ -164,9 +164,16 @@ async function applyMailboxRules(
 	for (const rule of rules) {
 		if (!matches(rule.conditions, rule.matchAll, mail)) continue;
 
-		if (rule.action === "spam") status = "spam";
-		else if (rule.action === "trash") status = "trash";
-		else if (rule.action === "move") folderId = rule.actionTarget;
+		if (rule.action === "spam") {
+			status = "spam";
+			folderId = null;
+		} else if (rule.action === "trash") {
+			status = "trash";
+			folderId = null;
+		} else if (rule.action === "move") {
+			status = "received";
+			folderId = rule.actionTarget;
+		}
 
 		await db
 			.update(routingRules)

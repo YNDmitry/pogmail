@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil, Plus, X } from "lucide-react";
 import { Button, SubmitButton } from "@/client/components/app/button";
 import { Input, Switch } from "@/client/components/ui";
 import { MailyEditor } from "@/client/components/app/maily-editor";
+import { Modal } from "@/client/components/app/modal";
 import { Card, Empty, Field, Machine, Tag } from "@/client/components/app/primitives";
 import { useToast } from "@/client/components/app/toast-host";
 import { api } from "@/client/lib/api";
@@ -209,7 +210,9 @@ function MailboxForm({ id }: { id: string }) {
  */
 function Folders({ mailboxId }: { mailboxId: string }) {
 	const toast = useToast();
-	const folders = useList<{ id: string; mailboxId: string; name: string; color: string | null }>(
+	const client = useQueryClient();
+	const [editing, setEditing] = useState<{ id: string; name: string; color: string | null } | null>(null);
+	const folders = useList<{ id: string; mailboxId: string; name: string; color: string | null; position: number }>(
 		qk.folders,
 		"/api/folders",
 	);
@@ -218,13 +221,31 @@ function Folders({ mailboxId }: { mailboxId: string }) {
 
 	const mine = (folders.data ?? []).filter((folder) => folder.mailboxId === mailboxId);
 
+	function reorder(folderId: string, direction: -1 | 1) {
+		const from = mine.findIndex((folder) => folder.id === folderId);
+		const to = from + direction;
+		if (from < 0 || to < 0 || to >= mine.length) return;
+
+		const next = [...mine];
+		const [folder] = next.splice(from, 1);
+		if (!folder) return;
+		next.splice(to, 0, folder);
+
+		void Promise.all(next.map((entry, position) => api.patch(`/api/folders/${entry.id}`, { position })))
+			.then(() => {
+				void client.invalidateQueries({ queryKey: qk.folders });
+				toast.ok("Folder order updated");
+			})
+			.catch((error) => toast.fail("Could not reorder folders", String(error)));
+	}
+
 	return (
 		<section className="mt-6 space-y-3 border-t border-seam pt-5">
 			<h3 className="display text-sm">Folders</h3>
 
 			{mine.length > 0 ? (
 				<ul className="flex flex-wrap gap-2">
-					{mine.map((folder) => (
+				{mine.map((folder, index) => (
 						<li
 							key={folder.id}
 							className="flex items-center gap-2 rounded-panel border border-seam px-2.5 py-1 text-xs"
@@ -237,6 +258,38 @@ function Folders({ mailboxId }: { mailboxId: string }) {
 								/>
 							) : null}
 							{folder.name}
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								aria-label={`Move ${folder.name} up`}
+								className="size-6 text-ink-3"
+								disabled={index === 0}
+								onClick={() => reorder(folder.id, -1)}
+							>
+								<ArrowUp className="size-3" />
+							</Button>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								aria-label={`Move ${folder.name} down`}
+								className="size-6 text-ink-3"
+								disabled={index === mine.length - 1}
+								onClick={() => reorder(folder.id, 1)}
+							>
+								<ArrowDown className="size-3" />
+							</Button>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								aria-label={`Edit ${folder.name}`}
+								className="size-6 text-ink-3"
+								onClick={() => setEditing(folder)}
+							>
+								<Pencil className="size-3" />
+							</Button>
 							<Button
 								type="button"
 								variant="ghost"
@@ -295,6 +348,36 @@ function Folders({ mailboxId }: { mailboxId: string }) {
 					Add
 				</Button>
 			</form>
+
+			<Modal open={Boolean(editing)} onClose={() => setEditing(null)} title="Edit folder">
+				{editing ? (
+					<form
+						className="space-y-4"
+						onSubmit={(event) => {
+							event.preventDefault();
+							const data = new FormData(event.currentTarget);
+							void api
+								.patch(`/api/folders/${editing.id}`, {
+									name: String(data.get("name")),
+									color: String(data.get("color")),
+								})
+								.then(() => {
+									void client.invalidateQueries({ queryKey: qk.folders });
+									setEditing(null);
+									toast.ok("Folder updated");
+								})
+								.catch((error) => toast.fail("Could not update folder", String(error)));
+						}}
+					>
+						<Field label="Name"><Input name="name" required maxLength={60} defaultValue={editing.name} /></Field>
+						<Field label="Colour"><input name="color" type="color" defaultValue={editing.color ?? "#ff5e57"} aria-label="Folder colour" className="h-9 w-12 cursor-pointer rounded-md border border-input bg-transparent p-1 shadow-xs dark:bg-input/30" /></Field>
+						<div className="flex justify-end gap-2">
+							<Button type="button" variant="secondary" onClick={() => setEditing(null)}>Cancel</Button>
+							<Button type="submit">Save folder</Button>
+						</div>
+					</form>
+				) : null}
+			</Modal>
 		</section>
 	);
 }

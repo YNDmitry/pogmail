@@ -54,10 +54,12 @@ export function useCounts() {
 }
 
 export type MessageFilters = {
-	status?: MessageStatus;
-	mailboxId?: string;
-	folderId?: string;
-	starred?: "true" | "false";
+  status?: MessageStatus;
+  mailboxId?: string;
+  folderId?: string;
+  /** Received mail that has not been moved to a custom folder. */
+  inbox?: "true";
+  starred?: "true" | "false";
 	unread?: "true" | "false";
 	snoozed?: "true" | "false";
 	search?: string;

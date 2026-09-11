@@ -1,5 +1,7 @@
 # Pogmail
 
+![Pogmail - Self-hosted email for domains you already own](.github/og.png)
+
 Self-hosted email for domains you already own, running entirely on Cloudflare.
 Receive, route, read, search and send mail; manage domains, mailboxes, sharing,
 filters and webhooks — from one Worker and one `wrangler deploy`.
@@ -30,17 +32,17 @@ gated behind a licence key.
 
 ## Stack
 
-| Layer | Choice |
-| --- | --- |
-| UI | React 19, TanStack Router and Query, Tailwind v4, beUI components |
-| Bundling | Vite with `@cloudflare/vite-plugin` — SPA and Worker in one artifact |
-| API | Hono on Workers |
-| Data | D1 with Drizzle ORM, 22 tables |
-| Blobs | R2 — raw MIME, attachments, avatars, backups |
-| Async | Queues for inbound parsing, outbound sends and webhook retries |
-| Realtime | A Durable Object per user, WebSocket fan-out |
-| Scheduled | Cron for snooze wake-ups and scheduled backups |
-| Tests | Vitest on a real workerd runtime with real bindings |
+| Layer     | Choice                                                               |
+| --------- | -------------------------------------------------------------------- |
+| UI        | React 19, TanStack Router and Query, Tailwind v4, beUI components    |
+| Bundling  | Vite with `@cloudflare/vite-plugin` — SPA and Worker in one artifact |
+| API       | Hono on Workers                                                      |
+| Data      | D1 with Drizzle ORM, 22 tables                                       |
+| Blobs     | R2 — raw MIME, attachments, avatars, backups                         |
+| Async     | Queues for inbound parsing, outbound sends and webhook retries       |
+| Realtime  | A Durable Object per user, WebSocket fan-out                         |
+| Scheduled | Cron for snooze wake-ups and scheduled backups                       |
+| Tests     | Vitest on a real workerd runtime with real bindings                  |
 
 ## Getting started
 
@@ -136,7 +138,7 @@ bun run deploy
 `bun run deploy` builds and deploys the app, then applies pending D1 migrations.
 
 If you rename the deployed Worker without changing `name` in `wrangler.jsonc`,
-adding a domain fails with *Workers Script Info not found*: Email Routing looks
+adding a domain fails with _Workers Script Info not found_: Email Routing looks
 the Worker up by literal name. Fix the config and redeploy, or set the
 `EMAIL_WORKER_NAME` variable to the name the script actually has.
 

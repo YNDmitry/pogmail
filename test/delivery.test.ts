@@ -32,6 +32,7 @@ describe("outbound delivery retry", () => {
 		]).returning().all();
 		const session = await createSession(db, user.id);
 		const cookie = `${SESSION_COOKIE}=${session.token}`;
+		const scheduledFor = Date.now() + 60_000;
 		const response = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", {
 			method: "POST",
 			headers: { "content-type": "application/json", cookie },
@@ -41,6 +42,7 @@ describe("outbound delivery retry", () => {
 				subject: "Hello",
 				bodyText: "A private update",
 				bodyHtml: "<p>A private update</p>",
+				scheduledFor,
 			}),
 		}), env);
 
@@ -56,9 +58,10 @@ describe("outbound delivery retry", () => {
 		});
 		const jobs = await db.select().from(outboundJobs).where(eq(outboundJobs.messageId, sent[0]!.id)).all();
 		expect(jobs).toHaveLength(1);
+		expect(jobs[0]?.scheduledFor?.getTime()).toBe(scheduledFor);
 
 		const history = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", { headers: { cookie } }), env);
-		expect(await history.json()).toMatchObject({ items: [expect.objectContaining({ id: result.id, state: "queued", queued: 1 })] });
+		expect(await history.json()).toMatchObject({ items: [expect.objectContaining({ id: result.id, state: "queued", queued: 1, scheduledFor: expect.any(String) })] });
 		const stopped = await api.fetch(new Request(`https://pogmail.test/api/send/campaigns/${result.id}/cancel`, {
 			method: "POST", headers: { cookie },
 		}), env);

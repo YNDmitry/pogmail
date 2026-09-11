@@ -32,6 +32,8 @@ export const emailCampaigns = sqliteTable(
 		subject: text("subject").notNull(),
 		status: text("status", { enum: CAMPAIGN_STATUSES }).notNull().default("queued"),
 		recipientCount: integer("recipient_count").notNull(),
+		/** Campaign copies share this queue wake-up time, if one was selected. */
+		scheduledFor: integer("scheduled_for", { mode: "timestamp_ms" }),
 		...timestamps(),
 	},
 	(t) => [

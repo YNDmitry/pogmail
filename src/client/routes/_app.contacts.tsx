@@ -4,13 +4,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Mail, Search, Send, SquareStop, Trash2 } from "lucide-react";
 import { Button } from "@/client/components/app/button";
 import { Choice } from "@/client/components/app/choice";
+import { DateTimePicker } from "@/client/components/app/date-time-picker";
 import { EmailFrame } from "@/client/components/app/email-frame";
 import { MailyEditor } from "@/client/components/app/maily-editor";
 import { Modal } from "@/client/components/app/modal";
 import { useConfirm } from "@/client/components/app/confirm";
 import { Card, Empty, Field, Machine, PageHeader, Tag } from "@/client/components/app/primitives";
 import { useToast } from "@/client/components/app/toast-host";
-import { Checkbox, Input } from "@/client/components/ui";
+import { Checkbox, Input, Switch } from "@/client/components/ui";
 import { api, ApiError } from "@/client/lib/api";
 import { Loader } from "@/client/components/motion/loader";
 import { useList, useRemove, useUpdate } from "@/client/lib/queries/crud";
@@ -47,6 +48,7 @@ type Campaign = {
 	sending: number;
 	sent: number;
 	failed: number;
+	scheduledFor: string | null;
 };
 
 function Contacts() {
@@ -239,7 +241,7 @@ function CampaignHistory({ campaigns }: { campaigns: Campaign[] }) {
 					return <li key={campaign.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
 						<div className="min-w-0 flex-1">
 							<p className="truncate text-sm font-medium text-ink">{campaign.subject}</p>
-							<p className="mt-1 text-xs text-ink-3">{shortDate(campaign.createdAt)} · {campaign.recipientCount} recipients</p>
+							<p className="mt-1 text-xs text-ink-3">{campaign.scheduledFor ? `Scheduled for ${new Date(campaign.scheduledFor).toLocaleString()} · ` : ""}{shortDate(campaign.createdAt)} · {campaign.recipientCount} recipients</p>
 						</div>
 						<Tag tone={campaignTone(campaign.state)}>{campaign.state}</Tag>
 						<span className="machine text-xs text-ink-3">{campaign.sent} sent · {pending} pending · {campaign.failed} failed</span>
@@ -324,6 +326,9 @@ function CampaignComposer({
 	const [audienceId, setAudienceId] = useState("none");
 	const [editorKey, setEditorKey] = useState(0);
 	const [confirmed, setConfirmed] = useState(false);
+	const [scheduled, setScheduled] = useState(false);
+	const [openedAt] = useState(() => Date.now());
+	const [scheduledFor, setScheduledFor] = useState(() => new Date(Date.now() + 60 * 60_000));
 	const [sending, setSending] = useState(false);
 
 	function useTemplate(id: string) {
@@ -346,9 +351,10 @@ function CampaignComposer({
 				subject,
 				bodyText: body.text,
 				bodyHtml: body.html || null,
+				...(scheduled ? { scheduledFor: scheduledFor.getTime() } : {}),
 			});
 			const skipped = result.skippedBlocked + result.skippedMissing + (result.skippedUnsubscribed ?? 0);
-			toast.ok(`Queued ${result.queued} private email${result.queued === 1 ? "" : "s"}${skipped ? `; skipped ${skipped}` : ""}`);
+			toast.ok(`${scheduled ? "Scheduled" : "Queued"} ${result.queued} private email${result.queued === 1 ? "" : "s"}${skipped ? `; skipped ${skipped}` : ""}`);
 			onSent();
 		} catch (error) {
 			toast.fail("Could not queue campaign", error instanceof ApiError ? error.message : undefined);
@@ -391,6 +397,11 @@ function CampaignComposer({
 						<Field label="Message">
 							<MailyEditor key={editorKey} initialHtml={body.html} onChange={(html, text) => setBody({ html, text })} ariaLabel="Campaign message" density="compact" className="rounded-panel border border-seam px-3" />
 						</Field>
+						<div className="flex items-center justify-between gap-3 rounded-panel border border-seam px-3 py-2.5">
+							<div><p className="text-sm font-medium text-ink">Schedule delivery</p><p className="text-xs text-ink-3">Queue this campaign for a future time.</p></div>
+							<Switch checked={scheduled} onCheckedChange={setScheduled} aria-label="Schedule campaign delivery" />
+						</div>
+						{scheduled ? <Field label="Send at"><DateTimePicker value={scheduledFor} onChange={setScheduledFor} allDay={false} label="Campaign send time" invalid={scheduledFor.getTime() <= openedAt} /></Field> : null}
 					</div>
 					<div className="min-w-0 lg:sticky lg:top-0 lg:self-start">
 						<p className="mb-2 text-sm font-medium text-ink">Live preview</p>
@@ -408,7 +419,7 @@ function CampaignComposer({
 					<Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
 					<Button type="submit" disabled={!confirmed || !selectedMailboxId || !subject.trim() || !body.text.trim() || sending}>
 						<Mail className="size-3.5" />
-						{sending ? "Queueing…" : `Queue ${contactIds.length} emails`}
+						{sending ? "Queueing…" : scheduled ? "Schedule campaign" : `Queue ${contactIds.length} emails`}
 					</Button>
 				</div>
 			</form>

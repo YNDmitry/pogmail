@@ -64,6 +64,8 @@ const campaignInput = z.object({
 	subject: z.string().min(1).max(300),
 	bodyText: z.string().min(1).max(500_000),
 	bodyHtml: z.string().max(1_000_000).nullable().optional(),
+	/** Epoch ms; each recipient waits in Queues until this campaign begins. */
+	scheduledFor: z.number().int().nullable().optional(),
 }).superRefine((input, ctx) => {
 	if (input.contactIds.length === 0 && !input.audienceId) {
 		ctx.addIssue({ code: "custom", message: "Choose contacts or an audience" });
@@ -77,6 +79,9 @@ const campaignInput = z.object({
 			code: "custom",
 			message: "Campaigns cannot use template images yet. Remove the image or send from a draft.",
 		});
+	}
+	if (input.scheduledFor && input.scheduledFor <= Date.now()) {
+		ctx.addIssue({ code: "custom", message: "Choose a future send time" });
 	}
 });
 
@@ -281,6 +286,7 @@ export const sendRoutes = new Hono<AppBindings>()
 			mailboxId: mailbox.id,
 			subject: input.subject,
 			recipientCount: sendable.length,
+			scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
 		}).returning().get();
 
 		const queued: Array<{ messageId: string; jobId: string }> = [];
@@ -315,14 +321,21 @@ export const sendRoutes = new Hono<AppBindings>()
 				})
 				.returning()
 				.get();
-			const job = await c.get("db").insert(outboundJobs).values({ messageId: message.id }).returning().get();
+			const job = await c.get("db").insert(outboundJobs).values({
+				messageId: message.id,
+				scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
+			}).returning().get();
 			queued.push({ messageId: message.id, jobId: job.id });
 		}
 
 		// Queue batches accept at most 100 messages. Separate batches avoid a burst
 		// of HTTP calls while preserving normal at-least-once delivery semantics.
+		const delaySeconds = input.scheduledFor ? nextScheduledDelay(new Date(input.scheduledFor)) : undefined;
 		for (const batch of chunks(queued, 100)) {
-			await c.env.OUTBOUND_QUEUE.sendBatch(batch.map(({ jobId }) => ({ body: { kind: "outbound", jobId } satisfies OutboundSendMessage })));
+			await c.env.OUTBOUND_QUEUE.sendBatch(batch.map(({ jobId }) => ({
+				body: { kind: "outbound", jobId } satisfies OutboundSendMessage,
+				...(delaySeconds ? { delaySeconds } : {}),
+			})));
 		}
 
 		const returned = new Set(recipients.map((recipient) => recipient.id));

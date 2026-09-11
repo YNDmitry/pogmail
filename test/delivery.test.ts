@@ -44,6 +44,20 @@ describe("outbound delivery retry", () => {
 		expect(await imported.json()).toMatchObject({ imported: 1, skippedExisting: 1 });
 		expect(await db.select().from(contacts).where(eq(contacts.email, "imported@example.test")).get())
 			.toMatchObject({ displayName: "Imported", source: "manual", marketingStatus: "pending" });
+		const savedDraft = await api.fetch(new Request("https://pogmail.test/api/send/campaign-drafts", {
+			method: "POST", headers: { "content-type": "application/json", cookie },
+			body: JSON.stringify({ mailboxId: mailbox.id, contactIds: [recipient!.id], subject: "Save me", bodyText: "Not sent" }),
+		}), env);
+		expect(savedDraft.status).toBe(201);
+		const draft = await savedDraft.json() as { id: string };
+		const draftList = await api.fetch(new Request("https://pogmail.test/api/send/campaign-drafts", { headers: { cookie } }), env);
+		expect(await draftList.json()).toMatchObject({ items: [expect.objectContaining({ id: draft.id, subject: "Save me", contactIds: [recipient!.id] })] });
+		const revisedDraft = await api.fetch(new Request(`https://pogmail.test/api/send/campaign-drafts/${draft.id}`, {
+			method: "PATCH", headers: { "content-type": "application/json", cookie },
+			body: JSON.stringify({ mailboxId: mailbox.id, contactIds: [recipient!.id], subject: "Saved revision", bodyText: "Still not sent" }),
+		}), env);
+		expect(revisedDraft.status).toBe(200);
+		expect(await revisedDraft.json()).toMatchObject({ id: draft.id, subject: "Saved revision" });
 		expect(await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get())
 			.toMatchObject({ displayName: "Recipient" });
 		await db.run(sql`update contacts set tags = 'tags' where id = ${recipient!.id}`);

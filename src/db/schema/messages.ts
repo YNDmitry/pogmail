@@ -43,6 +43,27 @@ export const emailCampaigns = sqliteTable(
 	],
 );
 
+/** A campaign draft never creates recipient messages or queue jobs until it is launched. */
+export const emailCampaignDrafts = sqliteTable(
+	"email_campaign_drafts",
+	{
+		id: id(),
+		userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+		mailboxId: text("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
+		contactIds: text("contact_ids", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+		audienceId: text("audience_id"),
+		tag: text("tag"),
+		subject: text("subject").notNull().default(""),
+		bodyText: text("body_text").notNull().default(""),
+		bodyHtml: text("body_html"),
+		trackOpens: integer("track_opens", { mode: "boolean" }).notNull().default(false),
+		trackClicks: integer("track_clicks", { mode: "boolean" }).notNull().default(false),
+		scheduledFor: integer("scheduled_for", { mode: "timestamp_ms" }),
+		...timestamps(),
+	},
+	(t) => [index("email_campaign_drafts_user_updated_idx").on(t.userId, t.updatedAt)],
+);
+
 export const messages = sqliteTable(
 	"messages",
 	{

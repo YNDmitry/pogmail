@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { and, count, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
-import { audienceMembers, audiences, campaignLinkClicks, contacts, domains, emailCampaigns, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
+import { audienceMembers, audiences, campaignLinkClicks, contacts, domains, emailCampaignDrafts, emailCampaigns, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import { audit } from "../audit";
 import { canSendFrom, getPermission, hasAtLeast } from "../mailboxes/access";
 import type { AppBindings } from "../middleware/context";
@@ -104,6 +104,19 @@ const campaignTestInput = z.object({
 	bodyHtml: z.string().max(1_000_000).nullable().optional(),
 });
 
+const campaignDraftInput = z.object({
+	mailboxId: z.string().min(1),
+	contactIds: z.array(z.string().min(1)).max(500).default([]),
+	audienceId: z.string().min(1).nullable().optional(),
+	tag: z.string().trim().min(1).max(40).nullable().optional(),
+	subject: z.string().max(300).default(""),
+	bodyText: z.string().max(500_000).default(""),
+	bodyHtml: z.string().max(1_000_000).nullable().optional(),
+	trackOpens: z.boolean().default(false),
+	trackClicks: z.boolean().default(false),
+	scheduledFor: z.number().int().nullable().optional(),
+});
+
 // A draft is an unfinished envelope: body, attachment, or a CID image may be
 // saved before the recipient is known. The actual send endpoint keeps the
 // stricter `composeInput` and will still refuse an empty `To` list.
@@ -113,6 +126,41 @@ const draftInput = composeShape
 	.superRefine(validateRecipientLimit);
 
 export const sendRoutes = new Hono<AppBindings>()
+	.get("/campaign-drafts", async (c) => {
+		const items = await c.get("db").select().from(emailCampaignDrafts)
+			.where(eq(emailCampaignDrafts.userId, c.get("user").id))
+			.orderBy(desc(emailCampaignDrafts.updatedAt)).limit(50).all();
+		return c.json({ items });
+	})
+	.post("/campaign-drafts", async (c) => {
+		const input = await parseBody(c, campaignDraftInput);
+		await sendableMailbox(c, input.mailboxId);
+		if (input.audienceId) await ownedCampaignAudience(c, input.audienceId);
+		const draft = await c.get("db").insert(emailCampaignDrafts).values({
+			...input, userId: c.get("user").id, audienceId: input.audienceId ?? null, tag: input.tag ?? null,
+			scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
+		}).returning().get();
+		audit(c, { action: "campaign.draft.create", mailboxId: draft.mailboxId, metadata: { draftId: draft.id } });
+		return c.json(draft, 201);
+	})
+	.patch("/campaign-drafts/:id", async (c) => {
+		const input = await parseBody(c, campaignDraftInput);
+		const draft = await ownedCampaignDraft(c, c.req.param("id"));
+		await sendableMailbox(c, input.mailboxId);
+		if (input.audienceId) await ownedCampaignAudience(c, input.audienceId);
+		const updated = await c.get("db").update(emailCampaignDrafts).set({
+			...input, audienceId: input.audienceId ?? null, tag: input.tag ?? null,
+			scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
+		}).where(eq(emailCampaignDrafts.id, draft.id)).returning().get();
+		audit(c, { action: "campaign.draft.update", mailboxId: updated.mailboxId, metadata: { draftId: updated.id } });
+		return c.json(updated);
+	})
+	.delete("/campaign-drafts/:id", async (c) => {
+		const draft = await ownedCampaignDraft(c, c.req.param("id"));
+		await c.get("db").delete(emailCampaignDrafts).where(eq(emailCampaignDrafts.id, draft.id));
+		audit(c, { action: "campaign.draft.delete", mailboxId: draft.mailboxId, metadata: { draftId: draft.id } });
+		return c.json({ ok: true });
+	})
 	/** Saves or updates a draft without sending it. */
 	.post("/drafts", async (c) => {
 		const input = await parseBody(c, draftInput);
@@ -676,10 +724,7 @@ function chunks<T>(items: T[], size: number): T[][] {
 }
 
 async function audienceRecipients(c: Context<AppBindings>, audienceId: string) {
-	const audience = await c.get("db").select({ id: audiences.id }).from(audiences).where(and(
-		eq(audiences.id, audienceId), eq(audiences.userId, c.get("user").id),
-	)).get();
-	if (!audience) notFound("Audience");
+	const audience = await ownedCampaignAudience(c, audienceId);
 	const recipients = await c.get("db").select({
 		id: contacts.id, email: contacts.email, displayName: contacts.displayName, blocked: contacts.blocked,
 		unsubscribedAt: contacts.unsubscribedAt, unsubscribeToken: contacts.unsubscribeToken, marketingStatus: contacts.marketingStatus, tags: contacts.tags,
@@ -689,6 +734,22 @@ async function audienceRecipients(c: Context<AppBindings>, audienceId: string) {
 		throw new HTTPException(422, { message: "An audience may have at most 500 contacts per campaign" });
 	}
 	return recipients;
+}
+
+async function ownedCampaignAudience(c: Context<AppBindings>, id: string) {
+	const audience = await c.get("db").select({ id: audiences.id }).from(audiences).where(and(
+		eq(audiences.id, id), eq(audiences.userId, c.get("user").id),
+	)).get();
+	if (!audience) notFound("Audience");
+	return audience;
+}
+
+async function ownedCampaignDraft(c: Context<AppBindings>, id: string) {
+	const draft = await c.get("db").select().from(emailCampaignDrafts).where(and(
+		eq(emailCampaignDrafts.id, id), eq(emailCampaignDrafts.userId, c.get("user").id),
+	)).get();
+	if (!draft) notFound("Campaign draft");
+	return draft;
 }
 
 function personalisedCampaignBody(

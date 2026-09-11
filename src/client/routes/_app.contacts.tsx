@@ -103,6 +103,20 @@ type CampaignReport = {
     clicks: number;
   }>;
 };
+type CampaignDraft = {
+  id: string;
+  mailboxId: string;
+  contactIds: string[];
+  audienceId: string | null;
+  tag: string | null;
+  subject: string;
+  bodyText: string;
+  bodyHtml: string | null;
+  trackOpens: boolean;
+  trackClicks: boolean;
+  scheduledFor: string | null;
+  updatedAt: string;
+};
 
 function Contacts() {
   const toast = useToast();
@@ -1025,6 +1039,7 @@ function CampaignComposer({
   const mailboxes = useMailboxes();
   const templates = useList<Template>(qk.templates, "/api/templates");
   const audiences = useList<Audience>(qk.audiences, "/api/contacts/audiences");
+  const campaignDrafts = useList<CampaignDraft>(["campaign-drafts"], "/api/send/campaign-drafts");
   const sendable = (mailboxes.data ?? []).filter((mailbox) =>
     canSend(mailbox.permission),
   );
@@ -1047,15 +1062,63 @@ function CampaignComposer({
   const [testRecipient, setTestRecipient] = useState("");
   const [testing, setTesting] = useState(false);
   const [sending, setSending] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftId, setDraftId] = useState("");
   const selectedAudience =
     audienceId === "none"
       ? null
       : (audiences.data?.find((audience) => audience.id === audienceId) ??
         null);
-  const recipientCount = selectedAudience?.memberCount ?? contactIds.length;
+  const activeContactIds = campaignDrafts.data?.find((draft) => draft.id === draftId)?.contactIds ?? contactIds;
+  const recipientCount = selectedAudience?.memberCount ?? activeContactIds.length;
   const recipientDescription = selectedAudience
     ? `${selectedAudience.name} has ${recipientCount} contact${recipientCount === 1 ? "" : "s"}. Each receives an individual email and cannot see the other recipients.`
-    : `${contactIds.length} selected contact${contactIds.length === 1 ? "" : "s"}. Each receives an individual email and cannot see the other recipients.`;
+    : `${activeContactIds.length} selected contact${activeContactIds.length === 1 ? "" : "s"}. Each receives an individual email and cannot see the other recipients.`;
+
+  function useCampaignDraft(id: string) {
+    setDraftId(id);
+    if (id === "none") return;
+    const draft = campaignDrafts.data?.find((entry) => entry.id === id);
+    if (!draft) return;
+    setMailboxId(draft.mailboxId);
+    setAudienceId(draft.audienceId ?? "none");
+    setSegmentTag(draft.tag ?? "");
+    setSubject(draft.subject);
+    setBody({ html: draft.bodyHtml ?? "", text: draft.bodyText });
+    setTrackOpens(draft.trackOpens);
+    setTrackClicks(draft.trackClicks);
+    setScheduled(Boolean(draft.scheduledFor));
+    if (draft.scheduledFor) setScheduledFor(new Date(draft.scheduledFor));
+    setEditorKey((key) => key + 1);
+  }
+
+  async function saveDraft() {
+    setSavingDraft(true);
+    const payload = {
+      mailboxId: selectedMailboxId,
+      contactIds: audienceId === "none" ? activeContactIds : [],
+      audienceId: audienceId === "none" ? null : audienceId,
+      tag: segmentTag.trim() || null,
+      subject,
+      bodyText: body.text,
+      bodyHtml: body.html || null,
+      trackOpens,
+      trackClicks,
+      scheduledFor: scheduled ? scheduledFor.getTime() : null,
+    };
+    try {
+      const draft = draftId && draftId !== "none"
+        ? await api.patch<CampaignDraft>(`/api/send/campaign-drafts/${draftId}`, payload)
+        : await api.post<CampaignDraft>("/api/send/campaign-drafts", payload);
+      setDraftId(draft.id);
+      await campaignDrafts.refetch();
+      toast.ok("Campaign draft saved");
+    } catch (error) {
+      toast.fail("Could not save campaign draft", error instanceof ApiError ? error.message : undefined);
+    } finally {
+      setSavingDraft(false);
+    }
+  }
 
   function useTemplate(id: string) {
     setTemplateId(id);
@@ -1075,7 +1138,7 @@ function CampaignComposer({
     try {
       const result = await api.post<CampaignResult>("/api/send/campaigns", {
         mailboxId: selectedMailboxId,
-        contactIds: audienceId === "none" ? contactIds : [],
+        contactIds: audienceId === "none" ? activeContactIds : [],
         ...(audienceId === "none" ? {} : { audienceId }),
         ...(segmentTag.trim() ? { tag: segmentTag.trim() } : {}),
         trackOpens,
@@ -1093,6 +1156,7 @@ function CampaignComposer({
       toast.ok(
         `${scheduled ? "Scheduled" : "Queued"} ${result.queued} private email${result.queued === 1 ? "" : "s"}${skipped ? `; skipped ${skipped}` : ""}`,
       );
+      if (draftId && draftId !== "none") await api.delete(`/api/send/campaign-drafts/${draftId}`);
       onSent();
     } catch (error) {
       toast.fail(
@@ -1165,6 +1229,22 @@ function CampaignComposer({
               />
             </Field>
             <Field
+              label="Saved campaign"
+              hint="Drafts do not queue or send email until you launch them."
+            >
+              <Choice
+                value={draftId || "none"}
+                onChange={useCampaignDraft}
+                options={[
+                  { value: "none", label: "New campaign" },
+                  ...(campaignDrafts.data ?? []).map((draft) => ({
+                    value: draft.id,
+                    label: draft.subject.trim() || `Untitled · ${shortDate(draft.updatedAt)}`,
+                  })),
+                ]}
+              />
+            </Field>
+            <Field
               label="Audience"
               hint="Unsubscribed and blocked contacts are always excluded."
             >
@@ -1174,7 +1254,7 @@ function CampaignComposer({
                 options={[
                   {
                     value: "none",
-                    label: `Selected contacts (${contactIds.length})`,
+                    label: `Selected contacts (${activeContactIds.length})`,
                   },
                   ...(audiences.data ?? []).map((audience) => ({
                     value: audience.id,
@@ -1325,9 +1405,9 @@ function CampaignComposer({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            type="button"
-            variant="outline"
+                <Button
+                  type="button"
+                  variant="outline"
             onClick={() => void sendTest()}
             disabled={
               !testRecipient.trim() ||
@@ -1336,9 +1416,12 @@ function CampaignComposer({
               !body.text.trim() ||
               testing
             }
-          >
-            {testing ? "Sending test…" : "Send test"}
-          </Button>
+                >
+                  {testing ? "Sending test…" : "Send test"}
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => void saveDraft()} disabled={!selectedMailboxId || savingDraft}>
+                  {savingDraft ? "Saving…" : "Save draft"}
+                </Button>
           <Button
             type="submit"
             disabled={

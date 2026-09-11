@@ -23,8 +23,19 @@ const audienceInput = z.object({
 	contactIds: z.array(z.string().min(1)).min(1).max(500),
 });
 const memberInput = z.object({ contactIds: z.array(z.string().min(1)).min(1).max(500) });
+const tagInput = z.object({ contactIds: z.array(z.string().min(1)).min(1).max(500), tag: z.string().trim().min(1).max(40) });
 
 export const contactRoutes = new Hono<AppBindings>()
+	.post("/tags", async (c) => {
+		const input = await parseBody(c, tagInput);
+		const owned = await c.get("db").select({ id: contacts.id, tags: contacts.tags }).from(contacts).where(and(
+			eq(contacts.userId, c.get("user").id), inArray(contacts.id, input.contactIds),
+		)).all();
+		if (owned.length !== new Set(input.contactIds).size) notFound("Contact");
+		for (const contact of owned) await c.get("db").update(contacts).set({ tags: [...new Set([...contact.tags, input.tag])] }).where(eq(contacts.id, contact.id));
+		audit(c, { action: "contact.tag", metadata: { tag: input.tag, count: owned.length } });
+		return c.json({ updated: owned.length });
+	})
 	.get("/audiences", async (c) => {
 		const rows = await c.get("db").select({
 			id: audiences.id,

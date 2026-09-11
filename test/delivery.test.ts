@@ -72,6 +72,19 @@ describe("outbound delivery retry", () => {
 			.toMatchObject({ status: "failed", lastError: "Campaign cancelled" });
 		const contact = await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get();
 		expect(contact?.unsubscribeToken).toMatch(/^[0-9a-f-]{36}$/);
+		const tagged = await api.fetch(new Request("https://pogmail.test/api/contacts/tags", {
+			method: "POST", headers: { "content-type": "application/json", cookie },
+			body: JSON.stringify({ contactIds: [recipient!.id], tag: "VIP" }),
+		}), env);
+		expect(tagged.status).toBe(200);
+		expect(await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get())
+			.toMatchObject({ tags: ["VIP"] });
+		const targeted = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", {
+			method: "POST", headers: { "content-type": "application/json", cookie },
+			body: JSON.stringify({ mailboxId: mailbox.id, contactIds: [recipient!.id], tag: "VIP", subject: "VIP update", bodyText: "Hello" }),
+		}), env);
+		expect(targeted.status).toBe(202);
+		expect(await targeted.json()).toMatchObject({ queued: 1 });
 		const unsubscribe = await api.fetch(new Request("https://pogmail.test/api/public/unsubscribe", {
 			method: "POST",
 			headers: { "content-type": "application/x-www-form-urlencoded" },

@@ -61,6 +61,7 @@ const campaignInput = z.object({
 	mailboxId: z.string().min(1),
 	contactIds: z.array(z.string().min(1)).max(500).default([]),
 	audienceId: z.string().min(1).optional(),
+	tag: z.string().trim().min(1).max(40).optional(),
 	subject: z.string().min(1).max(300),
 	bodyText: z.string().min(1).max(500_000),
 	bodyHtml: z.string().max(1_000_000).nullable().optional(),
@@ -283,11 +284,11 @@ export const sendRoutes = new Hono<AppBindings>()
 			? await audienceRecipients(c, input.audienceId)
 			: await c.get("db").select({
 				id: contacts.id, email: contacts.email, displayName: contacts.displayName, blocked: contacts.blocked,
-				unsubscribedAt: contacts.unsubscribedAt, unsubscribeToken: contacts.unsubscribeToken,
+				unsubscribedAt: contacts.unsubscribedAt, unsubscribeToken: contacts.unsubscribeToken, tags: contacts.tags,
 			}).from(contacts).where(and(eq(contacts.userId, c.get("user").id), inArray(contacts.id, input.contactIds))).all();
-		const sendable = recipients.filter((contact) => !contact.blocked && !contact.unsubscribedAt);
+		const sendable = recipients.filter((contact) => !contact.blocked && !contact.unsubscribedAt && (!input.tag || contact.tags.includes(input.tag)));
 		if (sendable.length === 0) {
-			throw new HTTPException(422, { message: "Choose at least one subscribed contact that is not blocked" });
+			throw new HTTPException(422, { message: "No subscribed, unblocked contacts match this segment" });
 		}
 		const campaign = await c.get("db").insert(emailCampaigns).values({
 			userId: c.get("user").id,
@@ -591,7 +592,7 @@ async function audienceRecipients(c: Context<AppBindings>, audienceId: string) {
 	if (!audience) notFound("Audience");
 	const recipients = await c.get("db").select({
 		id: contacts.id, email: contacts.email, displayName: contacts.displayName, blocked: contacts.blocked,
-		unsubscribedAt: contacts.unsubscribedAt, unsubscribeToken: contacts.unsubscribeToken,
+		unsubscribedAt: contacts.unsubscribedAt, unsubscribeToken: contacts.unsubscribeToken, tags: contacts.tags,
 	}).from(audienceMembers).innerJoin(contacts, eq(contacts.id, audienceMembers.contactId))
 		.where(eq(audienceMembers.audienceId, audience.id)).limit(501).all();
 	if (recipients.length > 500) {

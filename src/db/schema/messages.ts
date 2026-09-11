@@ -146,6 +146,8 @@ export const contacts = sqliteTable(
 		unsubscribedAt: integer("unsubscribed_at", { mode: "timestamp_ms" }),
 		/** Opaque capability used only by the public unsubscribe page. */
 		unsubscribeToken: text("unsubscribe_token"),
+		/** Lightweight labels for audience segments, maintained by the account owner. */
+		tags: text("tags", { mode: "json" }).$type<string[]>().notNull().default([]),
 		messageCount: integer("message_count").notNull().default(0),
 		lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
 		...timestamps(),

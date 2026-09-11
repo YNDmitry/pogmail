@@ -31,6 +31,7 @@ type Contact = {
 	source: "manual" | "inbound" | "outbound";
 	blocked: boolean;
 	unsubscribedAt: string | null;
+	tags: string[];
 	messageCount: number;
 	lastSeenAt: string | null;
 };
@@ -57,6 +58,7 @@ function Contacts() {
 	const [selected, setSelected] = useState<Set<string>>(new Set());
 	const [campaignOpen, setCampaignOpen] = useState(false);
 	const [audienceOpen, setAudienceOpen] = useState(false);
+	const [tagOpen, setTagOpen] = useState(false);
 
 	const contacts = useList<Contact>(qk.contacts(), "/api/contacts", {
 		search: search || undefined,
@@ -86,6 +88,7 @@ function Contacts() {
 				title="Contacts"
 				description="Everyone you have exchanged mail with. Campaigns only include contacts who are neither blocked nor unsubscribed."
 				actions={<>
+					<Button size="sm" variant="secondary" disabled={selected.size === 0} onClick={() => setTagOpen(true)}>Tag contacts</Button>
 					<Button size="sm" variant="secondary" disabled={selected.size === 0} onClick={() => setAudienceOpen(true)}>Save audience</Button>
 					<Button size="sm" disabled={selected.size === 0} onClick={() => setCampaignOpen(true)}><Send className="size-3.5" />Campaign{selected.size ? ` (${selected.size})` : ""}</Button>
 				</>}
@@ -150,6 +153,7 @@ function Contacts() {
 								</div>
 
 								<Tag tone="neutral">{contact.source}</Tag>
+								{contact.tags.map((tag) => <Tag key={tag} tone="accent">{tag}</Tag>)}
 								{contact.blocked ? <Tag tone="fail">Blocked</Tag> : null}
 								{contact.unsubscribedAt ? <Tag tone="neutral">Unsubscribed</Tag> : null}
 
@@ -210,6 +214,7 @@ function Contacts() {
 				}}
 			/>
 			<AudienceForm open={audienceOpen} contactIds={[...selected]} onClose={() => setAudienceOpen(false)} />
+			<TagForm open={tagOpen} contactIds={[...selected]} onClose={() => setTagOpen(false)} />
 			<CampaignHistory campaigns={campaigns.data ?? []} />
 		</div>
 	);
@@ -295,6 +300,35 @@ function AudienceForm({ open, contactIds, onClose }: { open: boolean; contactIds
 	</Modal>;
 }
 
+function TagForm({ open, contactIds, onClose }: { open: boolean; contactIds: string[]; onClose: () => void }) {
+	const toast = useToast();
+	const queryClient = useQueryClient();
+	const [tag, setTag] = useState("");
+	const [saving, setSaving] = useState(false);
+
+	async function submit() {
+		setSaving(true);
+		try {
+			const result = await api.post<{ updated: number }>("/api/contacts/tags", { tag, contactIds });
+			await queryClient.invalidateQueries({ queryKey: ["contacts"] });
+			toast.ok(`Tagged ${result.updated} contact${result.updated === 1 ? "" : "s"}`);
+			setTag("");
+			onClose();
+		} catch (error) {
+			toast.fail("Could not tag contacts", error instanceof ApiError ? error.message : undefined);
+		} finally {
+			setSaving(false);
+		}
+	}
+
+	return <Modal open={open} onClose={onClose} title="Tag contacts" description={`${contactIds.length} selected contacts will receive this reusable segment tag.`}>
+		<form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+			<Field label="Tag"><Input required maxLength={40} value={tag} onChange={(event) => setTag(event.target.value)} placeholder="VIP, customer, lead…" /></Field>
+			<div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!tag.trim() || saving}>{saving ? "Saving…" : "Add tag"}</Button></div>
+		</form>
+	</Modal>;
+}
+
 function campaignTone(state: Campaign["state"]): "wait" | "ok" | "fail" | "neutral" {
 	if (state === "completed") return "ok";
 	if (state === "cancelled") return "neutral";
@@ -324,6 +358,7 @@ function CampaignComposer({
 	const [body, setBody] = useState({ html: "", text: "" });
 	const [templateId, setTemplateId] = useState("none");
 	const [audienceId, setAudienceId] = useState("none");
+	const [segmentTag, setSegmentTag] = useState("");
 	const [editorKey, setEditorKey] = useState(0);
 	const [confirmed, setConfirmed] = useState(false);
 	const [scheduled, setScheduled] = useState(false);
@@ -350,6 +385,7 @@ function CampaignComposer({
 				mailboxId: selectedMailboxId,
 				contactIds: audienceId === "none" ? contactIds : [],
 				...(audienceId === "none" ? {} : { audienceId }),
+				...(segmentTag.trim() ? { tag: segmentTag.trim() } : {}),
 				subject,
 				bodyText: body.text,
 				bodyHtml: body.html || null,
@@ -405,6 +441,9 @@ function CampaignComposer({
 						</Field>
 						<Field label="Audience" hint="Unsubscribed and blocked contacts are always excluded.">
 							<Choice value={audienceId} onChange={setAudienceId} options={[{ value: "none", label: `Selected contacts (${contactIds.length})` }, ...(audiences.data ?? []).map((audience) => ({ value: audience.id, label: `${audience.name} (${audience.memberCount})` }))]} />
+						</Field>
+						<Field label="Segment tag" hint="Optional: only contacts carrying this tag are included.">
+							<Input maxLength={40} value={segmentTag} onChange={(event) => setSegmentTag(event.target.value)} placeholder="VIP" />
 						</Field>
 						<Field label="Start from a template" hint="Template images are not available in campaigns yet.">
 							<Choice

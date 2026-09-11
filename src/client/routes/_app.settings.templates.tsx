@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Copy, Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/client/components/app/button";
+import { EmailFrame } from "@/client/components/app/email-frame";
 import { Input } from "@/client/components/ui";
 import { MailyEditor } from "@/client/components/app/maily-editor";
 import { Modal } from "@/client/components/app/modal";
@@ -88,7 +89,7 @@ function Templates() {
 			</Modal>
 
 			<Modal open={Boolean(preview)} onClose={() => setPreview(null)} title={preview?.name ?? "Template preview"}>
-				{preview ? <iframe title={`${preview.name} preview`} sandbox="" referrerPolicy="no-referrer" className="h-[32rem] w-full rounded-panel border border-seam bg-white" srcDoc={preview.bodyHtml ?? textToHtml(preview.bodyText)} /> : null}
+				{preview ? <EmailFrame title={`${preview.name} preview`} html={preview.bodyHtml ?? textToHtml(preview.bodyText)} className="rounded-panel border border-seam" /> : null}
 			</Modal>
 		</div>
 	);
@@ -111,7 +112,7 @@ function TemplateForm({ draft, onCancel, onSave }: { draft: Draft; onCancel: () 
 		return <div className="space-y-4">
 			<div className="overflow-hidden rounded-panel border border-seam bg-white">
 				<p className="border-b border-seam px-4 py-3 text-sm font-medium text-black">{subject.trim() || "(No subject)"}</p>
-				<iframe title="Template body preview" sandbox="" referrerPolicy="no-referrer" className="h-[32rem] w-full bg-white" srcDoc={body.html} />
+				<EmailFrame title="Template body preview" html={body.html} />
 			</div>
 			<div className="flex justify-end">
 				<Button type="button" variant="secondary" onClick={() => setPreviewing(false)}>Back to editor</Button>

@@ -95,7 +95,10 @@ function Templates() {
 }
 
 function TemplateForm({ draft, onCancel, onSave }: { draft: Draft; onCancel: () => void; onSave: (draft: Draft) => void }) {
+	const [name, setName] = useState(draft.name);
+	const [subject, setSubject] = useState(draft.subject);
 	const [body, setBody] = useState({ html: draft.bodyHtml ?? textToHtml(draft.bodyText), text: draft.bodyText });
+	const [previewing, setPreviewing] = useState(false);
 	const uploadImage = draft.id
 		? async (blob: Blob) => {
 			const image = blob instanceof File ? blob : new File([blob], "image", { type: blob.type });
@@ -103,18 +106,31 @@ function TemplateForm({ draft, onCancel, onSave }: { draft: Draft; onCancel: () 
 			return asset.url;
 		}
 		: undefined;
+
+	if (previewing) {
+		return <div className="space-y-4">
+			<div className="overflow-hidden rounded-panel border border-seam bg-white">
+				<p className="border-b border-seam px-4 py-3 text-sm font-medium text-black">{subject.trim() || "(No subject)"}</p>
+				<iframe title="Template body preview" sandbox="" referrerPolicy="no-referrer" className="h-[32rem] w-full bg-white" srcDoc={body.html} />
+			</div>
+			<div className="flex justify-end">
+				<Button type="button" variant="secondary" onClick={() => setPreviewing(false)}>Back to editor</Button>
+			</div>
+		</div>;
+	}
+
 	return <form className="space-y-4" onSubmit={(event) => {
 		event.preventDefault();
-		const form = new FormData(event.currentTarget);
-		onSave({ id: draft.id, name: String(form.get("name")), subject: String(form.get("subject")), bodyText: body.text, bodyHtml: body.html || null });
+		onSave({ id: draft.id, name, subject, bodyText: body.text, bodyHtml: body.html || null });
 	}}>
-		<Field label="Name"><Input name="name" required maxLength={80} defaultValue={draft.name} /></Field>
-		<Field label="Subject"><Input name="subject" maxLength={300} defaultValue={draft.subject} /></Field>
+		<Field label="Name"><Input name="name" required maxLength={80} value={name} onChange={(event) => setName(event.target.value)} /></Field>
+		<Field label="Subject"><Input name="subject" maxLength={300} value={subject} onChange={(event) => setSubject(event.target.value)} /></Field>
 		<Field label="Message" hint={draft.id ? "Formatting, slash commands, and images are kept when the template is inserted." : "Save once to enable private image uploads in this template."}>
 			<MailyEditor initialHtml={body.html} onChange={(html, text) => setBody({ html, text })} ariaLabel="Template message" density="compact" onImageUpload={uploadImage} className="rounded-panel border border-seam px-3" />
 		</Field>
 		<div className="flex justify-end gap-2 pt-2">
 			<Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
+			<Button type="button" variant="ghost" onClick={() => setPreviewing(true)}><Eye className="size-3.5" />Preview</Button>
 			<Button type="submit">Save template</Button>
 		</div>
 	</form>;

@@ -1616,7 +1616,7 @@
 }
 
 .maily-compose-editor .ProseMirror .is-editor-empty:first-child::before {
-  content: "Write your message…" !important;
+  content: "Write your message… Type / for commands" !important;
 }
 
 /* Preserve enough canvas height on a phone without a persistent toolbar. */

@@ -215,6 +215,7 @@ function ComposeForm({
 	const [saveState, setSaveState] = useState<SaveState>("idle");
 	const [attaching, setAttaching] = useState(false);
 	const [previewOpen, setPreviewOpen] = useState(false);
+	const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">("desktop");
 	/** URL replacement used by autosave is not a user leaving the composer. */
 	const internalNavigation = useRef(false);
 
@@ -727,20 +728,16 @@ function ComposeForm({
 				open={previewOpen}
 				onClose={() => setPreviewOpen(false)}
 				title="Message preview"
-				description="This is how the message body and subject will appear to its recipient."
+				description="Preview the subject and body before sending. Rendering can vary between email clients."
 				className="sm:max-w-3xl"
 			>
-				<div className="overflow-hidden rounded-panel border border-seam bg-white">
-					<p className="border-b border-seam px-4 py-3 text-sm font-medium text-black">
-						{subject.trim() || "(No subject)"}
-					</p>
-					<iframe
-						title="Message body preview"
-						sandbox=""
-						referrerPolicy="no-referrer"
-						className="h-[32rem] w-full bg-white"
-						srcDoc={previewHtml}
-					/>
+				<div className="flex justify-end gap-1" role="group" aria-label="Preview width">
+					<Button type="button" size="sm" variant={previewMode === "desktop" ? "secondary" : "ghost"} aria-pressed={previewMode === "desktop"} onClick={() => setPreviewMode("desktop")}>Desktop</Button>
+					<Button type="button" size="sm" variant={previewMode === "mobile" ? "secondary" : "ghost"} aria-pressed={previewMode === "mobile"} onClick={() => setPreviewMode("mobile")}>Mobile</Button>
+				</div>
+				<div data-preview-width={previewMode} className={cn("mx-auto overflow-hidden rounded-panel border border-seam bg-white transition-[width]", previewMode === "mobile" ? "w-[23.4375rem] max-w-full" : "w-full")}>
+					<p className="border-b border-seam px-4 py-3 text-sm font-medium text-black">{subject.trim() || "(No subject)"}</p>
+					<iframe title="Message body preview" sandbox="" referrerPolicy="no-referrer" className="h-[32rem] w-full bg-white" srcDoc={previewHtml} />
 				</div>
 			</Modal>
 		</form>

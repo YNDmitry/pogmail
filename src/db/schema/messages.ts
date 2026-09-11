@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { id, timestamps } from "./_shared";
 import { folders, mailboxes } from "./mailboxes";
@@ -147,7 +148,7 @@ export const contacts = sqliteTable(
 		/** Opaque capability used only by the public unsubscribe page. */
 		unsubscribeToken: text("unsubscribe_token"),
 		/** Lightweight labels for audience segments, maintained by the account owner. */
-		tags: text("tags", { mode: "json" }).$type<string[]>().notNull().default([]),
+		tags: text("tags", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
 		messageCount: integer("message_count").notNull().default(0),
 		lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
 		...timestamps(),

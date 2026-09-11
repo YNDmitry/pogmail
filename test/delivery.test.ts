@@ -1,5 +1,5 @@
 import { env } from "cloudflare:test";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { getDb } from "@/db";
 import { contacts, domains, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs, templateAttachments, users } from "@/db/schema";
@@ -45,6 +45,10 @@ describe("outbound delivery retry", () => {
 			.toMatchObject({ displayName: "Imported", source: "manual" });
 		expect(await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get())
 			.toMatchObject({ displayName: "Recipient" });
+		await db.run(sql`update contacts set tags = 'tags' where id = ${recipient!.id}`);
+		await db.run(sql`update contacts set tags = case when json_valid(tags) then case when json_type(tags) = 'array' then tags else '[]' end else '[]' end where id = ${recipient!.id}`);
+		expect(await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get())
+			.toMatchObject({ tags: [] });
 		const scheduledFor = Date.now() + 60_000;
 		const response = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", {
 			method: "POST",

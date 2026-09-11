@@ -175,6 +175,12 @@ describe("outbound delivery retry", () => {
 		expect(resume.status).toBe(200);
 		expect(await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get())
 			.toMatchObject({ marketingStatus: "subscribed", unsubscribedAt: null });
+		const oneClickUnsubscribe = await api.fetch(new Request(`https://pogmail.test/api/public/unsubscribe?token=${contact!.unsubscribeToken}`, {
+			method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "List-Unsubscribe=One-Click",
+		}), env);
+		expect(oneClickUnsubscribe.status).toBe(200);
+		expect(await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get())
+			.toMatchObject({ marketingStatus: "unsubscribed", unsubscribedAt: expect.any(Date) });
 		const testSend = await api.fetch(new Request("https://pogmail.test/api/send/campaigns/test", {
 			method: "POST", headers: { "content-type": "application/json", cookie },
 			body: JSON.stringify({

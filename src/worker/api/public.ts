@@ -83,7 +83,10 @@ export const publicRoutes = new Hono<AppBindings>()
 		return c.html(page("Stop receiving marketing email?", token));
 	})
 	.post("/unsubscribe", async (c) => {
-		const parsed = unsubscribeInput.safeParse(await c.req.parseBody());
+		const body = await c.req.parseBody();
+		// RFC 8058 sends the opaque token in the URL and a fixed one-click body;
+		// the browser form still submits the token in its body.
+		const parsed = unsubscribeInput.safeParse({ token: body.token ?? c.req.query("token") });
 		if (!parsed.success) return c.html(page("That unsubscribe link is no longer valid."), 400);
 		const { token } = parsed.data;
 		const updated = await c.get("db").update(contacts).set({ marketingStatus: "unsubscribed", unsubscribedAt: new Date() })

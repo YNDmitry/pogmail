@@ -1,7 +1,7 @@
-import { Hono } from "hono";
-import { and, eq, isNull } from "drizzle-orm";
+import { Hono, type Context } from "hono";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
-import { campaignLinkClicks, contacts, messages } from "@/db/schema";
+import { campaignLinkClicks, contacts, domains, mailboxes, messages, outboundJobs } from "@/db/schema";
 import type { AppBindings } from "../middleware/context";
 import { parseQuery } from "./_util";
 
@@ -32,8 +32,10 @@ export const publicRoutes = new Hono<AppBindings>()
 		const parsed = subscribeInput.safeParse(await c.req.parseBody());
 		if (!parsed.success) return c.html(page("That confirmation link is no longer valid."), 400);
 		const updated = await c.get("db").update(contacts).set({
-			marketingStatus: "subscribed", confirmedAt: new Date(), unsubscribedAt: null,
-		}).where(eq(contacts.confirmationToken, parsed.data.token)).returning({ id: contacts.id }).get();
+			marketingStatus: "subscribed", confirmedAt: new Date(), unsubscribedAt: null, welcomeSentAt: new Date(),
+		}).where(and(eq(contacts.confirmationToken, parsed.data.token), ne(contacts.marketingStatus, "subscribed")))
+			.returning({ id: contacts.id, email: contacts.email, displayName: contacts.displayName, confirmationMailboxId: contacts.confirmationMailboxId }).get();
+		if (updated?.confirmationMailboxId) await queueWelcome(c, updated);
 		return c.html(page(updated ? "Your subscription is confirmed. You can unsubscribe at any time." : "That confirmation link is no longer valid."), updated ? 200 : 404);
 	})
 	.get("/preferences", async (c) => {
@@ -104,6 +106,29 @@ function page(message: string, token?: string, actionName: "subscribe" | "unsubs
 function preferencesPage(token: string, status: "pending" | "subscribed" | "unsubscribed") {
 	const checked = status === "unsubscribed" ? "unsubscribed" : "subscribed";
 	return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Email preferences</title><body style="font-family:system-ui,sans-serif;margin:3rem;max-width:34rem;color:#202020"><h1>Email preferences</h1><p>Choose whether you would like to receive marketing email.</p><form method="post" action="/api/public/preferences"><input type="hidden" name="token" value="${token}"><p><label><input type="radio" name="status" value="subscribed"${checked === "subscribed" ? " checked" : ""}> Receive marketing email</label></p><p><label><input type="radio" name="status" value="unsubscribed"${checked === "unsubscribed" ? " checked" : ""}> Do not receive marketing email</label></p><button>Save preferences</button></form></body></html>`;
+}
+
+async function queueWelcome(c: Context<AppBindings>, contact: { id: string; email: string; displayName: string | null; confirmationMailboxId: string | null }) {
+	if (!contact.confirmationMailboxId) return;
+	const mailbox = await c.get("db").select({ id: mailboxes.id, localPart: mailboxes.localPart, displayName: mailboxes.displayName, hostname: domains.hostname })
+		.from(mailboxes).innerJoin(domains, eq(domains.id, mailboxes.domainId)).where(eq(mailboxes.id, contact.confirmationMailboxId)).get();
+	if (!mailbox) return;
+	const fromAddress = `${mailbox.localPart}@${mailbox.hostname}`;
+	const name = contact.displayName?.trim().split(/\s+/)[0] || "there";
+	const message = await c.get("db").insert(messages).values({
+		mailboxId: mailbox.id, direction: "outbound", status: "sent", threadId: crypto.randomUUID(),
+		subject: "Welcome", fromAddress, fromName: mailbox.displayName,
+		toAddresses: [{ address: contact.email, ...(contact.displayName ? { name: contact.displayName } : {}) }], ccAddresses: [], bccAddresses: [],
+		bodyText: `Welcome, ${name}. Your email subscription is confirmed.`,
+		bodyHtml: `<p>Welcome, ${escapeHtml(name)}.</p><p>Your email subscription is confirmed.</p>`,
+		snippet: "Your email subscription is confirmed.", read: true, receivedAt: new Date(),
+	}).returning().get();
+	const job = await c.get("db").insert(outboundJobs).values({ messageId: message.id }).returning().get();
+	await c.env.OUTBOUND_QUEUE.send({ kind: "outbound", jobId: job.id });
+}
+
+function escapeHtml(value: string) {
+	return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
 }
 
 function redirectHome(requestUrl: string) {

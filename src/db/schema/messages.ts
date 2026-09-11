@@ -201,6 +201,10 @@ export const contacts = sqliteTable(
 		/** Opaque capability sent in the double opt-in message. */
 		confirmationToken: text("confirmation_token"),
 		confirmedAt: integer("confirmed_at", { mode: "timestamp_ms" }),
+		/** Mailbox chosen for consent; it is also the sender of the transactional welcome. */
+		confirmationMailboxId: text("confirmation_mailbox_id").references(() => mailboxes.id, { onDelete: "set null" }),
+		/** Makes a confirmation-link replay unable to queue another welcome message. */
+		welcomeSentAt: integer("welcome_sent_at", { mode: "timestamp_ms" }),
 		/** Lightweight labels for audience segments, maintained by the account owner. */
 		tags: text("tags", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
 		messageCount: integer("message_count").notNull().default(0),

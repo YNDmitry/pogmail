@@ -113,7 +113,9 @@ describe("outbound delivery retry", () => {
 		}), env);
 		expect(subscribe.status).toBe(200);
 		expect(await db.select().from(contacts).where(eq(contacts.id, pending!.id)).get())
-			.toMatchObject({ marketingStatus: "subscribed", confirmedAt: expect.any(Date) });
+			.toMatchObject({ marketingStatus: "subscribed", confirmedAt: expect.any(Date), welcomeSentAt: expect.any(Date) });
+		expect(await db.select().from(messages).where(eq(messages.subject, "Welcome")).get())
+			.toMatchObject({ toAddresses: [{ address: pending!.email, name: "Pending" }] });
 
 		const history = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", { headers: { cookie } }), env);
 		expect(await history.json()).toMatchObject({ items: [expect.objectContaining({ id: result.id, state: "queued", queued: 1, opens: 0, clicks: 0, scheduledFor: expect.any(String) })] });

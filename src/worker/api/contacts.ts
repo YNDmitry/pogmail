@@ -53,7 +53,9 @@ export const contactRoutes = new Hono<AppBindings>()
 		for (const contact of pending) {
 			const confirmationToken = contact.confirmationToken ?? crypto.randomUUID();
 			if (!contact.confirmationToken) {
-				await c.get("db").update(contacts).set({ confirmationToken }).where(eq(contacts.id, contact.id));
+				await c.get("db").update(contacts).set({ confirmationToken, confirmationMailboxId: mailbox.id }).where(eq(contacts.id, contact.id));
+			} else {
+				await c.get("db").update(contacts).set({ confirmationMailboxId: mailbox.id }).where(eq(contacts.id, contact.id));
 			}
 			const confirmationUrl = new URL(`/api/public/subscribe?token=${confirmationToken}`, c.req.url).toString();
 			const sender = mailbox.displayName ?? mailbox.address;

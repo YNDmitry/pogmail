@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, Mail, Search, Send, SquareStop, Trash2 } from "lucide-react";
+import { Ban, Mail, Search, Send, SquareStop, Trash2, Upload } from "lucide-react";
 import { Button } from "@/client/components/app/button";
 import { Choice } from "@/client/components/app/choice";
 import { DateTimePicker } from "@/client/components/app/date-time-picker";
@@ -39,6 +39,7 @@ type Contact = {
 type Template = { id: string; name: string; subject: string; bodyText: string; bodyHtml: string | null };
 type CampaignResult = { id: string; queued: number; skippedBlocked: number; skippedMissing: number; skippedUnsubscribed: number };
 type Audience = { id: string; name: string; description: string; memberCount: number };
+type ImportContact = { email: string; displayName: string | null };
 type Campaign = {
 	id: string;
 	subject: string;
@@ -59,6 +60,7 @@ function Contacts() {
 	const [campaignOpen, setCampaignOpen] = useState(false);
 	const [audienceOpen, setAudienceOpen] = useState(false);
 	const [tagOpen, setTagOpen] = useState(false);
+	const [importOpen, setImportOpen] = useState(false);
 
 	const contacts = useList<Contact>(qk.contacts(), "/api/contacts", {
 		search: search || undefined,
@@ -88,6 +90,7 @@ function Contacts() {
 				title="Contacts"
 				description="Everyone you have exchanged mail with. Campaigns only include contacts who are neither blocked nor unsubscribed."
 				actions={<>
+					<Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}><Upload className="size-3.5" />Import CSV</Button>
 					<Button size="sm" variant="secondary" disabled={selected.size === 0} onClick={() => setTagOpen(true)}>Tag contacts</Button>
 					<Button size="sm" variant="secondary" disabled={selected.size === 0} onClick={() => setAudienceOpen(true)}>Save audience</Button>
 					<Button size="sm" disabled={selected.size === 0} onClick={() => setCampaignOpen(true)}><Send className="size-3.5" />Campaign{selected.size ? ` (${selected.size})` : ""}</Button>
@@ -215,6 +218,7 @@ function Contacts() {
 			/>
 			<AudienceForm open={audienceOpen} contactIds={[...selected]} onClose={() => setAudienceOpen(false)} />
 			<TagForm open={tagOpen} contactIds={[...selected]} onClose={() => setTagOpen(false)} />
+			<ImportContactsForm open={importOpen} onClose={() => setImportOpen(false)} />
 			<AudienceLibrary contactIds={[...selected]} />
 			<CampaignHistory campaigns={campaigns.data ?? []} />
 		</div>
@@ -304,6 +308,55 @@ function AudienceForm({ open, contactIds, onClose }: { open: boolean; contactIds
 	</Modal>;
 }
 
+function ImportContactsForm({ open, onClose }: { open: boolean; onClose: () => void }) {
+	const toast = useToast();
+	const queryClient = useQueryClient();
+	const [contacts, setContacts] = useState<ImportContact[]>([]);
+	const [fileName, setFileName] = useState("");
+	const [importing, setImporting] = useState(false);
+
+	async function chooseFile(file: File | undefined) {
+		if (!file) return;
+		try {
+			const parsed = parseCsvContacts(await file.text());
+			if (parsed.length === 0) throw new Error("The file does not contain any contacts");
+			if (parsed.length > 500) throw new Error("Import up to 500 unique contacts at a time");
+			setContacts(parsed);
+			setFileName(file.name);
+		} catch (error) {
+			setContacts([]);
+			setFileName("");
+			toast.fail("Could not read CSV", error instanceof Error ? error.message : undefined);
+		}
+	}
+
+	async function submit() {
+		setImporting(true);
+		try {
+			const result = await api.post<{ imported: number; skippedExisting: number }>("/api/contacts/import", { contacts });
+			await queryClient.invalidateQueries({ queryKey: ["contacts"] });
+			toast.ok(`Imported ${result.imported} contact${result.imported === 1 ? "" : "s"}${result.skippedExisting ? `; skipped ${result.skippedExisting} existing` : ""}`);
+			setContacts([]);
+			setFileName("");
+			onClose();
+		} catch (error) {
+			toast.fail("Could not import contacts", error instanceof ApiError ? error.message : undefined);
+		} finally {
+			setImporting(false);
+		}
+	}
+
+	return <Modal open={open} onClose={onClose} title="Import contacts" description="Upload a CSV with an Email column and an optional Name column. Existing addresses are kept unchanged.">
+		<form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+			<Field label="CSV file" hint="Up to 500 unique contacts. Comma- and semicolon-separated files are supported.">
+				<Input type="file" accept=".csv,text/csv" onChange={(event) => void chooseFile(event.target.files?.[0])} />
+			</Field>
+			{fileName ? <p className="text-sm text-ink-2">{fileName}: <span className="font-medium text-ink">{contacts.length} contacts ready</span></p> : null}
+			<div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={contacts.length === 0 || importing}>{importing ? "Importing…" : "Import contacts"}</Button></div>
+		</form>
+	</Modal>;
+}
+
 function AudienceLibrary({ contactIds }: { contactIds: string[] }) {
 	const toast = useToast();
 	const queryClient = useQueryClient();
@@ -385,6 +438,40 @@ function campaignTone(state: Campaign["state"]): "wait" | "ok" | "fail" | "neutr
 	if (state === "cancelled") return "neutral";
 	if (state === "queued" || state === "sending") return "wait";
 	return "fail";
+}
+
+function parseCsvContacts(source: string): ImportContact[] {
+	const firstLine = source.split(/\r?\n/, 1)[0] ?? "";
+	const separator = (firstLine.match(/;/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? ";" : ",";
+	const rows: string[][] = [[]];
+	let value = "";
+	let quoted = false;
+	for (let index = 0; index < source.length; index += 1) {
+		const character = source[index]!;
+		if (character === '"') {
+			if (quoted && source[index + 1] === '"') { value += '"'; index += 1; }
+			else quoted = !quoted;
+		} else if (character === separator && !quoted) {
+			rows.at(-1)!.push(value); value = "";
+		} else if ((character === "\n" || character === "\r") && !quoted) {
+			if (character === "\r" && source[index + 1] === "\n") index += 1;
+			rows.at(-1)!.push(value); value = "";
+			if (rows.at(-1)!.some((cell) => cell.trim())) rows.push([]);
+			else rows[rows.length - 1] = [];
+		} else value += character;
+	}
+	if (quoted) throw new Error("The CSV has an unclosed quoted value");
+	if (value || rows.at(-1)!.length > 0) rows.at(-1)!.push(value);
+	const [header = [], ...data] = rows;
+	const columns = header.map((cell) => cell.trim().replace(/^\uFEFF/, "").toLowerCase().replace(/[_-]+/g, " "));
+	const emailColumn = columns.findIndex((column) => ["email", "email address", "e mail"].includes(column));
+	const nameColumn = columns.findIndex((column) => ["name", "full name", "display name"].includes(column));
+	if (emailColumn === -1) throw new Error("Add an Email column to the CSV header");
+	return [...new Map(data
+		.map((row) => ({ email: row[emailColumn]?.trim().toLowerCase() ?? "", displayName: row[nameColumn]?.trim() || null }))
+		.filter((contact) => contact.email)
+		.map((contact) => [contact.email, contact]))
+		.values()];
 }
 
 function CampaignComposer({

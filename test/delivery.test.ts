@@ -32,6 +32,19 @@ describe("outbound delivery retry", () => {
 		]).returning().all();
 		const session = await createSession(db, user.id);
 		const cookie = `${SESSION_COOKIE}=${session.token}`;
+		const imported = await api.fetch(new Request("https://pogmail.test/api/contacts/import", {
+			method: "POST", headers: { "content-type": "application/json", cookie },
+			body: JSON.stringify({ contacts: [
+				{ email: "imported@example.test", displayName: "Imported" },
+				{ email: "recipient@example.test", displayName: "Replaced" },
+			] }),
+		}), env);
+		expect(imported.status).toBe(200);
+		expect(await imported.json()).toMatchObject({ imported: 1, skippedExisting: 1 });
+		expect(await db.select().from(contacts).where(eq(contacts.email, "imported@example.test")).get())
+			.toMatchObject({ displayName: "Imported", source: "manual" });
+		expect(await db.select().from(contacts).where(eq(contacts.id, recipient!.id)).get())
+			.toMatchObject({ displayName: "Recipient" });
 		const scheduledFor = Date.now() + 60_000;
 		const response = await api.fetch(new Request("https://pogmail.test/api/send/campaigns", {
 			method: "POST",

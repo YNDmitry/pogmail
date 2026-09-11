@@ -24,8 +24,23 @@ const audienceInput = z.object({
 });
 const memberInput = z.object({ contactIds: z.array(z.string().min(1)).min(1).max(500) });
 const tagInput = z.object({ contactIds: z.array(z.string().min(1)).min(1).max(500), tag: z.string().trim().min(1).max(40) });
+const importInput = z.object({
+	contacts: z.array(z.object({
+		email: z.string().trim().toLowerCase().pipe(z.email()),
+		displayName: z.string().trim().max(120).nullable().optional(),
+	})).min(1).max(500),
+});
 
 export const contactRoutes = new Hono<AppBindings>()
+	.post("/import", async (c) => {
+		const input = await parseBody(c, importInput);
+		const unique = [...new Map(input.contacts.map((contact) => [contact.email, contact])).values()];
+		const inserted = await c.get("db").insert(contacts).values(unique.map((contact) => ({
+			userId: c.get("user").id, email: contact.email, displayName: contact.displayName ?? null, source: "manual" as const,
+		}))).onConflictDoNothing().returning({ id: contacts.id }).all();
+		audit(c, { action: "contact.import", metadata: { imported: inserted.length, skippedExisting: unique.length - inserted.length } });
+		return c.json({ imported: inserted.length, skippedExisting: unique.length - inserted.length });
+	})
 	.post("/tags", async (c) => {
 		const input = await parseBody(c, tagInput);
 		const owned = await c.get("db").select({ id: contacts.id, tags: contacts.tags }).from(contacts).where(and(

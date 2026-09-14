@@ -322,7 +322,12 @@ export function WeekGrid({
 					))}
 				</div>
 
-				<div className="relative flex flex-1">
+				{/*
+				 * The scroll viewport is deliberately shorter than a full day. Give this
+				 * grid its complete 24-hour height anyway: otherwise flex stretches it
+				 * only to the viewport and the day dividers end halfway down the scroll.
+				 */}
+				<div className="relative flex flex-1" style={{ minHeight: 24 * HOUR }}>
 					{days.map((day, index) => (
 						<div
 							key={day.getTime()}

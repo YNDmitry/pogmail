@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import {
   backupSettings,
   backups,
+  calendarConnections,
   mailboxes,
   messages,
   users,
@@ -29,6 +30,7 @@ import { runDelivery } from "./email/webhooks";
 import { putRawMessage } from "./storage";
 import { queueRetryDelay } from "./queue/retry";
 import { notifyMailbox } from "./realtime/notify";
+import { syncCalendarConnection } from "./calendar/sync";
 
 export { RealtimeHub } from "./realtime/hub";
 export { DatabaseBackupWorkflow } from "./backups/workflow";
@@ -186,7 +188,7 @@ export default {
     }
   },
 
-  /** Nightly: wake snoozed messages, then start a backup if one is due. */
+  /** Hourly: wake snoozed messages, refresh calendars, then start a backup if due. */
   async scheduled(_controller, env): Promise<void> {
     const db = getDb(env.DB);
 
@@ -199,6 +201,17 @@ export default {
           lte(messages.snoozedUntil, new Date()),
         ),
       );
+
+    const connections = await db.select().from(calendarConnections).all();
+    for (const connection of connections) {
+      await syncCalendarConnection(env, db, connection).catch((error: unknown) =>
+        console.error(JSON.stringify({
+          message: "Scheduled calendar sync failed",
+          connectionId: connection.id,
+          error: error instanceof Error ? error.message : String(error),
+        })),
+      );
+    }
 
     const settings = await db.select().from(backupSettings).get();
     if (!settings?.enabled || !isBackupDue(settings)) return;
@@ -221,7 +234,7 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 /**
- * The cron fires nightly regardless of schedule; this decides whether today counts.
+ * The cron fires hourly regardless of schedule; this decides whether today counts.
  * `scheduleValue` is a weekday for `weekly` and a day of month for `monthly`.
  */
 function isBackupDue(settings: typeof backupSettings.$inferSelect): boolean {

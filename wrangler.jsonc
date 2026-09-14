@@ -69,7 +69,7 @@
     }
   ],
 
-  "triggers": { "crons": ["17 3 * * *"] },
+  "triggers": { "crons": ["17 * * * *"] },
 
   "durable_objects": {
     "bindings": [

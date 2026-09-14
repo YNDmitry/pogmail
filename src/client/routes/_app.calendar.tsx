@@ -670,7 +670,7 @@ function Calendar() {
             <div key={connection.id} className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5">
               <span className="font-medium text-foreground">{connection.name}</span>
               <span className={cn("text-xs", connection.lastError ? "text-destructive" : "text-muted-foreground")}>
-                {connection.lastError ? "Sync needs attention" : connection.lastSyncedAt ? `Synced ${new Date(connection.lastSyncedAt).toLocaleDateString()}` : "Not synced"}
+                {connection.lastError ? "Sync needs attention" : connection.lastSyncedAt ? `Synced ${new Date(connection.lastSyncedAt).toLocaleString()}` : "Syncs automatically every hour"}
               </span>
               <Button size="sm" variant="ghost" onClick={async () => {
                 try {

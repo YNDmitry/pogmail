@@ -5,9 +5,8 @@ import { HTTPException } from "hono/http-exception";
 import { calendarConnections, calendarEvents, calendarOAuthStates, messageAttachments, messages, outboundJobs } from "@/db/schema";
 import { audit } from "../audit";
 import { parseIcs, toIcs } from "../calendar/ics";
-import { syncCaldav } from "../calendar/caldav";
-import { syncGoogle } from "../calendar/google";
 import { decryptSecret, encryptSecret, SecretKeyMissing } from "../auth/secrets";
+import { syncCalendarConnection } from "../calendar/sync";
 import { sendableMailbox } from "./send";
 import type { OutboundSendMessage } from "../email/types";
 import type { AppBindings } from "../middleware/context";
@@ -180,22 +179,12 @@ export const calendarRoutes = new Hono<AppBindings>()
 	});
 
 async function syncConnection(c: Context<AppBindings>, connection: typeof calendarConnections.$inferSelect) {
-	const password = connection.secret ? await decryptSecret(c.env, connection.secret) : null;
-	if (!password) throw new HTTPException(409, { message: "The calendar password can no longer be read; reconnect it" });
 	try {
-		const result = connection.provider === "caldav"
-			? await syncCaldav(c.get("db"), connection, password)
-			: await (() => {
-				const config = JSON.parse(password) as { clientSecret?: string; refreshToken?: string };
-				if (!config.clientSecret || !config.refreshToken) throw new Error("Google Calendar authorization is incomplete");
-				return syncGoogle(c.get("db"), connection, config.clientSecret, config.refreshToken);
-			})();
-		await c.get("db").update(calendarConnections).set({ lastSyncedAt: new Date(), lastError: null }).where(eq(calendarConnections.id, connection.id));
-		audit(c, { action: "calendar.caldav_sync", metadata: { connectionId: connection.id, ...result } });
+		const result = await syncCalendarConnection(c.env, c.get("db"), connection);
+		audit(c, { action: `calendar.${connection.provider}_sync`, metadata: { connectionId: connection.id, ...result } });
 		return c.json(result, 201);
 	} catch (error) {
-		const message = error instanceof Error ? error.message.slice(0, 500) : "CalDAV sync failed";
-		await c.get("db").update(calendarConnections).set({ lastError: message }).where(eq(calendarConnections.id, connection.id));
+		const message = error instanceof Error ? error.message.slice(0, 500) : "Calendar sync failed";
 		throw new HTTPException(502, { message });
 	}
 }

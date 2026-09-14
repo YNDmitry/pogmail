@@ -159,21 +159,19 @@ export function WeekGrid({
 
 	/*
 	 * Midnight is technically the start of a day, but it is almost never the
-	 * useful start of a calendar. Keep the opening viewport on working hours;
-	 * when today is visible, leave enough room above the current-time line to
-	 * make the next few hours readable. This only runs once for each week, so a
-	 * person scrolling through their day never gets pulled back unexpectedly.
+	 * useful start of a calendar. Keep the opening viewport at 08:00, a stable
+	 * reference point that does not shift the whole layout during the day. This
+	 * only runs once for each week, so a person scrolling through their day never
+	 * gets pulled back unexpectedly.
 	 */
 	useEffect(() => {
 		const body = bodyRef.current;
 		const weekStart = days[0]?.getTime();
 		if (!body || weekStart === undefined || scrolledWeekRef.current === weekStart) return;
 
-		const todayInWeek = days.some((day) => sameDay(day, now));
-		const startMinutes = todayInWeek ? Math.max(7 * 60, minutesInto(now) - 3 * 60) : 8 * 60;
-		body.scrollTop = (startMinutes / 60) * HOUR;
+		body.scrollTop = 8 * HOUR;
 		scrolledWeekRef.current = weekStart;
-	}, [days, now]);
+	}, [days]);
 
 	/** Where in the grid a pointer is, in day index and minutes past midnight. */
 	const locate = useCallback(
@@ -434,16 +432,23 @@ export function WeekGrid({
 						);
 					})}
 
-					{/* Now, but only in the week that contains it. */}
-					{days.some((day) => sameDay(day, now)) ? (
-						<div
-							aria-hidden
-							className="pointer-events-none absolute inset-x-0 z-10 border-t border-[var(--pogpin-danger)]"
-							style={{ top: (minutesInto(now) / 60) * HOUR }}
-						>
-							<span className="absolute -top-1 -left-1 size-2 rounded-full bg-[var(--pogpin-danger)]" />
-						</div>
-					) : null}
+					{/* The current-time line belongs to today's column, never the whole week. */}
+					{(() => {
+						const todayIndex = days.findIndex((day) => sameDay(day, now));
+						return todayIndex >= 0 ? (
+							<div
+								aria-hidden
+								className="pointer-events-none absolute z-10 border-t border-primary"
+								style={{
+									top: (minutesInto(now) / 60) * HOUR,
+									left: `${(todayIndex * 100) / days.length}%`,
+									width: `${100 / days.length}%`,
+								}}
+							>
+								<span className="absolute -top-1 -left-1 size-2 rounded-full bg-primary" />
+							</div>
+						) : null;
+					})()}
 				</div>
 			</div>
 		</div>

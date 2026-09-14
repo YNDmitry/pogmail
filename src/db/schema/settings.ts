@@ -36,6 +36,13 @@ export const updateSettings = sqliteTable("update_settings", {
 	...timestamps(),
 });
 
+/** Singleton instance token used to send Telegram notifications; always sealed before storage. */
+export const telegramSettings = sqliteTable("telegram_settings", {
+	id: text("id").primaryKey(),
+	telegramBotToken: text("telegram_bot_token"),
+	...timestamps(),
+});
+
 export const BACKUP_SCHEDULES = ["daily", "weekly", "monthly"] as const;
 export type BackupSchedule = (typeof BACKUP_SCHEDULES)[number];
 

@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { Database } from "@/db";
-import { mailboxAccess, mailboxes, users } from "@/db/schema";
+import { mailboxAccess, mailboxes, telegramSettings, users } from "@/db/schema";
+import { decryptSecret } from "../auth/secrets";
 
 type NewMailNotification = {
 	from: string;
@@ -13,12 +14,16 @@ type NewMailNotification = {
  * delivery must never depend on a third-party chat API being available.
  */
 export async function notifyTelegramNewMail(
-	env: Pick<Env, "TELEGRAM_BOT_TOKEN">,
+	env: { CF_TOKEN?: string; TELEGRAM_BOT_TOKEN?: string },
 	db: Database,
 	mailboxId: string,
 	mail: NewMailNotification,
 ): Promise<void> {
-	if (!env.TELEGRAM_BOT_TOKEN) return;
+	const configured = await db.select().from(telegramSettings).get();
+	const stored = configured?.telegramBotToken ? await decryptSecret(env as Env, configured.telegramBotToken).catch(() => null) : null;
+	// Keep existing deployments working until the operator saves the token in the UI.
+	const token = stored ?? env.TELEGRAM_BOT_TOKEN;
+	if (!token) return;
 
 	const mailbox = await db
 		.select({ ownerId: mailboxes.userId })
@@ -48,7 +53,7 @@ export async function notifyTelegramNewMail(
 	const text = formatNewMailNotification(mail);
 	const chatIds = [...new Set(recipients.flatMap((recipient) => (recipient.chatId ? [recipient.chatId] : [])))];
 	await Promise.all(
-		chatIds.map((chatId) => sendTelegramMessage(env.TELEGRAM_BOT_TOKEN!, chatId, text)),
+		chatIds.map((chatId) => sendTelegramMessage(token, chatId, text)),
 	);
 }
 

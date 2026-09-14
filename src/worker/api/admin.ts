@@ -3,7 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "@/db";
-import { domains, mailboxes, messages, SINGLETON_ID, updateSettings, users } from "@/db/schema";
+import { domains, mailboxes, messages, SINGLETON_ID, telegramSettings, updateSettings, users } from "@/db/schema";
 import { audit } from "../audit";
 import { BUILD_COMMIT, BUILD_REPOSITORY, UPSTREAM_REPOSITORY } from "../build";
 import { decryptSecret, encryptSecret } from "../auth/secrets";
@@ -53,6 +53,7 @@ const updateConfigInput = z.object({
 	/** Omitted leaves the stored token alone; `null` forgets it. */
 	token: z.string().min(1).nullable().optional(),
 });
+const telegramConfigInput = z.object({ token: z.string().min(1).nullable() });
 
 const suppressionQuery = z.object({
 	accountId: z.string().min(1).optional(),
@@ -157,6 +158,17 @@ async function explain404(input: UpdateInput): Promise<string> {
 
 export const adminRoutes = new Hono<AppBindings>()
 	.use("*", requireAdmin)
+	.get("/telegram/config", async (c) => {
+		const settings = await c.get("db").select({ telegramBotToken: telegramSettings.telegramBotToken }).from(telegramSettings).get();
+		return c.json({ hasToken: Boolean(settings?.telegramBotToken || c.env.TELEGRAM_BOT_TOKEN) });
+	})
+	.put("/telegram/config", async (c) => {
+		const input = await parseBody(c, telegramConfigInput);
+		const token = input.token === null ? null : await encryptSecret(c.env, input.token);
+		await c.get("db").insert(telegramSettings).values({ id: SINGLETON_ID, telegramBotToken: token }).onConflictDoUpdate({ target: telegramSettings.id, set: { telegramBotToken: token, updatedAt: new Date() } });
+		audit(c, { action: "telegram.token_update", metadata: { configured: token !== null } });
+		return c.json({ hasToken: token !== null });
+	})
 
 	/** Account-wide Cloudflare suppressions, limited to accounts this installation manages. */
 	.get("/suppressions", async (c) => {

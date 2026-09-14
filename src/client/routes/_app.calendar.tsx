@@ -75,6 +75,7 @@ type CalendarEvent = {
   startsAt: string;
   endsAt: string;
 };
+type CalendarConnection = { id: string; provider: "caldav" | "google"; name: string; lastSyncedAt: string | null; lastError: string | null };
 
 /*
  * Everything below is local time.
@@ -125,6 +126,8 @@ const DAY_SHORT = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
   month: "short",
 });
+const AGENDA_WEEKDAY = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+const AGENDA_MONTH = new Intl.DateTimeFormat(undefined, { month: "short" });
 
 /** A week can straddle two months, so it says both ends. */
 function WEEK_LABEL(days: Date[]): string {
@@ -251,6 +254,8 @@ function Calendar() {
   } | null>(null);
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
+  const [caldavOpen, setCaldavOpen] = useState(false);
+  const [googleOpen, setGoogleOpen] = useState(false);
   const icsRef = useRef<HTMLInputElement>(null);
 
   /*
@@ -302,6 +307,10 @@ function Calendar() {
           query: { from, to },
         })
       ).items,
+  });
+  const connections = useQuery({
+    queryKey: ["calendar", "connections"],
+    queryFn: () => api.get<CalendarConnection[]>("/api/calendar/connections"),
   });
 
   const byDay = useMemo(() => {
@@ -465,6 +474,17 @@ function Calendar() {
     .toSorted(
       (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
     );
+  const agendaDays = useMemo(() => {
+    const groups = new Map<number, { day: Date; events: CalendarEvent[] }>();
+    for (const event of monthEvents) {
+      const day = startOfDay(new Date(event.startsAt));
+      const key = day.getTime();
+      const group = groups.get(key) ?? { day, events: [] };
+      group.events.push(event);
+      groups.set(key, group);
+    }
+    return [...groups.values()];
+  }, [monthEvents]);
 
   async function importIcs(file: File | null) {
     if (!file) return;
@@ -530,14 +550,14 @@ function Calendar() {
         title="Calendar"
         description="Events you keep alongside your mail. Invitations you accept land here too."
         actions={
-          <Button
-            size="sm"
-            title="New event (N)"
-            onClick={() => setDraft(draftForDay(today))}
-          >
-            <Plus className="size-3.5" />
-            New event
-          </Button>
+          <>
+            <Button size="sm" variant="secondary" onClick={() => setCaldavOpen(true)}>Connect CalDAV</Button>
+            <Button size="sm" variant="secondary" onClick={() => setGoogleOpen(true)}>Connect Google</Button>
+            <Button size="sm" title="New event (N)" onClick={() => setDraft(draftForDay(today))}>
+              <Plus className="size-3.5" />
+              New event
+            </Button>
+          </>
         }
       />
 
@@ -643,6 +663,28 @@ function Calendar() {
           </Button>
         </div>
       </div>
+
+      {connections.data?.length ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {connections.data.map((connection) => (
+            <div key={connection.id} className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5">
+              <span className="font-medium text-foreground">{connection.name}</span>
+              <span className={cn("text-xs", connection.lastError ? "text-destructive" : "text-muted-foreground")}>
+                {connection.lastError ? "Sync needs attention" : connection.lastSyncedAt ? `Synced ${new Date(connection.lastSyncedAt).toLocaleDateString()}` : "Not synced"}
+              </span>
+              <Button size="sm" variant="ghost" onClick={async () => {
+                try {
+                  const result = await api.post<{ imported: number; exported: number }>(`/api/calendar/connections/${connection.id}/sync`);
+                  await client.invalidateQueries({ queryKey: ["calendar"] });
+                  toast.ok("Calendar synced", `${result.imported} imported, ${result.exported} exported.`);
+                } catch (error) {
+                  toast.fail("Could not sync calendar", error instanceof ApiError ? error.message : undefined);
+                }
+              }}>Sync</Button>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {view === "week" ? (
         <Card className="overflow-hidden">
@@ -762,18 +804,31 @@ function Calendar() {
           </div>
         </Card>
       ) : (
-        <Card>
+        <Card className="overflow-hidden">
           {monthEvents.length ? (
-            <ul className="divide-y divide-border">
-              {monthEvents.map((event) => (
-                <li key={event.id}>
-                  <AgendaRow
-                    event={event}
-                    onOpen={() => setDraft(draftFromEvent(event))}
-                  />
-                </li>
+            <div className="divide-y divide-border">
+              {agendaDays.map(({ day, events: dayEvents }) => (
+                <section key={day.getTime()} className="grid grid-cols-[5.5rem_minmax(0,1fr)]">
+                  <header className="border-r border-border bg-[var(--pogpin-shell-fill-soft)] px-3 py-3">
+                    <p className="field-label">{AGENDA_WEEKDAY.format(day)}</p>
+                    <p className="machine mt-1 text-lg font-medium leading-none text-foreground">
+                      {day.getDate()}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{AGENDA_MONTH.format(day)}</p>
+                  </header>
+                  <ul className="divide-y divide-border">
+                    {dayEvents.map((event) => (
+                      <li key={event.id}>
+                        <AgendaRow
+                          event={event}
+                          onOpen={() => setDraft(draftFromEvent(event))}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           ) : (
             <Empty
               title="Nothing this month"
@@ -798,6 +853,16 @@ function Calendar() {
         onInvite={invite}
       />
 
+      <CaldavDialog
+        open={caldavOpen}
+        onClose={() => setCaldavOpen(false)}
+        onConnected={async () => {
+          await client.invalidateQueries({ queryKey: ["calendar"] });
+          setCaldavOpen(false);
+        }}
+      />
+      <GoogleDialog open={googleOpen} onClose={() => setGoogleOpen(false)} />
+
       <Modal
         open={openDay !== null}
         onClose={() => setOpenDay(null)}
@@ -821,6 +886,61 @@ function Calendar() {
         </ul>
       </Modal>
     </div>
+  );
+}
+
+function GoogleDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+  if (!open) return null;
+  const callback = `${location.origin}/api/calendar/connections/google/callback`;
+  return <Modal open onClose={onClose} title="Connect Google Calendar">
+    <form className="space-y-4" onSubmit={async (event) => {
+      event.preventDefault(); const form = new FormData(event.currentTarget); setSaving(true);
+      try {
+        const { url } = await api.post<{ url: string }>("/api/calendar/connections/google/start", { clientId: String(form.get("clientId")), clientSecret: String(form.get("clientSecret")) });
+        location.assign(url);
+      } catch (error) { toast.fail("Could not start Google connection", error instanceof ApiError ? error.message : undefined); setSaving(false); }
+    }}>
+      <p className="text-sm text-muted-foreground">In Google Cloud, enable Calendar API and create an OAuth Client of type <strong>Web application</strong>. Add this exact authorized redirect URI:</p>
+      <code className="machine block break-all rounded-md bg-accent px-3 py-2 text-xs text-foreground">{callback}</code>
+      <Field label="OAuth Client ID"><Input name="clientId" required /></Field>
+      <Field label="OAuth Client Secret"><Input name="clientSecret" type="password" required /></Field>
+      <p className="text-xs text-muted-foreground">The secret is encrypted immediately and is never returned to the browser.</p>
+      <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? "Opening Google…" : "Continue with Google"}</Button></div>
+    </form>
+  </Modal>;
+}
+
+function CaldavDialog({ open, onClose, onConnected }: { open: boolean; onClose: () => void; onConnected: () => Promise<void> }) {
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+  return (
+    <Modal open onClose={onClose} title="Connect CalDAV">
+      <form className="space-y-4" onSubmit={async (event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        setSaving(true);
+        try {
+          const result = await api.post<{ imported: number; exported: number }>("/api/calendar/connections/caldav", {
+            name: String(form.get("name")), calendarUrl: String(form.get("calendarUrl")), username: String(form.get("username")), password: String(form.get("password")),
+          });
+          await onConnected();
+          toast.ok("Calendar connected", `${result.imported} imported, ${result.exported} exported.`);
+        } catch (error) {
+          toast.fail("Could not connect calendar", error instanceof ApiError ? error.message : undefined);
+        } finally { setSaving(false); }
+      }}>
+        <p className="text-sm text-muted-foreground">Connect iCloud, Nextcloud, Fastmail, or another CalDAV calendar. Use an app-specific password when your provider offers one.</p>
+        <Field label="Name"><Input name="name" defaultValue="CalDAV calendar" required maxLength={120} /></Field>
+        <Field label="Calendar URL" hint="The URL of the specific calendar, not the account homepage."><Input name="calendarUrl" type="url" placeholder="https://calendar.example.com/dav/user/calendar/" required /></Field>
+        <Field label="Username"><Input name="username" autoComplete="username" required /></Field>
+        <Field label="App password"><Input name="password" type="password" autoComplete="current-password" required /></Field>
+        <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? "Connecting…" : "Connect and sync"}</Button></div>
+      </form>
+    </Modal>
   );
 }
 
@@ -910,21 +1030,21 @@ function AgendaRow({
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-[var(--pogpin-shell-fill-soft)]"
+      className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--pogpin-shell-fill-soft)]"
     >
-      <div className="w-24 shrink-0">
-        <div className="text-sm font-medium text-foreground">
-          {DAY_LONG.format(start)}
-        </div>
-        <Machine className="text-xs">
-          {event.allDay
-            ? "All day"
-            : `${TIME.format(start)}–${TIME.format(end)}`}
+      <div className="w-16 shrink-0 text-right">
+        <Machine className="block text-[0.6875rem] text-foreground">
+          {event.allDay ? "All day" : TIME.format(start)}
         </Machine>
+        {!event.allDay ? (
+          <Machine className="mt-0.5 block text-[0.625rem]">
+            {TIME.format(end)}
+          </Machine>
+        ) : null}
       </div>
 
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm text-foreground">{event.title}</div>
+      <div className="min-w-0 flex-1 border-l border-border pl-3">
+        <div className="truncate text-sm font-medium text-foreground">{event.title}</div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {event.location ? (
             <span className="flex min-w-0 items-center gap-1.5">

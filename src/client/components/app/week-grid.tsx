@@ -27,6 +27,10 @@ function minutesInto(date: Date): number {
 	return date.getHours() * 60 + date.getMinutes();
 }
 
+function clockLabel(date: Date): string {
+	return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
 function snap(minutes: number): number {
 	return Math.max(0, Math.min(24 * 60, Math.round(minutes / SNAP) * SNAP));
 }
@@ -123,6 +127,7 @@ export function WeekGrid({
 	onMove: (event: WeekEvent, start: Date, end: Date) => void;
 }) {
 	const bodyRef = useRef<HTMLDivElement>(null);
+	const scrolledWeekRef = useRef<number | null>(null);
 	const [drag, setDrag] = useState<Drag | null>(null);
 	const [now, setNow] = useState(() => new Date());
 
@@ -155,6 +160,22 @@ export function WeekGrid({
 	);
 
 	const blocks = useMemo(() => timed.flatMap((list, day) => layoutDay(list, day)), [timed]);
+
+	/*
+	 * Midnight is technically the start of a day, but it is almost never the
+	 * useful start of a calendar. Keep the opening viewport at 08:00, a stable
+	 * reference point that does not shift the whole layout during the day. This
+	 * only runs once for each week, so a person scrolling through their day never
+	 * gets pulled back unexpectedly.
+	 */
+	useEffect(() => {
+		const body = bodyRef.current;
+		const weekStart = days[0]?.getTime();
+		if (!body || weekStart === undefined || scrolledWeekRef.current === weekStart) return;
+
+		body.scrollTop = 8 * HOUR;
+		scrolledWeekRef.current = weekStart;
+	}, [days]);
 
 	/** Where in the grid a pointer is, in day index and minutes past midnight. */
 	const locate = useCallback(
@@ -305,7 +326,12 @@ export function WeekGrid({
 					))}
 				</div>
 
-				<div className="relative flex flex-1">
+				{/*
+				 * The scroll viewport is deliberately shorter than a full day. Give this
+				 * grid its complete 24-hour height anyway: otherwise flex stretches it
+				 * only to the viewport and the day dividers end halfway down the scroll.
+				 */}
+				<div className="relative flex flex-1" style={{ minHeight: 24 * HOUR }}>
 					{days.map((day, index) => (
 						<div
 							key={day.getTime()}
@@ -415,16 +441,32 @@ export function WeekGrid({
 						);
 					})}
 
-					{/* Now, but only in the week that contains it. */}
-					{days.some((day) => sameDay(day, now)) ? (
-						<div
-							aria-hidden
-							className="pointer-events-none absolute inset-x-0 z-10 border-t border-[var(--pogpin-danger)]"
-							style={{ top: (minutesInto(now) / 60) * HOUR }}
-						>
-							<span className="absolute -top-1 -left-1 size-2 rounded-full bg-[var(--pogpin-danger)]" />
-						</div>
-					) : null}
+					{/* The current-time line belongs to today's column, never the whole week. */}
+					{(() => {
+						const todayIndex = days.findIndex((day) => sameDay(day, now));
+						return todayIndex >= 0 ? (
+							<>
+								<div
+									aria-hidden
+									className="pointer-events-none absolute inset-x-0 z-10 border-t border-primary opacity-50"
+									style={{ top: (minutesInto(now) / 60) * HOUR }}
+								/>
+								<div
+									aria-hidden
+									className="pointer-events-none absolute z-10 border-t border-primary"
+									style={{
+										top: (minutesInto(now) / 60) * HOUR,
+										left: `${(todayIndex * 100) / days.length}%`,
+										width: `${100 / days.length}%`,
+									}}
+								>
+									<span className="absolute -top-2 -left-4 grid h-4 min-w-8 place-items-center rounded-full bg-primary px-0.5 text-[0.4375rem] font-semibold text-primary-foreground shadow-sm">
+										{clockLabel(now)}
+									</span>
+								</div>
+							</>
+						) : null;
+					})()}
 				</div>
 			</div>
 		</div>

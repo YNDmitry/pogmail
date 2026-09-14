@@ -253,6 +253,7 @@ function ComposeForm({
 	}, [replyingTo]);
 
 	/** Saves and returns the draft id, creating the draft on first use. */
+	// oxlint-disable react/memo-dependencies -- React Compiler requires setSavedSnapshot to preserve this callback.
 	const saveDraft = useCallback(async (): Promise<string> => {
 		const pending = JSON.stringify({ mailboxId, to, cc, bcc, subject, body });
 		const payload = {
@@ -296,8 +297,6 @@ function ComposeForm({
 			setSaveState("error");
 			throw error;
 		}
-		// The setters are listed because the React Compiler check infers them too;
-		// they are stable, so they cost nothing.
 	}, [
 		draftId,
 		mailboxId,
@@ -309,10 +308,9 @@ function ComposeForm({
 		inReplyTo,
 		threadId,
 		navigate,
-		setDraftId,
 		setSavedSnapshot,
-		setSaveState,
 	]);
+	// oxlint-enable react/memo-dependencies
 
 	/*
 	 * Autosave. An empty form saves nothing: opening this screen and leaving it

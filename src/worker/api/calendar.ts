@@ -1,10 +1,12 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 import { HTTPException } from "hono/http-exception";
-import { calendarEvents, messageAttachments, messages, outboundJobs } from "@/db/schema";
+import { calendarConnections, calendarEvents, messageAttachments, messages, outboundJobs } from "@/db/schema";
 import { audit } from "../audit";
 import { parseIcs, toIcs } from "../calendar/ics";
+import { syncCaldav } from "../calendar/caldav";
+import { decryptSecret, encryptSecret, SecretKeyMissing } from "../auth/secrets";
 import { sendableMailbox } from "./send";
 import type { OutboundSendMessage } from "../email/types";
 import type { AppBindings } from "../middleware/context";
@@ -40,7 +42,36 @@ const eventInput = z
 		path: ["endsAt"],
 	});
 
+const caldavInput = z.object({
+	name: z.string().trim().min(1).max(120),
+	calendarUrl: z.url().refine((value) => new URL(value).protocol === "https:", "Use an HTTPS CalDAV URL"),
+	username: z.string().trim().min(1).max(320),
+	password: z.string().min(1).max(2000),
+});
+
 export const calendarRoutes = new Hono<AppBindings>()
+	.get("/connections", async (c) => c.json(await c.get("db").select({ id: calendarConnections.id, provider: calendarConnections.provider, name: calendarConnections.name, calendarUrl: calendarConnections.calendarUrl, lastSyncedAt: calendarConnections.lastSyncedAt, lastError: calendarConnections.lastError }).from(calendarConnections).where(eq(calendarConnections.userId, c.get("user").id)).all()))
+	.post("/connections/caldav", async (c) => {
+		const input = await parseBody(c, caldavInput);
+		let secret: string;
+		try { secret = await encryptSecret(c.env, input.password); } catch (error) {
+			if (error instanceof SecretKeyMissing) throw new HTTPException(409, { message: error.message });
+			throw error;
+		}
+		const connection = await c.get("db").insert(calendarConnections).values({ userId: c.get("user").id, provider: "caldav", name: input.name, calendarUrl: input.calendarUrl, username: input.username, secret }).returning().get();
+		return syncConnection(c, connection);
+	})
+	.post("/connections/:id/sync", async (c) => {
+		const connection = await c.get("db").select().from(calendarConnections).where(and(eq(calendarConnections.id, c.req.param("id")), eq(calendarConnections.userId, c.get("user").id))).get();
+		if (!connection) notFound("Calendar connection");
+		return syncConnection(c, connection);
+	})
+	.delete("/connections/:id", async (c) => {
+		const removed = await c.get("db").delete(calendarConnections).where(and(eq(calendarConnections.id, c.req.param("id")), eq(calendarConnections.userId, c.get("user").id))).returning({ id: calendarConnections.id }).get();
+		if (!removed) notFound("Calendar connection");
+		audit(c, { action: "calendar.connection_remove", metadata: { connectionId: removed.id } });
+		return c.json({ ok: true });
+	})
 	.get("/events", async (c) => {
 		const range = await parseQuery(c, rangeQuery);
 
@@ -116,6 +147,21 @@ export const calendarRoutes = new Hono<AppBindings>()
 		if (!row) notFound("Event");
 		return c.json({ ok: true });
 	});
+
+async function syncConnection(c: Context<AppBindings>, connection: typeof calendarConnections.$inferSelect) {
+	const password = connection.secret ? await decryptSecret(c.env, connection.secret) : null;
+	if (!password) throw new HTTPException(409, { message: "The calendar password can no longer be read; reconnect it" });
+	try {
+		const result = await syncCaldav(c.get("db"), connection, password);
+		await c.get("db").update(calendarConnections).set({ lastSyncedAt: new Date(), lastError: null }).where(eq(calendarConnections.id, connection.id));
+		audit(c, { action: "calendar.caldav_sync", metadata: { connectionId: connection.id, ...result } });
+		return c.json(result, 201);
+	} catch (error) {
+		const message = error instanceof Error ? error.message.slice(0, 500) : "CalDAV sync failed";
+		await c.get("db").update(calendarConnections).set({ lastError: message }).where(eq(calendarConnections.id, connection.id));
+		throw new HTTPException(502, { message });
+	}
+}
 
 /**
  * Everything below moves events between this calendar and the rest of the world:

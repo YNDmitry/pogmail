@@ -390,3 +390,38 @@ export const calendarEvents = sqliteTable(
 	},
 	(t) => [index("calendar_events_user_starts_idx").on(t.userId, t.startsAt)],
 );
+
+/** A user-owned external calendar. Provider-specific access tokens are sealed at rest. */
+export const calendarConnections = sqliteTable(
+	"calendar_connections",
+	{
+		id: id(),
+		userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+		provider: text("provider", { enum: ["caldav", "google"] }).notNull(),
+		name: text("name").notNull(),
+		calendarUrl: text("calendar_url").notNull(),
+		username: text("username"),
+		secret: text("secret"),
+		lastSyncedAt: integer("last_synced_at", { mode: "timestamp_ms" }),
+		lastError: text("last_error"),
+		...timestamps(),
+	},
+	(t) => [index("calendar_connections_user_idx").on(t.userId, t.provider)],
+);
+
+/** Maps a local event to its CalDAV resource and concurrency ETag. */
+export const calendarEventLinks = sqliteTable(
+	"calendar_event_links",
+	{
+		id: id(),
+		connectionId: text("connection_id").notNull().references(() => calendarConnections.id, { onDelete: "cascade" }),
+		eventId: text("event_id").notNull().references(() => calendarEvents.id, { onDelete: "cascade" }),
+		href: text("href").notNull(),
+		etag: text("etag"),
+		...timestamps(),
+	},
+	(t) => [
+		uniqueIndex("calendar_event_links_connection_event_unq").on(t.connectionId, t.eventId),
+		uniqueIndex("calendar_event_links_connection_href_unq").on(t.connectionId, t.href),
+	],
+);

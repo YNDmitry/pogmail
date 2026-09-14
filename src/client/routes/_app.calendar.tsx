@@ -75,6 +75,7 @@ type CalendarEvent = {
   startsAt: string;
   endsAt: string;
 };
+type CalendarConnection = { id: string; provider: "caldav" | "google"; name: string; lastSyncedAt: string | null; lastError: string | null };
 
 /*
  * Everything below is local time.
@@ -253,6 +254,7 @@ function Calendar() {
   } | null>(null);
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
+  const [caldavOpen, setCaldavOpen] = useState(false);
   const icsRef = useRef<HTMLInputElement>(null);
 
   /*
@@ -304,6 +306,10 @@ function Calendar() {
           query: { from, to },
         })
       ).items,
+  });
+  const connections = useQuery({
+    queryKey: ["calendar", "connections"],
+    queryFn: () => api.get<CalendarConnection[]>("/api/calendar/connections"),
   });
 
   const byDay = useMemo(() => {
@@ -543,14 +549,15 @@ function Calendar() {
         title="Calendar"
         description="Events you keep alongside your mail. Invitations you accept land here too."
         actions={
-          <Button
-            size="sm"
-            title="New event (N)"
-            onClick={() => setDraft(draftForDay(today))}
-          >
-            <Plus className="size-3.5" />
-            New event
-          </Button>
+          <>
+            <Button size="sm" variant="secondary" onClick={() => setCaldavOpen(true)}>
+              Connect CalDAV
+            </Button>
+            <Button size="sm" title="New event (N)" onClick={() => setDraft(draftForDay(today))}>
+              <Plus className="size-3.5" />
+              New event
+            </Button>
+          </>
         }
       />
 
@@ -656,6 +663,28 @@ function Calendar() {
           </Button>
         </div>
       </div>
+
+      {connections.data?.length ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {connections.data.map((connection) => (
+            <div key={connection.id} className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5">
+              <span className="font-medium text-foreground">{connection.name}</span>
+              <span className={cn("text-xs", connection.lastError ? "text-destructive" : "text-muted-foreground")}>
+                {connection.lastError ? "Sync needs attention" : connection.lastSyncedAt ? `Synced ${new Date(connection.lastSyncedAt).toLocaleDateString()}` : "Not synced"}
+              </span>
+              <Button size="sm" variant="ghost" onClick={async () => {
+                try {
+                  const result = await api.post<{ imported: number; exported: number }>(`/api/calendar/connections/${connection.id}/sync`);
+                  await client.invalidateQueries({ queryKey: ["calendar"] });
+                  toast.ok("Calendar synced", `${result.imported} imported, ${result.exported} exported.`);
+                } catch (error) {
+                  toast.fail("Could not sync calendar", error instanceof ApiError ? error.message : undefined);
+                }
+              }}>Sync</Button>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {view === "week" ? (
         <Card className="overflow-hidden">
@@ -824,6 +853,15 @@ function Calendar() {
         onInvite={invite}
       />
 
+      <CaldavDialog
+        open={caldavOpen}
+        onClose={() => setCaldavOpen(false)}
+        onConnected={async () => {
+          await client.invalidateQueries({ queryKey: ["calendar"] });
+          setCaldavOpen(false);
+        }}
+      />
+
       <Modal
         open={openDay !== null}
         onClose={() => setOpenDay(null)}
@@ -847,6 +885,38 @@ function Calendar() {
         </ul>
       </Modal>
     </div>
+  );
+}
+
+function CaldavDialog({ open, onClose, onConnected }: { open: boolean; onClose: () => void; onConnected: () => Promise<void> }) {
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+
+  if (!open) return null;
+  return (
+    <Modal open onClose={onClose} title="Connect CalDAV">
+      <form className="space-y-4" onSubmit={async (event) => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        setSaving(true);
+        try {
+          const result = await api.post<{ imported: number; exported: number }>("/api/calendar/connections/caldav", {
+            name: String(form.get("name")), calendarUrl: String(form.get("calendarUrl")), username: String(form.get("username")), password: String(form.get("password")),
+          });
+          await onConnected();
+          toast.ok("Calendar connected", `${result.imported} imported, ${result.exported} exported.`);
+        } catch (error) {
+          toast.fail("Could not connect calendar", error instanceof ApiError ? error.message : undefined);
+        } finally { setSaving(false); }
+      }}>
+        <p className="text-sm text-muted-foreground">Connect iCloud, Nextcloud, Fastmail, or another CalDAV calendar. Use an app-specific password when your provider offers one.</p>
+        <Field label="Name"><Input name="name" defaultValue="CalDAV calendar" required maxLength={120} /></Field>
+        <Field label="Calendar URL" hint="The URL of the specific calendar, not the account homepage."><Input name="calendarUrl" type="url" placeholder="https://calendar.example.com/dav/user/calendar/" required /></Field>
+        <Field label="Username"><Input name="username" autoComplete="username" required /></Field>
+        <Field label="App password"><Input name="password" type="password" autoComplete="current-password" required /></Field>
+        <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? "Connecting…" : "Connect and sync"}</Button></div>
+      </form>
+    </Modal>
   );
 }
 

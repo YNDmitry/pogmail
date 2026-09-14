@@ -6,6 +6,7 @@ export const qk = {
 
 	mailboxes: ["mailboxes"] as const,
 	mailbox: (id: string) => ["mailboxes", id] as const,
+	externalAccounts: ["external-accounts"] as const,
 
 	messages: (filters: Record<string, unknown>) => ["messages", filters] as const,
 	message: (id: string) => ["messages", id] as const,

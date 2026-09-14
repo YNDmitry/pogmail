@@ -13,6 +13,8 @@ interface PogmailSecrets {
 	 * the key material the stored GitHub update token is encrypted under.
 	 */
 	CF_TOKEN: string;
+	/** Independent envelope key for credentials of externally connected mailboxes. */
+	EXTERNAL_ACCOUNTS_ENCRYPTION_KEY?: string;
 	/**
 	 * Overrides the Worker name Email Routing rules point at. Only needed when the
 	 * deployed script was renamed away from the name in `wrangler.jsonc`.

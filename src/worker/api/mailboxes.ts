@@ -105,7 +105,9 @@ export const mailboxRoutes = new Hono<AppBindings>()
 		const mailbox = await loadReadable(c, c.req.param("id"));
 
 		const [domain, aliases, sharing] = await Promise.all([
-			c.get("db").select().from(domains).where(eq(domains.id, mailbox.domainId)).get(),
+			mailbox.domainId
+				? c.get("db").select().from(domains).where(eq(domains.id, mailbox.domainId)).get()
+				: Promise.resolve(undefined),
 			c.get("db").select().from(mailboxAliases).where(eq(mailboxAliases.mailboxId, mailbox.id)).all(),
 			c
 				.get("db")
@@ -156,7 +158,9 @@ export const mailboxRoutes = new Hono<AppBindings>()
 			.get();
 		if (!mailbox) notFound("Mailbox");
 
-		const domain = await c.get("db").select().from(domains).where(eq(domains.id, mailbox.domainId)).get();
+		const domain = mailbox.domainId
+			? await c.get("db").select().from(domains).where(eq(domains.id, mailbox.domainId)).get()
+			: undefined;
 		if (domain && mailbox.cloudflareRuleId) {
 			await removeMailboxRule(c.env, domain.zoneId, mailbox.cloudflareRuleId);
 		}

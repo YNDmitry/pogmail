@@ -5,7 +5,8 @@
   "compatibility_date": "2026-08-22",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "traces": { "enabled": true, "head_sampling_rate": 0.05 }
   },
   "assets": {
     "not_found_handling": "single-page-application",
@@ -33,6 +34,10 @@
       {
         "binding": "OUTBOUND_QUEUE",
         "queue": "pogmail-outbound"
+      },
+      {
+        "binding": "EXTERNAL_SYNC_QUEUE",
+        "queue": "pogmail-external-sync"
       }
     ],
     "consumers": [
@@ -53,6 +58,12 @@
         "max_batch_size": 10,
         "max_retries": 3,
         "dead_letter_queue": "pogmail-dlq"
+      },
+      {
+        "queue": "pogmail-external-sync",
+        "max_batch_size": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "pogmail-dlq"
       }
     ]
   },
@@ -69,7 +80,7 @@
     }
   ],
 
-  "triggers": { "crons": ["17 * * * *"] },
+  "triggers": { "crons": ["*/5 * * * *", "17 * * * *"] },
 
   "durable_objects": {
     "bindings": [

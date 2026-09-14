@@ -105,6 +105,9 @@ export const messages = sqliteTable(
 
 		/** R2 key of the untouched MIME source, so the parse can be redone later. */
 		rawKey: text("raw_key"),
+		/** IMAP identity for an external mailbox; both values are null for native mail. */
+		externalFolderId: text("external_folder_id"),
+		externalUid: integer("external_uid"),
 		sizeBytes: integer("size_bytes").notNull().default(0),
 		hasAttachments: integer("has_attachments", { mode: "boolean" }).notNull().default(false),
 
@@ -125,6 +128,7 @@ export const messages = sqliteTable(
 		index("messages_snoozed_idx").on(t.snoozedUntil),
 		// Redelivery of the same Message-ID into the same mailbox is a no-op.
 		uniqueIndex("messages_dedupe_unq").on(t.mailboxId, t.messageId),
+		uniqueIndex("messages_external_uid_unq").on(t.externalFolderId, t.externalUid),
 		uniqueIndex("messages_open_tracking_token_unq").on(t.openTrackingToken),
 		index("messages_campaign_opened_idx").on(t.campaignId, t.openedAt),
 	],

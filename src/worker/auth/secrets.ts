@@ -99,3 +99,51 @@ export async function decryptSecret(env: Env, stored: string): Promise<string | 
 		return null;
 	}
 }
+
+/**
+ * External mailbox credentials must survive a routine Cloudflare API-token rotation.
+ * Deployments set this with `wrangler secret put EXTERNAL_ACCOUNTS_ENCRYPTION_KEY`.
+ */
+export function encryptExternalAccountSecret(env: Env, value: string): Promise<string> {
+	if (!env.EXTERNAL_ACCOUNTS_ENCRYPTION_KEY) {
+		throw new SecretKeyMissing();
+	}
+	return encryptWithKey(env.EXTERNAL_ACCOUNTS_ENCRYPTION_KEY, value);
+}
+
+export function decryptExternalAccountSecret(env: Env, stored: string): Promise<string | null> {
+	if (!env.EXTERNAL_ACCOUNTS_ENCRYPTION_KEY) {
+		throw new SecretKeyMissing();
+	}
+	return decryptWithKey(env.EXTERNAL_ACCOUNTS_ENCRYPTION_KEY, stored);
+}
+
+async function encryptWithKey(secret: string, value: string): Promise<string> {
+	const salt = crypto.getRandomValues(new Uint8Array(16));
+	const iv = crypto.getRandomValues(new Uint8Array(12));
+	const key = await deriveKey(secret, salt, ITERATIONS);
+	const sealed = await crypto.subtle.encrypt(
+		{ name: "AES-GCM", iv },
+		key,
+		new TextEncoder().encode(value),
+	);
+	return [PREFIX, ITERATIONS, toB64(salt), toB64(iv), toB64(sealed)].join(":");
+}
+
+async function decryptWithKey(secret: string, stored: string): Promise<string | null> {
+	const [prefix, iterationsRaw, saltB64, ivB64, payloadB64] = stored.split(":");
+	if (prefix !== PREFIX || !iterationsRaw || !saltB64 || !ivB64 || !payloadB64) return null;
+	const iterations = Number(iterationsRaw);
+	if (!Number.isFinite(iterations) || iterations <= 0 || iterations > ITERATIONS) return null;
+	try {
+		const key = await deriveKey(secret, fromB64(saltB64), iterations);
+		const opened = await crypto.subtle.decrypt(
+			{ name: "AES-GCM", iv: fromB64(ivB64) },
+			key,
+			fromB64(payloadB64),
+		);
+		return new TextDecoder().decode(opened);
+	} catch {
+		return null;
+	}
+}

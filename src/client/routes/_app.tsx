@@ -82,6 +82,7 @@ export const Route = createFileRoute("/_app")({
 const SETTINGS_TITLES: Record<string, string> = {
   profile: "Profile",
   mailboxes: "Mailboxes",
+  "mail-accounts": "Mail accounts",
   rules: "Filters",
   templates: "Templates",
   "api-keys": "API keys",

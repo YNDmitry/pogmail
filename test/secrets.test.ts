@@ -1,8 +1,15 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { decryptSecret, encryptSecret, SecretKeyMissing } from "@/worker/auth/secrets";
+import {
+	decryptExternalAccountSecret,
+	decryptSecret,
+	encryptExternalAccountSecret,
+	encryptSecret,
+	SecretKeyMissing,
+} from "@/worker/auth/secrets";
 
 const withKey = (key: string | undefined) => ({ ...env, CF_TOKEN: key }) as Env;
+const withExternalKey = (key: string | undefined) => ({ ...env, EXTERNAL_ACCOUNTS_ENCRYPTION_KEY: key }) as Env;
 
 describe("secret envelope", () => {
 	it("round-trips a stored token", async () => {
@@ -35,5 +42,15 @@ describe("secret envelope", () => {
 
 	it("says so when no key is configured", async () => {
 		await expect(encryptSecret(withKey(undefined), "x")).rejects.toBeInstanceOf(SecretKeyMissing);
+	});
+
+	it("seals external credentials under an independent key", async () => {
+		const sealed = await encryptExternalAccountSecret(withExternalKey("external-key"), "app-password");
+
+		expect(sealed).not.toContain("app-password");
+		expect(await decryptExternalAccountSecret(withExternalKey("external-key"), sealed)).toBe("app-password");
+		// Rotating the Cloudflare API token must not disconnect mail accounts.
+		expect(await decryptExternalAccountSecret({ ...withExternalKey("external-key"), CF_TOKEN: "rotated" }, sealed)).toBe("app-password");
+		expect(await decryptExternalAccountSecret(withExternalKey("other-key"), sealed)).toBeNull();
 	});
 });

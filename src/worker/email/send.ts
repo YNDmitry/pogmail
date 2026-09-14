@@ -2,11 +2,13 @@ import { createMimeMessage, Mailbox } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { getDb, type Database } from "@/db";
-import { contacts, domains, emailCampaigns, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
+import { contacts, domains, emailCampaigns, externalAccounts, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "./types";
 import { safeEmailHtml } from "./html-safety";
 import { nextScheduledDelay } from "./schedule";
 import { notifyMailbox } from "../realtime/notify";
+import { decryptExternalAccountSecret } from "../auth/secrets";
+import { SmtpConnection } from "../external/smtp";
 
 /** A crashed consumer can leave a recipient claimed; after this, another job recovers it. */
 const DELIVERY_LEASE_MS = 5 * 60 * 1000;
@@ -29,15 +31,18 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			message: messages,
 			signatureText: mailboxes.signature,
 			signatureHtml: mailboxes.signatureHtml,
+			mailboxSource: mailboxes.source,
 			campaignStatus: emailCampaigns.status,
 			campaignUserId: emailCampaigns.userId,
 			domainHostname: domains.hostname,
+			external: externalAccounts,
 		})
 		.from(outboundJobs)
 		.innerJoin(messages, eq(messages.id, outboundJobs.messageId))
 		.leftJoin(mailboxes, eq(mailboxes.id, messages.mailboxId))
 		.leftJoin(emailCampaigns, eq(emailCampaigns.id, messages.campaignId))
 		.leftJoin(domains, eq(domains.id, mailboxes.domainId))
+		.leftJoin(externalAccounts, eq(externalAccounts.mailboxId, mailboxes.id))
 		.where(eq(outboundJobs.id, job.jobId))
 		.get();
 
@@ -195,7 +200,12 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			if (!claimed) continue;
 
 			try {
-				await env.EMAIL.send(new EmailMessage(row.message.fromAddress, delivery.recipient, mime.asRaw()));
+				if (row.mailboxSource === "external") {
+					if (!row.external) throw new Error("External mailbox has no SMTP connection");
+					await sendThroughExternalSmtp(env, row.external, row.message.fromAddress, delivery.recipient, mime.asRaw());
+				} else {
+					await env.EMAIL.send(new EmailMessage(row.message.fromAddress, delivery.recipient, mime.asRaw()));
+				}
 				await db
 					.update(outboundDeliveries)
 					.set({ status: "sent", sentAt: new Date(), lastError: null })
@@ -267,6 +277,29 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			messageId: row.message.id,
 		});
 		throw error;
+	}
+}
+
+async function sendThroughExternalSmtp(
+	env: Env,
+	account: typeof externalAccounts.$inferSelect,
+	from: string,
+	recipient: string,
+	mime: string,
+): Promise<void> {
+	const password = await decryptExternalAccountSecret(env, account.smtpSecret);
+	if (!password) throw new Error("Stored SMTP credentials can no longer be decrypted");
+	const smtp = await SmtpConnection.open({
+		host: account.smtpHost,
+		port: account.smtpPort,
+		security: account.smtpSecurity,
+		username: account.smtpUsername,
+		password,
+	});
+	try {
+		await smtp.send(from, recipient, mime);
+	} finally {
+		await smtp.close();
 	}
 }
 

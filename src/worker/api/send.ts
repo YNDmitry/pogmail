@@ -868,13 +868,15 @@ export async function sendableMailbox(
 		.select({
 			id: mailboxes.id,
 			localPart: mailboxes.localPart,
+			source: mailboxes.source,
+			externalAddress: mailboxes.externalAddress,
 			displayName: mailboxes.displayName,
 			disabled: mailboxes.disabled,
 			hostname: domains.hostname,
 			sendingEnabled: domains.sendingEnabled,
 		})
 		.from(mailboxes)
-		.innerJoin(domains, eq(domains.id, mailboxes.domainId))
+		.leftJoin(domains, eq(domains.id, mailboxes.domainId))
 		.where(eq(mailboxes.id, mailboxId))
 		.get();
 
@@ -883,7 +885,7 @@ export async function sendableMailbox(
 	const permission = await getPermission(c.get("db"), c.get("user"), row.id);
 	if (!canSendFrom(permission)) forbidden("You cannot send from this mailbox");
 	if (row.disabled) throw new HTTPException(409, { message: "That mailbox is disabled" });
-	if (options.requireSending && !row.sendingEnabled) {
+	if (options.requireSending && row.source === "cloudflare" && !row.sendingEnabled) {
 		throw new HTTPException(409, {
 			message: "Email Sending is not ready for this domain. An administrator can finish setup from Domains → Verify.",
 		});
@@ -891,7 +893,7 @@ export async function sendableMailbox(
 
 	return {
 		id: row.id,
-		address: `${row.localPart}@${row.hostname}`,
+		address: row.externalAddress ?? `${row.localPart}@${row.hostname}`,
 		displayName: row.displayName,
 	};
 }

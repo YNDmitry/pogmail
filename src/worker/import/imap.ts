@@ -1,9 +1,10 @@
 import { connect } from "cloudflare:sockets";
-import { assertSafeImapHost } from "./imap-guard";
+import { assertSafeMailHost } from "./imap-guard";
 
 export type ImapCredentials = {
 	host: string;
 	port: number;
+	security?: "tls" | "starttls";
 	username: string;
 	password: string;
 };
@@ -21,19 +22,22 @@ export class ImapConnection {
 	private buffer = new Uint8Array(0);
 
 	private constructor(
-		private readonly socket: Socket,
-		private readonly reader: ReadableStreamDefaultReader<Uint8Array>,
-		private readonly writer: WritableStreamDefaultWriter<Uint8Array>,
+		private socket: Socket,
+		private reader: ReadableStreamDefaultReader<Uint8Array>,
+		private writer: WritableStreamDefaultWriter<Uint8Array>,
 	) {}
 
 	static async open(credentials: ImapCredentials): Promise<ImapConnection> {
-		assertSafeImapHost(credentials.host);
+		assertSafeMailHost(credentials.host);
+		const security = credentials.security ?? "tls";
+		if (![993, 143].includes(credentials.port)) throw new Error("IMAP must use port 993 or 143");
+		if ((credentials.port === 993) !== (security === "tls")) {
+			throw new Error(credentials.port === 993 ? "Port 993 requires TLS from connect" : "Port 143 requires STARTTLS");
+		}
 
 		const socket = connect(
 			{ hostname: credentials.host, port: credentials.port },
-			// IMAPS only. STARTTLS would mean speaking plaintext first, and there is
-			// no reason to offer that for a one-off import.
-			{ secureTransport: "on", allowHalfOpen: false },
+			{ secureTransport: security === "tls" ? "on" : "starttls", allowHalfOpen: false },
 		);
 
 		const connection = new ImapConnection(
@@ -43,11 +47,17 @@ export class ImapConnection {
 		);
 
 		const greeting = await connection.readLine();
-		if (!greeting.startsWith("* OK")) throw new Error("The server did not greet us as an IMAP server");
+		if (!greeting.startsWith("* OK") && !greeting.startsWith("* PREAUTH")) {
+			throw new Error("The server did not greet us as an IMAP server");
+		}
+		if (security === "starttls") {
+			await connection.command("STARTTLS");
+			connection.replaceSocket(socket.startTls());
+		}
 
-		await connection.command(
-			`LOGIN ${quote(credentials.username)} ${quote(credentials.password)}`,
-		);
+		if (!greeting.startsWith("* PREAUTH")) {
+			await connection.command(`LOGIN ${quote(credentials.username)} ${quote(credentials.password)}`);
+		}
 
 		return connection;
 	}
@@ -108,6 +118,14 @@ export class ImapConnection {
 
 	private nextTag(): string {
 		return `a${String(++this.tag).padStart(4, "0")}`;
+	}
+
+	private replaceSocket(socket: Socket) {
+		this.reader.releaseLock();
+		this.writer.releaseLock();
+		this.socket = socket;
+		this.reader = socket.readable.getReader();
+		this.writer = socket.writable.getWriter();
 	}
 
 	private async command(command: string): Promise<string[]> {

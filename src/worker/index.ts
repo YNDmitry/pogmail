@@ -4,6 +4,7 @@ import {
   backupSettings,
   backups,
   calendarConnections,
+	 externalAccounts,
   mailboxes,
   messages,
   users,
@@ -31,6 +32,8 @@ import { putRawMessage } from "./storage";
 import { queueRetryDelay } from "./queue/retry";
 import { notifyAdmins, notifyMailbox } from "./realtime/notify";
 import { syncCalendarConnection } from "./calendar/sync";
+import { syncExternalAccount } from "./external/sync";
+import type { ExternalSyncMessage } from "./external/types";
 
 export { RealtimeHub } from "./realtime/hub";
 export { DatabaseBackupWorkflow } from "./backups/workflow";
@@ -137,6 +140,25 @@ export default {
    * Cloudflare's own schema and arrives through its dedicated queue.
    */
   async queue(batch, env): Promise<void> {
+	if (batch.queue === "pogmail-external-sync") {
+		for (const item of batch.messages) {
+			const payload = item.body as ExternalSyncMessage;
+			if (payload.kind !== "external-sync") {
+				console.error(JSON.stringify({ message: "Ignoring invalid external sync job", queueMessageId: item.id }));
+				item.ack();
+				continue;
+			}
+			try {
+				await syncExternalAccount(env, payload);
+				item.ack();
+			} catch (error) {
+				console.error(JSON.stringify({ message: "External sync job failed", accountId: payload.accountId, error: error instanceof Error ? error.message : String(error) }));
+				item.retry({ delaySeconds: queueRetryDelay(item.attempts) });
+			}
+		}
+		return;
+	}
+
     if (batch.queue === EMAIL_EVENTS_QUEUE) {
       const db = getDb(env.DB);
       for (const item of batch.messages) {
@@ -189,8 +211,16 @@ export default {
   },
 
   /** Hourly: wake snoozed messages, refresh calendars, then start a backup if due. */
-  async scheduled(_controller, env): Promise<void> {
+  async scheduled(controller, env): Promise<void> {
     const db = getDb(env.DB);
+	if (controller.cron === "*/5 * * * *") {
+		const accounts = await db.select({ id: externalAccounts.id }).from(externalAccounts)
+			.where(eq(externalAccounts.status, "active")).limit(100).all();
+		if (accounts.length > 0) {
+			await env.EXTERNAL_SYNC_QUEUE.sendBatch(accounts.map(({ id }) => ({ body: { kind: "external-sync", accountId: id } satisfies ExternalSyncMessage })));
+		}
+		return;
+	}
 
 	const woken = await db
 		.update(messages)

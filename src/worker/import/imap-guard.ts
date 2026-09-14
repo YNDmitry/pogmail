@@ -5,7 +5,7 @@
  */
 const BLOCKED_HOSTNAMES = new Set(["localhost", "localhost.localdomain", "metadata.google.internal"]);
 
-export function assertSafeImapHost(hostname: string): void {
+export function assertSafeMailHost(hostname: string): void {
 	const host = hostname.trim().toLowerCase();
 
 	if (!host || host.length > 253) throw new Error("That does not look like a hostname");
@@ -17,6 +17,9 @@ export function assertSafeImapHost(hostname: string): void {
 		throw new Error("Private and loopback addresses are not allowed");
 	}
 }
+
+/** @deprecated Keep imports working while external SMTP joins the same guard. */
+export const assertSafeImapHost = assertSafeMailHost;
 
 function isBlockedIpv4(host: string): boolean {
 	const parts = host.split(".");

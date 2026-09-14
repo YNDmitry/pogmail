@@ -6,6 +6,10 @@ export type InboundQueueMessage = {
 	from: string;
 	sizeBytes: number;
 	receivedAt: number;
+	/** External IMAP imports must not trigger a Cloudflare-only automatic reply. */
+	source?: "cloudflare" | "external";
+	externalFolderId?: string;
+	externalUid?: number;
 };
 
 export type WebhookRetryMessage = {

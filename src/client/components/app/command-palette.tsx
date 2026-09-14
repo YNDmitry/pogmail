@@ -92,6 +92,7 @@ export function AppCommandPalette({
 				{ label: "Templates", to: "/settings/templates" },
 				{ label: "API keys", to: "/settings/api-keys" },
 				{ label: "Import and export", to: "/settings/import-export" },
+				{ label: "Mail accounts", to: "/settings/mail-accounts" },
 			].map((entry) => ({
 				id: entry.to,
 				label: entry.label,

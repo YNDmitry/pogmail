@@ -23,7 +23,7 @@ import { notifyTelegramNewMail } from "../telegram/notifications";
  * wrote the raw MIME to R2; everything expensive happens here so a slow parse can
  * never stall the SMTP conversation.
  */
-export async function processInboundMessage(env: Env, job: InboundQueueMessage): Promise<void> {
+export async function processInboundMessage(env: Env, job: InboundQueueMessage): Promise<string | null> {
 	const db = getDb(env.DB);
 
 	const object = await env.MAIL_BUCKET.get(job.rawKey);
@@ -68,16 +68,18 @@ export async function processInboundMessage(env: Env, job: InboundQueueMessage):
 			bodyText: parsed.text ?? null,
 			bodyHtml: parsed.html ?? null,
 			rawKey: job.rawKey,
+			externalFolderId: job.externalFolderId ?? null,
+			externalUid: job.externalUid ?? null,
 			sizeBytes: job.sizeBytes,
 			hasAttachments: parsed.attachments.length > 0,
 			receivedAt: new Date(job.receivedAt),
 		})
 		// A queue retry after a partial success must not create a duplicate.
-		.onConflictDoNothing({ target: [messages.mailboxId, messages.messageId] })
+		.onConflictDoNothing()
 		.returning({ id: messages.id })
 		.get();
 
-	if (!inserted) return;
+	if (!inserted) return null;
 
 	for (const attachment of parsed.attachments) {
 		const key = `attachments/${inserted.id}/${crypto.randomUUID()}`;
@@ -117,7 +119,7 @@ export async function processInboundMessage(env: Env, job: InboundQueueMessage):
 
 	// Auto-replies go out only for real inbox mail: never for spam, trash or a rule
 	// that already diverted the message.
-	if (routed.status === "received") {
+	if (job.source !== "external" && routed.status === "received") {
 		await queueAutoReply(env, {
 			mailboxId: job.mailboxId,
 			recipient: fromAddress,
@@ -137,6 +139,7 @@ export async function processInboundMessage(env: Env, job: InboundQueueMessage):
 			console.error("Telegram new-mail notification failed", error instanceof Error ? error.message : String(error)),
 		),
 	]);
+	return inserted.id;
 }
 
 /** `mailbox`-scope rules run after delivery and only choose a folder or divert. */

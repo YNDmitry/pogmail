@@ -1,5 +1,7 @@
 # Cloudflare API token used at runtime for domain and mailbox provisioning.
 CF_TOKEN=
+# A long random value, separate from CF_TOKEN. Required only for Settings → Mail accounts.
+EXTERNAL_ACCOUNTS_ENCRYPTION_KEY=
 
 # Optional Telegram bot token for new-mail notifications.
 TELEGRAM_BOT_TOKEN=

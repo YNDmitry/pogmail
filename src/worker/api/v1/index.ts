@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, desc, eq, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import { messages, MESSAGE_STATUSES, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "../../email/types";
@@ -104,11 +104,12 @@ export const v1Routes = new Hono<AppBindings>()
 			.select({
 				id: mailboxes.id,
 				localPart: mailboxes.localPart,
+				externalAddress: mailboxes.externalAddress,
 				displayName: mailboxes.displayName,
 				hostname: domains.hostname,
 			})
 			.from(mailboxes)
-			.innerJoin(domains, eq(domains.id, mailboxes.domainId))
+			.leftJoin(domains, eq(domains.id, mailboxes.domainId))
 			.where(eq(mailboxes.id, input.from))
 			.get();
 
@@ -119,15 +120,19 @@ export const v1Routes = new Hono<AppBindings>()
 				.select({
 					id: mailboxes.id,
 					localPart: mailboxes.localPart,
+					externalAddress: mailboxes.externalAddress,
 					displayName: mailboxes.displayName,
 					hostname: domains.hostname,
 				})
 				.from(mailboxes)
-				.innerJoin(domains, eq(domains.id, mailboxes.domainId))
+				.leftJoin(domains, eq(domains.id, mailboxes.domainId))
 				.where(
-					and(
-						eq(mailboxes.localPart, input.from.split("@")[0]?.toLowerCase() ?? ""),
-						eq(domains.hostname, input.from.split("@")[1]?.toLowerCase() ?? ""),
+					or(
+						eq(mailboxes.externalAddress, input.from.toLowerCase()),
+						and(
+							eq(mailboxes.localPart, input.from.split("@")[0]?.toLowerCase() ?? ""),
+							eq(domains.hostname, input.from.split("@")[1]?.toLowerCase() ?? ""),
+						),
 					),
 				)
 				.get());
@@ -137,7 +142,7 @@ export const v1Routes = new Hono<AppBindings>()
 		const permission = await getPermission(c.get("db"), c.get("user"), resolved.id);
 		if (!canSendFrom(permission)) forbidden("This key cannot send from that mailbox");
 
-		const address = `${resolved.localPart}@${resolved.hostname}`;
+		const address = resolved.externalAddress ?? `${resolved.localPart}@${resolved.hostname}`;
 
 		const message = await c
 			.get("db")

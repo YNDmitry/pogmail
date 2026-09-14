@@ -50,7 +50,7 @@ gated behind a licence key.
 
 ```bash
 bun install
-cp .dev.vars.example .dev.vars      # CF_TOKEN
+cp .dev.vars.example .dev.vars      # CF_TOKEN, optional external-mail key
 bun run db:migrate:local
 bun run dev
 ```
@@ -134,8 +134,28 @@ For a manual deployment:
 bun install
 bun x wrangler login
 bun x wrangler secret put CF_TOKEN
+bun x wrangler secret put EXTERNAL_ACCOUNTS_ENCRYPTION_KEY # needed for IMAP/SMTP accounts
 bun run deploy
 ```
+
+### External IMAP and SMTP accounts
+
+Settings → **Mail accounts** can connect an existing mailbox over IMAPS (993) or
+IMAP STARTTLS (143), plus SMTPS (465) or SMTP STARTTLS (587). Pogmail stores a
+locally searchable copy of incoming mail and sends from that address using its
+configured SMTP server; it does not change the domain's MX records.
+
+Before connecting an account, set a distinct Worker secret:
+
+```bash
+bun x wrangler secret put EXTERNAL_ACCOUNTS_ENCRYPTION_KEY
+```
+
+Use a long random value and retain it securely: it encrypts stored app passwords
+and is intentionally independent of `CF_TOKEN`, so routine Cloudflare API-token
+rotation does not disconnect mail accounts. The first sync runs immediately and
+then every five minutes. Gmail and Microsoft OAuth are not yet supported; use an
+app password until their OAuth connectors are available.
 
 `bun run deploy` builds and deploys the app, then applies pending D1 migrations.
 

@@ -18,6 +18,7 @@ export type MailboxSummary = {
 	displayName: string | null;
 	avatarKey: string | null;
 	type: "personal" | "shared";
+	source: "cloudflare" | "external";
 	disabled: boolean;
 	permission: MailboxPermission;
 };
@@ -32,6 +33,8 @@ export async function listAccessibleMailboxes(db: Database, user: SessionUser): 
 		.select({
 			id: mailboxes.id,
 			localPart: mailboxes.localPart,
+			source: mailboxes.source,
+			externalAddress: mailboxes.externalAddress,
 			displayName: mailboxes.displayName,
 			avatarKey: mailboxes.avatarKey,
 			type: mailboxes.type,
@@ -41,7 +44,7 @@ export async function listAccessibleMailboxes(db: Database, user: SessionUser): 
 			sharedPermission: mailboxAccess.permission,
 		})
 		.from(mailboxes)
-		.innerJoin(domains, eq(domains.id, mailboxes.domainId))
+		.leftJoin(domains, eq(domains.id, mailboxes.domainId))
 		.leftJoin(
 			mailboxAccess,
 			and(eq(mailboxAccess.mailboxId, mailboxes.id), eq(mailboxAccess.userId, user.id)),
@@ -55,11 +58,12 @@ export async function listAccessibleMailboxes(db: Database, user: SessionUser): 
 
 	return rows.map((row) => ({
 		id: row.id,
-		address: `${row.localPart}@${row.hostname}`,
+		address: row.externalAddress ?? `${row.localPart}@${row.hostname}`,
 		localPart: row.localPart,
 		displayName: row.displayName,
 		avatarKey: row.avatarKey,
 		type: row.type,
+		source: row.source,
 		disabled: row.disabled,
 		permission:
 			user.role === "admin" || row.ownerId === user.id

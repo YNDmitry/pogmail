@@ -11,6 +11,7 @@ export type MailboxSummary = {
   displayName: string | null;
   avatarKey: string | null;
   type: "personal" | "shared";
+  source: "cloudflare" | "external";
   disabled: boolean;
   permission: MailboxPermission;
 };

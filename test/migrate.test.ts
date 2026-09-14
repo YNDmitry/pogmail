@@ -29,6 +29,18 @@ describe("bundled migrations", () => {
 		expect(await schemaIsMissing(env)).toBe(false);
 	});
 
+	it("installs the external mailbox tables and UID dedupe index", async () => {
+		const tables = await env.DB.prepare(
+			"SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('external_accounts', 'external_folders') ORDER BY name",
+		).all<{ name: string }>();
+		const indexes = await env.DB.prepare(
+			"SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'messages_external_uid_unq'",
+		).all<{ name: string }>();
+
+		expect(tables.results.map((row) => row.name)).toEqual(["external_accounts", "external_folders"]);
+		expect(indexes.results).toHaveLength(1);
+	});
+
 	it("re-applies nothing once every file is recorded", async () => {
 		for (const migration of readMigrations()) {
 			await env.DB.prepare("INSERT OR IGNORE INTO d1_migrations (name) VALUES (?)")

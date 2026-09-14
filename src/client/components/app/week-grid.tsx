@@ -460,7 +460,7 @@ export function WeekGrid({
 										width: `${100 / days.length}%`,
 									}}
 								>
-									<span className="absolute -top-5 -left-5 grid size-10 place-items-center rounded-full bg-primary text-[0.5625rem] font-semibold text-primary-foreground shadow-sm">
+									<span className="absolute -top-2.5 -left-5 grid h-5 min-w-10 place-items-center rounded-full bg-primary px-1 text-[0.5rem] font-semibold text-primary-foreground shadow-sm">
 										{clockLabel(now)}
 									</span>
 								</div>

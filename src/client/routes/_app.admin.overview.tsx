@@ -9,7 +9,7 @@ import { useToast } from "@/client/components/app/toast-host";
 import { Mark } from "@/client/components/app/mark";
 import { AnimatedNumber } from "@/client/components/motion/animated-number";
 import { useInstanceIdentity } from "@/client/lib/identity-context";
-import { api } from "@/client/lib/api";
+import { api, ApiError } from "@/client/lib/api";
 import { useBranding } from "@/client/lib/queries";
 import { bytes, fullDate } from "@/client/lib/format";
 import { qk } from "@/client/lib/queries/keys";
@@ -167,7 +167,57 @@ function Overview() {
 			</Card>
 
 			<Version />
+			<TelegramBot />
 		</div>
+	);
+}
+
+function TelegramBot() {
+	const toast = useToast();
+	const client = useQueryClient();
+	const [editing, setEditing] = useState(false);
+	const [saving, setSaving] = useState(false);
+	const config = useQuery({
+		queryKey: ["admin", "telegram"],
+		queryFn: () => api.get<{ hasToken: boolean }>("/api/admin/telegram/config"),
+	});
+
+	return (
+		<>
+			<Card className="p-6">
+				<div className="flex flex-wrap items-center justify-between gap-4">
+					<div>
+						<h2 className="display text-[0.9375rem] text-ink">Telegram bot</h2>
+						<p className="mt-1.5 max-w-[68ch] text-sm text-ink-2">
+							{config.data?.hasToken ? "Bot token is configured and encrypted." : "Add a bot token to deliver new-mail notifications."}
+						</p>
+					</div>
+					<Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+						{config.data?.hasToken ? "Replace token" : "Add bot token"}
+					</Button>
+				</div>
+			</Card>
+
+			<Modal open={editing} onClose={() => setEditing(false)} title="Telegram bot token">
+				<form className="space-y-4" onSubmit={async (event) => {
+					event.preventDefault();
+					const token = String(new FormData(event.currentTarget).get("token"));
+					setSaving(true);
+					try {
+						await api.put("/api/admin/telegram/config", { token });
+						await client.invalidateQueries({ queryKey: ["admin", "telegram"] });
+						setEditing(false);
+						toast.ok("Telegram token saved", "It is encrypted before storage.");
+					} catch (error) {
+						toast.fail("Could not save token", error instanceof ApiError ? error.message : undefined);
+					} finally { setSaving(false); }
+				}}>
+					<p className="text-sm text-muted-foreground">Create a bot with @BotFather, then paste its token here. Pogmail encrypts it immediately and never shows it again.</p>
+					<Field label="Bot token"><Input name="token" type="password" autoComplete="off" required /></Field>
+					<div className="flex justify-end gap-2 pt-2"><Button type="button" variant="secondary" onClick={() => setEditing(false)}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? "Saving…" : "Save token"}</Button></div>
+				</form>
+			</Modal>
+		</>
 	);
 }
 

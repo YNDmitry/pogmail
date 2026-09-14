@@ -126,7 +126,7 @@ export const mailboxRoutes = new Hono<AppBindings>()
 
 		return c.json({
 			...mailbox,
-			address: domain ? `${mailbox.localPart}@${domain.hostname}` : mailbox.localPart,
+			address: mailbox.externalAddress ?? (domain ? `${mailbox.localPart}@${domain.hostname}` : mailbox.localPart),
 			avatarUrl: mailbox.avatarKey ? publicKeyFor(mailbox.avatarKey) : null,
 			aliases,
 			sharing,
@@ -136,6 +136,9 @@ export const mailboxRoutes = new Hono<AppBindings>()
 	.patch("/:id", async (c) => {
 		const input = await parseBody(c, updateInput);
 		const mailbox = await loadWritable(c, c.req.param("id"));
+		if (mailbox.source === "external" && input.autoReplyEnabled) {
+			throw new HTTPException(409, { message: "Automatic replies are not available for external mail accounts yet" });
+		}
 
 		const row = await c
 			.get("db")
@@ -187,6 +190,9 @@ export const mailboxRoutes = new Hono<AppBindings>()
 	.post("/:id/aliases", requireMailboxManager, async (c) => {
 		const input = await parseBody(c, aliasInput);
 		const mailbox = await loadWritable(c, c.req.param("id"));
+		if (mailbox.source === "external") {
+			throw new HTTPException(409, { message: "External mail accounts cannot have Cloudflare aliases" });
+		}
 
 		const domain = await c.get("db").select().from(domains).where(eq(domains.id, input.domainId)).get();
 		if (!domain) notFound("Domain");

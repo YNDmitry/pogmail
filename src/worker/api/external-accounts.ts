@@ -78,18 +78,22 @@ export const externalAccountRoutes = new Hono<AppBindings>()
 			encryptExternalAccountSecret(c.env, input.smtp.password),
 		]);
 
-		const existing = await c.get("db").select({ id: mailboxes.id }).from(mailboxes)
+		const existing = await c.get("db").select().from(mailboxes)
 			.where(eq(mailboxes.externalAddress, input.address)).get();
-		if (existing) throw new HTTPException(409, { message: "That external address is already connected" });
+		if (existing && (existing.source !== "external" || existing.userId !== c.get("user").id || !existing.disabled)) {
+			throw new HTTPException(409, { message: "That external address is already connected" });
+		}
 
 		const localPart = input.address.slice(0, input.address.indexOf("@"));
-		const mailbox = await c.get("db").insert(mailboxes).values({
-			userId: c.get("user").id,
-			localPart,
-			source: "external",
-			externalAddress: input.address,
-			displayName: input.displayName ?? null,
-		}).returning().get();
+		const mailbox = existing
+			? await c.get("db").update(mailboxes).set({ disabled: false, displayName: input.displayName ?? existing.displayName }).where(eq(mailboxes.id, existing.id)).returning().get()
+			: await c.get("db").insert(mailboxes).values({
+				userId: c.get("user").id,
+				localPart,
+				source: "external",
+				externalAddress: input.address,
+				displayName: input.displayName ?? null,
+			}).returning().get();
 		const account = await c.get("db").insert(externalAccounts).values({
 			mailboxId: mailbox.id,
 			userId: c.get("user").id,

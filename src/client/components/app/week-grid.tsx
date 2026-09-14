@@ -27,6 +27,10 @@ function minutesInto(date: Date): number {
 	return date.getHours() * 60 + date.getMinutes();
 }
 
+function clockLabel(date: Date): string {
+	return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
 function snap(minutes: number): number {
 	return Math.max(0, Math.min(24 * 60, Math.round(minutes / SNAP) * SNAP));
 }
@@ -441,17 +445,26 @@ export function WeekGrid({
 					{(() => {
 						const todayIndex = days.findIndex((day) => sameDay(day, now));
 						return todayIndex >= 0 ? (
-							<div
-								aria-hidden
-								className="pointer-events-none absolute z-10 border-t border-primary"
-								style={{
-									top: (minutesInto(now) / 60) * HOUR,
-									left: `${(todayIndex * 100) / days.length}%`,
-									width: `${100 / days.length}%`,
-								}}
-							>
-								<span className="absolute -top-1 -left-1 size-2 rounded-full bg-primary" />
-							</div>
+							<>
+								<div
+									aria-hidden
+									className="pointer-events-none absolute inset-x-0 z-10 border-t border-primary opacity-50"
+									style={{ top: (minutesInto(now) / 60) * HOUR }}
+								/>
+								<div
+									aria-hidden
+									className="pointer-events-none absolute z-10 border-t border-primary"
+									style={{
+										top: (minutesInto(now) / 60) * HOUR,
+										left: `${(todayIndex * 100) / days.length}%`,
+										width: `${100 / days.length}%`,
+									}}
+								>
+									<span className="absolute -top-5 -left-5 grid size-10 place-items-center rounded-full bg-primary text-[0.5625rem] font-semibold text-primary-foreground shadow-sm">
+										{clockLabel(now)}
+									</span>
+								</div>
+							</>
 						) : null;
 					})()}
 				</div>

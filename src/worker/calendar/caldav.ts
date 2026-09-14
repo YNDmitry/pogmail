@@ -48,7 +48,7 @@ async function report(connection: Connection, password: string): Promise<Array<{
 }
 
 function calendarIcs(event: Event): string {
-	return toIcs([{ id: event.id, title: event.title, description: event.description, location: event.location, allDay: event.allDay, startsAt: event.startsAt, endsAt: event.endsAt, attendees: event.attendees }], { host: "pogmail.local" });
+	return toIcs([{ id: event.id, title: event.title, description: event.description, location: event.location, allDay: event.allDay, startsAt: event.startsAt, endsAt: event.endsAt, attendees: event.attendees, recurrenceRule: event.recurrenceRule, timeZone: event.timeZone }], { host: "pogmail.local" });
 }
 
 function resourceUrl(connection: Connection, href: string): URL {
@@ -88,7 +88,7 @@ export async function syncCaldav(db: Database, connection: Connection, password:
 		if (!parsed) continue;
 		seen.add(resource.href);
 		const link = await db.select().from(calendarEventLinks).where(and(eq(calendarEventLinks.connectionId, connection.id), eq(calendarEventLinks.href, resource.href))).get();
-		const next = { title: parsed.title, description: parsed.description, location: parsed.location, attendees: parsed.attendees, allDay: parsed.allDay, startsAt: new Date(parsed.startsAt), endsAt: new Date(parsed.endsAt) };
+		const next = { title: parsed.title, description: parsed.description, location: parsed.location, attendees: parsed.attendees, allDay: parsed.allDay, recurrenceRule: parsed.recurrenceRule, timeZone: parsed.timeZone, startsAt: new Date(parsed.startsAt), endsAt: new Date(parsed.endsAt) };
 		if (!link) {
 			const created = await db.insert(calendarEvents).values({ userId: connection.userId, ...next }).returning().get();
 			await db.insert(calendarEventLinks).values({ connectionId: connection.id, eventId: created.id, href: resource.href, etag: resource.etag });

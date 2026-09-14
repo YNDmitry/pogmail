@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, lte, or } from "drizzle-orm";
 import { z } from "zod";
 import { HTTPException } from "hono/http-exception";
 import { calendarConnections, calendarEventLinks, calendarEvents, calendarOAuthStates, messageAttachments, messages, outboundJobs } from "@/db/schema";
@@ -7,6 +7,7 @@ import { audit } from "../audit";
 import { parseIcs, toIcs } from "../calendar/ics";
 import { decryptSecret, encryptSecret, SecretKeyMissing } from "../auth/secrets";
 import { deleteCalendarEventFromConnection, syncCalendarConnection } from "../calendar/sync";
+import { expandRecurrences } from "../calendar/recurrence";
 import { sendableMailbox } from "./send";
 import type { OutboundSendMessage } from "../email/types";
 import type { AppBindings } from "../middleware/context";
@@ -34,6 +35,11 @@ const eventInput = z
 		messageId: z.string().nullable().optional(),
 		attendees: z.array(z.object({ address: z.email(), name: z.string().optional() })).default([]),
 		allDay: z.boolean().default(false),
+		recurrenceRule: z.enum(["FREQ=DAILY", "FREQ=WEEKLY", "FREQ=MONTHLY"]).nullable().optional(),
+		timeZone: z.string().min(1).max(100).refine((value) => {
+			try { new Intl.DateTimeFormat("en", { timeZone: value }).format(); return true; }
+			catch { return false; }
+		}, "Use an IANA time zone such as Europe/Berlin").nullable().optional(),
 		startsAt: z.number().int(),
 		endsAt: z.number().int(),
 	})
@@ -49,6 +55,11 @@ const caldavInput = z.object({
 	password: z.string().min(1).max(2000),
 });
 const googleStartInput = z.object({ clientId: z.string().trim().min(10).max(500), clientSecret: z.string().min(1).max(2000) });
+
+/** Expanded occurrences share a series; editing one edits the series. */
+function seriesId(value: string): string {
+	return value.split("~", 1)[0] ?? value;
+}
 
 export const calendarRoutes = new Hono<AppBindings>()
 	.get("/connections", async (c) => c.json(await c.get("db").select({ id: calendarConnections.id, provider: calendarConnections.provider, name: calendarConnections.name, calendarUrl: calendarConnections.calendarUrl, lastSyncedAt: calendarConnections.lastSyncedAt, lastError: calendarConnections.lastError }).from(calendarConnections).where(eq(calendarConnections.userId, c.get("user").id)).all()))
@@ -113,14 +124,16 @@ export const calendarRoutes = new Hono<AppBindings>()
 				and(
 					eq(calendarEvents.userId, c.get("user").id),
 					// Overlap, not containment: a multi-day event straddling the window counts.
-					lte(calendarEvents.startsAt, new Date(range.to)),
-					gte(calendarEvents.endsAt, new Date(range.from)),
+					or(
+						and(lte(calendarEvents.startsAt, new Date(range.to)), gte(calendarEvents.endsAt, new Date(range.from))),
+						isNotNull(calendarEvents.recurrenceRule),
+					),
 				),
 			)
 			.orderBy(asc(calendarEvents.startsAt))
 			.all();
 
-		return c.json({ items: rows });
+		return c.json({ items: expandRecurrences(rows, new Date(range.from), new Date(range.to)) });
 	})
 
 	.post("/events", async (c) => {
@@ -133,6 +146,8 @@ export const calendarRoutes = new Hono<AppBindings>()
 				...input,
 				mailboxId: input.mailboxId ?? null,
 				messageId: input.messageId ?? null,
+				recurrenceRule: input.recurrenceRule ?? null,
+				timeZone: input.timeZone ?? null,
 				userId: c.get("user").id,
 				startsAt: new Date(input.startsAt),
 				endsAt: new Date(input.endsAt),
@@ -155,7 +170,7 @@ export const calendarRoutes = new Hono<AppBindings>()
 				...(endsAt !== undefined ? { endsAt: new Date(endsAt) } : {}),
 			})
 			.where(
-				and(eq(calendarEvents.id, c.req.param("id")), eq(calendarEvents.userId, c.get("user").id)),
+				and(eq(calendarEvents.id, seriesId(c.req.param("id"))), eq(calendarEvents.userId, c.get("user").id)),
 			)
 			.returning()
 			.get();
@@ -166,7 +181,7 @@ export const calendarRoutes = new Hono<AppBindings>()
 
 	.delete("/events/:id", async (c) => {
 		const event = await c.get("db").select().from(calendarEvents).where(
-			and(eq(calendarEvents.id, c.req.param("id")), eq(calendarEvents.userId, c.get("user").id)),
+			and(eq(calendarEvents.id, seriesId(c.req.param("id"))), eq(calendarEvents.userId, c.get("user").id)),
 		).get();
 		if (!event) notFound("Event");
 		const links = await c.get("db").select({ connection: calendarConnections, link: calendarEventLinks })
@@ -186,7 +201,7 @@ export const calendarRoutes = new Hono<AppBindings>()
 			.get("db")
 			.delete(calendarEvents)
 			.where(
-				and(eq(calendarEvents.id, c.req.param("id")), eq(calendarEvents.userId, c.get("user").id)),
+				and(eq(calendarEvents.id, seriesId(c.req.param("id"))), eq(calendarEvents.userId, c.get("user").id)),
 			)
 			.returning({ id: calendarEvents.id })
 			.get();
@@ -243,6 +258,8 @@ export const calendarInteropRoutes = new Hono<AppBindings>()
 				startsAt: row.startsAt,
 				endsAt: row.endsAt,
 				attendees: row.attendees,
+				recurrenceRule: row.recurrenceRule,
+				timeZone: row.timeZone,
 			})),
 			{ host: new URL(c.req.url).host },
 		);
@@ -292,6 +309,8 @@ export const calendarInteropRoutes = new Hono<AppBindings>()
 					location: event.location,
 					attendees: event.attendees,
 					allDay: event.allDay,
+					recurrenceRule: event.recurrenceRule,
+					timeZone: event.timeZone,
 					startsAt: new Date(event.startsAt),
 					endsAt: new Date(event.endsAt),
 				});
@@ -344,6 +363,8 @@ export const calendarInteropRoutes = new Hono<AppBindings>()
 					startsAt: event.startsAt,
 					endsAt: event.endsAt,
 					attendees: event.attendees,
+					recurrenceRule: event.recurrenceRule,
+					timeZone: event.timeZone,
 				},
 			],
 			{

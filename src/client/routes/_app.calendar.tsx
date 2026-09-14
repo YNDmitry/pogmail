@@ -69,6 +69,10 @@ type CalendarEvent = {
   description: string;
   location: string;
   allDay: boolean;
+  recurrenceRule: "FREQ=DAILY" | "FREQ=WEEKLY" | "FREQ=MONTHLY" | null;
+  timeZone: string | null;
+  /** The persisted series ID when this is a displayed occurrence. */
+  seriesId: string;
   attendees: { address: string; name?: string }[];
   /** The mailbox this event is filed against; also who invitations come from. */
   mailboxId: string | null;
@@ -187,6 +191,8 @@ type Draft = {
   location: string;
   description: string;
   allDay: boolean;
+  recurrenceRule: "FREQ=DAILY" | "FREQ=WEEKLY" | "FREQ=MONTHLY" | null;
+  timeZone: string | null;
   attendees: string;
   mailboxId: string | null;
   startsAt: Date;
@@ -219,6 +225,8 @@ function draftForDay(day: Date): Draft {
     location: "",
     description: "",
     allDay: false,
+    recurrenceRule: null,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     attendees: "",
     mailboxId: null,
     startsAt: start,
@@ -233,6 +241,8 @@ function draftFromEvent(event: CalendarEvent): Draft {
     location: event.location,
     description: event.description,
     allDay: event.allDay,
+    recurrenceRule: event.recurrenceRule,
+    timeZone: event.timeZone,
     attendees: (event.attendees ?? []).map((entry) => entry.address).join(", "),
     mailboxId: event.mailboxId,
     startsAt: new Date(event.startsAt),
@@ -1118,6 +1128,7 @@ function EventForm({
   const [location, setLocation] = useState(draft.location);
   const [description, setDescription] = useState(draft.description);
   const [allDay, setAllDay] = useState(draft.allDay);
+  const [recurrenceRule, setRecurrenceRule] = useState(draft.recurrenceRule ?? "none");
   const [attendees, setAttendees] = useState(draft.attendees);
   const [mailboxId, setMailboxId] = useState(draft.mailboxId ?? NO_MAILBOX);
   const [inviting, setInviting] = useState(false);
@@ -1140,6 +1151,7 @@ function EventForm({
             location,
             description,
             allDay,
+            recurrenceRule: recurrenceRule === "none" ? null : recurrenceRule as NonNullable<Draft["recurrenceRule"]>,
             attendees,
             mailboxId: mailboxId === NO_MAILBOX ? null : mailboxId,
             startsAt,
@@ -1182,6 +1194,20 @@ function EventForm({
           />
           All day
         </label>
+
+        <Field label="Repeat" hint="Editing an occurrence changes the whole series.">
+          <Choice
+            value={recurrenceRule}
+            onChange={setRecurrenceRule}
+            aria-label="Repeat"
+            options={[
+              { value: "none", label: "Does not repeat" },
+              { value: "FREQ=DAILY", label: "Every day" },
+              { value: "FREQ=WEEKLY", label: "Every week" },
+              { value: "FREQ=MONTHLY", label: "Every month" },
+            ]}
+          />
+        </Field>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Starts">

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseIcs, toIcs } from "@/worker/calendar/ics";
+import { expandRecurrences } from "@/worker/calendar/recurrence";
 
 const event = {
 	id: "evt-1",
@@ -147,5 +148,31 @@ describe("parseIcs", () => {
 	it("ignores an event with no title or no start", () => {
 		expect(parseIcs("BEGIN:VEVENT\r\nDTSTART:20260905T090000Z\r\nEND:VEVENT")).toHaveLength(0);
 		expect(parseIcs("BEGIN:VEVENT\r\nSUMMARY:No when\r\nEND:VEVENT")).toHaveLength(0);
+	});
+
+	it("keeps a recurrence rule and its authored time zone", () => {
+		const [parsed] = parseIcs([
+			"BEGIN:VEVENT",
+			"SUMMARY:Weekly planning",
+			"DTSTART;TZID=Europe/Berlin:20260905T090000",
+			"RRULE:FREQ=WEEKLY",
+			"END:VEVENT",
+		].join("\r\n"));
+
+		expect(parsed?.recurrenceRule).toBe("FREQ=WEEKLY");
+		expect(parsed?.timeZone).toBe("Europe/Berlin");
+	});
+});
+
+describe("recurrence expansion", () => {
+	it("shows each weekly occurrence in the requested range", () => {
+		const events = expandRecurrences([{
+			...event,
+			recurrenceRule: "FREQ=WEEKLY",
+		}], new Date("2026-09-01T00:00:00Z"), new Date("2026-09-20T23:59:59Z"));
+
+		expect(events).toHaveLength(3);
+		expect(events.map((item) => item.seriesId)).toEqual(["evt-1", "evt-1", "evt-1"]);
+		expect(events.map((item) => item.id)).not.toContain("evt-1");
 	});
 });

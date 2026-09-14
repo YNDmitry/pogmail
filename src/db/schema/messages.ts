@@ -384,6 +384,10 @@ export const calendarEvents = sqliteTable(
 		location: text("location").notNull().default(""),
 		attendees: text("attendees", { mode: "json" }).$type<MailAddress[]>().notNull().default([]),
 		allDay: integer("all_day", { mode: "boolean" }).notNull().default(false),
+		/** RFC 5545 recurrence rule, restricted to forms Pogmail can expand safely. */
+		recurrenceRule: text("recurrence_rule"),
+		/** IANA time zone chosen when the event was authored. */
+		timeZone: text("time_zone"),
 		startsAt: integer("starts_at", { mode: "timestamp_ms" }).notNull(),
 		endsAt: integer("ends_at", { mode: "timestamp_ms" }).notNull(),
 		...timestamps(),

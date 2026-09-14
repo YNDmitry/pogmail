@@ -19,6 +19,8 @@ export type IcsEvent = {
 	startsAt: Date;
 	endsAt: Date;
 	attendees: MailAddress[];
+	recurrenceRule?: string | null;
+	timeZone?: string | null;
 };
 
 /** RFC 5545 §3.3.11: commas, semicolons, backslashes and newlines are escaped. */
@@ -47,6 +49,29 @@ function utcStamp(date: Date): string {
 		`${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}` +
 		`T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`
 	);
+}
+
+function zonedStamp(date: Date, timeZone: string): string {
+	const fields = new Intl.DateTimeFormat("en-CA", {
+		timeZone,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		hourCycle: "h23",
+	}).formatToParts(date).reduce<Record<string, string>>((out, part) => ({ ...out, [part.type]: part.value }), {});
+	return `${fields.year}${fields.month}${fields.day}T${fields.hour}${fields.minute}${fields.second}`;
+}
+
+function isTimeZone(value: string): boolean {
+	try {
+		new Intl.DateTimeFormat("en", { timeZone: value }).format();
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 function dateStamp(date: Date): string {
@@ -80,10 +105,14 @@ function vevent(event: IcsEvent, host: string, organizer?: MailAddress): string[
 		endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
 		lines.push(`DTSTART;VALUE=DATE:${dateStamp(event.startsAt)}`);
 		lines.push(`DTEND;VALUE=DATE:${dateStamp(endExclusive)}`);
+	} else if (event.timeZone && isTimeZone(event.timeZone)) {
+		lines.push(`DTSTART;TZID=${event.timeZone}:${zonedStamp(event.startsAt, event.timeZone)}`);
+		lines.push(`DTEND;TZID=${event.timeZone}:${zonedStamp(event.endsAt, event.timeZone)}`);
 	} else {
 		lines.push(`DTSTART:${utcStamp(event.startsAt)}`);
 		lines.push(`DTEND:${utcStamp(event.endsAt)}`);
 	}
+	if (event.recurrenceRule) lines.push(`RRULE:${event.recurrenceRule}`);
 
 	lines.push(`SUMMARY:${escapeText(event.title)}`);
 	if (event.description) lines.push(`DESCRIPTION:${escapeText(event.description)}`);
@@ -135,6 +164,8 @@ export type ParsedIcsEvent = {
 	startsAt: number;
 	endsAt: number;
 	attendees: MailAddress[];
+	recurrenceRule: string | null;
+	timeZone: string | null;
 };
 
 /** Undoes the folding first: a value can be split across any number of lines. */
@@ -146,7 +177,7 @@ function unfold(text: string): string[] {
 		.filter((line) => line.trim().length > 0);
 }
 
-function parseStamp(value: string, isDate: boolean): number | null {
+function parseStamp(value: string, isDate: boolean, timeZone?: string): number | null {
 	const match = value.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
 	if (!match) return null;
 
@@ -162,24 +193,35 @@ function parseStamp(value: string, isDate: boolean): number | null {
 	// TZID this parser deliberately does not carry — reading both as UTC is the
 	// one choice that never silently moves an event to another day.
 	const time = [Number(hour), Number(minute ?? 0), Number(second ?? 0)] as const;
-	return Date.UTC(parts[0], parts[1], parts[2], time[0], time[1], time[2]);
+	const provisional = Date.UTC(parts[0], parts[1], parts[2], time[0], time[1], time[2]);
+	if (!timeZone || value.endsWith("Z")) return provisional;
+	try {
+		const formatted = new Intl.DateTimeFormat("en-CA", {
+			timeZone,
+			year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+		}).formatToParts(new Date(provisional)).reduce<Record<string, string>>((out, part) => ({ ...out, [part.type]: part.value }), {});
+		const zonedAsUtc = Date.UTC(Number(formatted.year), Number(formatted.month) - 1, Number(formatted.day), Number(formatted.hour), Number(formatted.minute), Number(formatted.second));
+		return provisional - (zonedAsUtc - provisional);
+	} catch {
+		return provisional;
+	}
 }
 
 /**
  * Reads the `VEVENT`s out of an iCalendar file. Unknown properties, other
- * components (`VTODO`, `VTIMEZONE`, `VALARM`) and recurrence rules are skipped:
- * an event that arrives without its repeats is honest, an event with invented
- * repeats is not.
+ * components (`VTODO`, `VTIMEZONE`, `VALARM`) are skipped. A recurrence rule is
+ * retained verbatim; only the simple daily, weekly and monthly forms are expanded
+ * by the calendar, so unfamiliar rules stay a single event rather than guessed.
  */
 export function parseIcs(text: string): ParsedIcsEvent[] {
 	const events: ParsedIcsEvent[] = [];
-	let current: Partial<ParsedIcsEvent> & { attendees: MailAddress[] } = { attendees: [] };
+	let current: Partial<ParsedIcsEvent> & { attendees: MailAddress[] } = { attendees: [], recurrenceRule: null, timeZone: null };
 	let inEvent = false;
 
 	for (const line of unfold(text)) {
 		if (line.startsWith("BEGIN:VEVENT")) {
 			inEvent = true;
-			current = { attendees: [] };
+			current = { attendees: [], recurrenceRule: null, timeZone: null };
 			continue;
 		}
 
@@ -200,6 +242,8 @@ export function parseIcs(text: string): ParsedIcsEvent[] {
 					startsAt,
 					endsAt: allDay ? endsAt - 1000 : endsAt,
 					attendees: current.attendees,
+					recurrenceRule: current.recurrenceRule ?? null,
+					timeZone: current.timeZone ?? null,
 				});
 			}
 			continue;
@@ -213,6 +257,7 @@ export function parseIcs(text: string): ParsedIcsEvent[] {
 		const value = line.slice(colon + 1);
 		const [name, ...params] = rawName.split(";");
 		const isDate = params.some((param) => param.toUpperCase() === "VALUE=DATE");
+		const timeZone = params.find((param) => param.toUpperCase().startsWith("TZID="))?.slice(5);
 
 		switch (name?.toUpperCase()) {
 			case "SUMMARY":
@@ -225,15 +270,16 @@ export function parseIcs(text: string): ParsedIcsEvent[] {
 				current.location = unescapeText(value).slice(0, 300);
 				break;
 			case "DTSTART": {
-				const parsed = parseStamp(value, isDate);
+				const parsed = parseStamp(value, isDate, timeZone);
 				if (parsed !== null) {
 					current.startsAt = parsed;
 					current.allDay = isDate;
+					current.timeZone = timeZone ?? null;
 				}
 				break;
 			}
 			case "DTEND": {
-				const parsed = parseStamp(value, isDate);
+				const parsed = parseStamp(value, isDate, timeZone ?? current.timeZone ?? undefined);
 				if (parsed !== null) current.endsAt = parsed;
 				break;
 			}
@@ -250,6 +296,9 @@ export function parseIcs(text: string): ParsedIcsEvent[] {
 				}
 				break;
 			}
+			case "RRULE":
+				current.recurrenceRule = value.slice(0, 500) || null;
+				break;
 			default:
 				break;
 		}

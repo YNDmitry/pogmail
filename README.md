@@ -26,6 +26,8 @@ gated behind a licence key.
   button; endpoints that keep failing are switched off automatically.
 - **Telegram alerts** — opt-in new-mail notifications for each user and their
   shared mailboxes.
+- **Calendar** — local events, invitations and ICS import/export, with encrypted
+  CalDAV and Google Calendar connections that sync automatically every hour.
 - **Operations** — audit log, scheduled database backups to R2, import and export
   as NDJSON or mbox, a public `/api/v1` for API-key clients, and self-update via
   a GitHub Actions workflow.
@@ -144,17 +146,36 @@ the Worker up by literal name. Fix the config and redeploy, or set the
 
 ### Telegram notifications
 
-Create a bot with [@BotFather](https://t.me/BotFather), then store its token as
-a Worker secret:
-
-```bash
-bun x wrangler secret put TELEGRAM_BOT_TOKEN
-```
+Create a bot with [@BotFather](https://t.me/BotFather), then open
+**Administration → Overview → Telegram bot** and paste the token. Pogmail seals
+it with AES-GCM before storing it and never sends it back to the browser. An
+existing `TELEGRAM_BOT_TOKEN` Worker secret remains a compatible fallback for
+deployments that prefer infrastructure-managed credentials.
 
 Each person who wants alerts must start a chat with that bot and enter their
 numeric chat ID (or a channel `@username`) in **Settings → Profile → Telegram
 notifications**. A missing token or chat ID simply leaves alerts off. The bot
 receives sender and subject only; Telegram failures never delay mail delivery.
+
+### Calendar connections
+
+Open **Calendar → Connect calendar** to add an external source. Connections
+sync once per hour and can also be refreshed with **Sync**; a failed connection
+keeps its error beside the calendar name.
+
+- **CalDAV** works with iCloud, Nextcloud, Fastmail and similar providers. Enter
+  the URL of the concrete calendar, not the account homepage, and use an
+  app-specific password when the provider supports one.
+- **Google Calendar** uses your own OAuth client. In Google Cloud, enable the
+  Google Calendar API, create a Web application OAuth client and add the exact
+  callback URL shown in Pogmail's dialog as an authorized redirect URI. Paste
+  the Client ID and Client secret only into that dialog; both are encrypted at
+  rest before authorization begins.
+
+Pogmail reconciles changes in both directions. When both copies changed, the
+latest Google edit wins; for CalDAV, the locally edited copy wins because the
+protocol gives us an ETag but not a comparable edit timestamp. Repeating events
+support daily, weekly and monthly rules; editing one occurrence edits its series.
 
 ## Commands
 

@@ -116,6 +116,24 @@ export class ImapConnection {
 		}
 	}
 
+	/** Adds the exact outbound MIME source to the server's Sent folder. */
+	async appendMessage(folder: string, raw: string): Promise<void> {
+		const bytes = new TextEncoder().encode(raw);
+		const tag = this.nextTag();
+		await this.write(`${tag} APPEND ${quote(folder)} {${bytes.byteLength}}${CRLF}`);
+		const continuation = await this.readLine();
+		if (!continuation.startsWith("+")) throw new Error(`IMAP APPEND was rejected: ${continuation}`.slice(0, 500));
+		await this.writer.write(bytes);
+		await this.write(CRLF);
+
+		for (;;) {
+			const line = await this.readLine();
+			if (!line.startsWith(tag)) continue;
+			if (!line.toUpperCase().includes(" OK")) throw new Error(`IMAP APPEND failed: ${line}`.slice(0, 500));
+			return;
+		}
+	}
+
 	private nextTag(): string {
 		return `a${String(++this.tag).padStart(4, "0")}`;
 	}

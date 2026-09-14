@@ -2,13 +2,14 @@ import { createMimeMessage, Mailbox } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { getDb, type Database } from "@/db";
-import { contacts, domains, emailCampaigns, externalAccounts, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
+import { contacts, domains, emailCampaigns, externalAccounts, externalFolders, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "./types";
 import { safeEmailHtml } from "./html-safety";
 import { nextScheduledDelay } from "./schedule";
 import { notifyMailbox } from "../realtime/notify";
 import { decryptExternalAccountSecret } from "../auth/secrets";
 import { SmtpConnection } from "../external/smtp";
+import { ImapConnection } from "../import/imap";
 
 /** A crashed consumer can leave a recipient claimed; after this, another job recovers it. */
 const DELIVERY_LEASE_MS = 5 * 60 * 1000;
@@ -252,6 +253,9 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			});
 			return;
 		}
+		if (row.mailboxSource === "external" && row.external && !row.message.externalSentAppendedAt) {
+			await appendExternalSent(env, row.external, row.message.id, mime.asRaw());
+		}
 
 		await db
 			.update(outboundJobs)
@@ -301,6 +305,33 @@ async function sendThroughExternalSmtp(
 	} finally {
 		await smtp.close();
 	}
+}
+
+async function appendExternalSent(
+	env: Env,
+	account: typeof externalAccounts.$inferSelect,
+	messageId: string,
+	mime: string,
+): Promise<void> {
+	const db = getDb(env.DB);
+	const sent = await db.select({ remoteName: externalFolders.remoteName }).from(externalFolders)
+		.where(and(eq(externalFolders.accountId, account.id), eq(externalFolders.isSent, true))).get();
+	if (!sent) return;
+	const password = await decryptExternalAccountSecret(env, account.imapSecret);
+	if (!password) throw new Error("Stored IMAP credentials can no longer be decrypted");
+	const imap = await ImapConnection.open({
+		host: account.imapHost,
+		port: account.imapPort,
+		security: account.imapSecurity,
+		username: account.imapUsername,
+		password,
+	});
+	try {
+		await imap.appendMessage(sent.remoteName, mime);
+	} finally {
+		await imap.close();
+	}
+	await db.update(messages).set({ externalSentAppendedAt: new Date() }).where(eq(messages.id, messageId));
 }
 
 /** Atomically acquires one recipient so concurrent queue deliveries cannot double-send it. */

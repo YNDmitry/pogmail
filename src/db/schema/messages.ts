@@ -108,6 +108,8 @@ export const messages = sqliteTable(
 		/** IMAP identity for an external mailbox; both values are null for native mail. */
 		externalFolderId: text("external_folder_id"),
 		externalUid: integer("external_uid"),
+		/** Set once an SMTP-sent external message is appended to remote Sent. */
+		externalSentAppendedAt: integer("external_sent_appended_at", { mode: "timestamp_ms" }),
 		sizeBytes: integer("size_bytes").notNull().default(0),
 		hasAttachments: integer("has_attachments", { mode: "boolean" }).notNull().default(false),
 

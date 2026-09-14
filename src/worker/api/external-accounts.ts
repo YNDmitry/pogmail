@@ -108,11 +108,16 @@ export const externalAccountRoutes = new Hono<AppBindings>()
 			smtpUsername: input.smtp.username,
 			smtpSecret,
 		}).returning().get();
+		const inbox = folders.includes("INBOX") ? "INBOX" : folders[0] ?? "INBOX";
+		const sent = folders.find((folder) => /(^|[./]|\[)sent(?: |$)/i.test(folder));
 		await c.get("db").insert(externalFolders).values({
 			accountId: account.id,
-			remoteName: folders.includes("INBOX") ? "INBOX" : folders[0] ?? "INBOX",
+			remoteName: inbox,
 			isInbox: true,
 		});
+		if (sent && sent !== inbox) {
+			await c.get("db").insert(externalFolders).values({ accountId: account.id, remoteName: sent, isSent: true });
+		}
 
 		audit(c, { action: "external_account.create", mailboxId: mailbox.id, metadata: { address: input.address, imapHost: input.imap.host, smtpHost: input.smtp.host } });
 		await c.env.EXTERNAL_SYNC_QUEUE.send({ kind: "external-sync", accountId: account.id } satisfies ExternalSyncMessage);

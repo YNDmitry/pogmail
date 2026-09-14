@@ -2,11 +2,11 @@ import { Hono, type Context } from "hono";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 import { HTTPException } from "hono/http-exception";
-import { calendarConnections, calendarEvents, calendarOAuthStates, messageAttachments, messages, outboundJobs } from "@/db/schema";
+import { calendarConnections, calendarEventLinks, calendarEvents, calendarOAuthStates, messageAttachments, messages, outboundJobs } from "@/db/schema";
 import { audit } from "../audit";
 import { parseIcs, toIcs } from "../calendar/ics";
 import { decryptSecret, encryptSecret, SecretKeyMissing } from "../auth/secrets";
-import { syncCalendarConnection } from "../calendar/sync";
+import { deleteCalendarEventFromConnection, syncCalendarConnection } from "../calendar/sync";
 import { sendableMailbox } from "./send";
 import type { OutboundSendMessage } from "../email/types";
 import type { AppBindings } from "../middleware/context";
@@ -165,6 +165,23 @@ export const calendarRoutes = new Hono<AppBindings>()
 	})
 
 	.delete("/events/:id", async (c) => {
+		const event = await c.get("db").select().from(calendarEvents).where(
+			and(eq(calendarEvents.id, c.req.param("id")), eq(calendarEvents.userId, c.get("user").id)),
+		).get();
+		if (!event) notFound("Event");
+		const links = await c.get("db").select({ connection: calendarConnections, link: calendarEventLinks })
+			.from(calendarEventLinks)
+			.innerJoin(calendarConnections, eq(calendarConnections.id, calendarEventLinks.connectionId))
+			.where(eq(calendarEventLinks.eventId, event.id))
+			.all();
+		for (const { connection, link } of links) {
+			try {
+				await deleteCalendarEventFromConnection(c.env, c.get("db"), connection, link);
+			} catch (error) {
+				const message = error instanceof Error ? error.message.slice(0, 500) : "Calendar sync failed";
+				throw new HTTPException(502, { message });
+			}
+		}
 		const row = await c
 			.get("db")
 			.delete(calendarEvents)

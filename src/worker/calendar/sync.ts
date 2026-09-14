@@ -1,11 +1,12 @@
 import { eq } from "drizzle-orm";
 import type { Database } from "@/db";
-import { calendarConnections } from "@/db/schema";
+import { calendarConnections, calendarEventLinks } from "@/db/schema";
 import { decryptSecret } from "../auth/secrets";
-import { syncCaldav } from "./caldav";
-import { syncGoogle } from "./google";
+import { deleteCaldavEvent, syncCaldav } from "./caldav";
+import { deleteGoogleEvent, googleHeaders, syncGoogle } from "./google";
 
 type Connection = typeof calendarConnections.$inferSelect;
+type Link = typeof calendarEventLinks.$inferSelect;
 
 export type CalendarSyncResult = { imported: number; exported: number };
 
@@ -59,4 +60,32 @@ async function syncGoogleConnection(
 		throw new Error("Google Calendar authorization is incomplete");
 	}
 	return syncGoogle(db, connection, config.clientSecret, config.refreshToken);
+}
+
+/** Delete the provider copy before removing the local event and its link. */
+export async function deleteCalendarEventFromConnection(
+	env: Env,
+	db: Database,
+	connection: Connection,
+	link: Link,
+): Promise<void> {
+	try {
+		const secret = connection.secret
+			? await decryptSecret(env, connection.secret)
+			: null;
+		if (!secret) throw new Error("The calendar credentials can no longer be read; reconnect it");
+
+		if (connection.provider === "caldav") {
+			await deleteCaldavEvent(connection, secret, link.href, link.etag);
+		} else {
+			const config = JSON.parse(secret) as { clientSecret?: string; refreshToken?: string };
+			if (!config.clientSecret || !config.refreshToken) throw new Error("Google Calendar authorization is incomplete");
+			await deleteGoogleEvent(await googleHeaders(connection, config.clientSecret, config.refreshToken), link.href);
+		}
+		await db.update(calendarConnections).set({ lastError: null }).where(eq(calendarConnections.id, connection.id));
+	} catch (error) {
+		const message = error instanceof Error ? error.message.slice(0, 500) : "Calendar sync failed";
+		await db.update(calendarConnections).set({ lastError: message }).where(eq(calendarConnections.id, connection.id));
+		throw error;
+	}
 }

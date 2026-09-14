@@ -1,11 +1,19 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { getCookie } from "hono/cookie";
 import { eq, sql } from "drizzle-orm";
-import { appSettings, users } from "@/db/schema";
+import { appSettings, passkeyChallenges, passkeys, users } from "@/db/schema";
+import { z } from "zod";
 import { loginInput, registerInput } from "@/shared/contract/auth";
 import { audit } from "../audit";
 import { hashPassword, verifyPassword } from "../auth/password";
+import {
+	randomChallenge,
+	toBase64Url,
+	verifyAuthentication,
+	verifyClientData,
+	verifyRegistration,
+} from "../auth/passkey";
 import {
 	clearedSessionCookie,
 	createSession,
@@ -16,6 +24,32 @@ import {
 import { requireAuth } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
 import { parseBody } from "./_util";
+
+const passkeyChallengeInput = z.object({ challengeId: z.string().min(1).max(64) });
+const registrationInput = passkeyChallengeInput.extend({
+	name: z.string().trim().min(1).max(120).optional(),
+	credential: z.object({
+		id: z.string().min(1).max(2048),
+		rawId: z.string().min(1).max(2048),
+		response: z.object({
+			clientDataJSON: z.string().min(1).max(16_384),
+			attestationObject: z.string().min(1).max(65_536),
+		}),
+	}),
+});
+const authenticationInput = passkeyChallengeInput.extend({
+	credential: z.object({
+		id: z.string().min(1).max(2048),
+		rawId: z.string().min(1).max(2048),
+		response: z.object({
+			clientDataJSON: z.string().min(1).max(16_384),
+			authenticatorData: z.string().min(1).max(2048),
+			signature: z.string().min(1).max(2048),
+		}),
+	}),
+});
+
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 export const authRoutes = new Hono<AppBindings>()
 	.post("/login", async (c) => {
@@ -49,6 +83,143 @@ export const authRoutes = new Hono<AppBindings>()
 		});
 		audit(c, { action: "auth.login" });
 
+		return c.json(c.get("user"));
+	})
+
+	.post("/passkeys/register/options", requireAuth, async (c) => {
+		const user = c.get("user");
+		const challenge = randomChallenge();
+		const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS);
+		const record = await c
+			.get("db")
+			.insert(passkeyChallenges)
+			.values({ userId: user.id, challenge, purpose: "registration", expiresAt })
+			.returning({ id: passkeyChallenges.id })
+			.get();
+		const url = new URL(c.req.url);
+		const existing = await c
+			.get("db")
+			.select({ credentialId: passkeys.credentialId })
+			.from(passkeys)
+			.where(eq(passkeys.userId, user.id));
+
+		return c.json({
+			challengeId: record.id,
+			publicKey: {
+				challenge,
+				rp: { id: url.hostname, name: "Pogmail" },
+				user: { id: toBase64Url(new TextEncoder().encode(user.id)), name: user.email, displayName: user.name },
+				pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+				timeout: CHALLENGE_TTL_MS,
+				attestation: "none",
+				authenticatorSelection: { residentKey: "required", userVerification: "required" },
+				excludeCredentials: existing.map((credential) => ({
+					type: "public-key",
+					id: credential.credentialId,
+				})),
+			},
+		});
+	})
+
+	.post("/passkeys/register/verify", requireAuth, async (c) => {
+		const input = await parseBody(c, registrationInput);
+		const user = c.get("user");
+		const challenge = await consumeChallenge(c, input.challengeId, "registration", user.id);
+		const url = new URL(c.req.url);
+		await verifyClientData(input.credential.response.clientDataJSON, "webauthn.create", challenge, url.origin);
+		if (input.credential.id !== input.credential.rawId) throw new HTTPException(400, { message: "Invalid passkey credential" });
+		const verified = await verifyRegistration(input.credential.response.attestationObject, url.hostname);
+		if (verified.credentialId !== input.credential.rawId) throw new HTTPException(400, { message: "Invalid passkey credential" });
+
+		const created = await c
+			.get("db")
+			.insert(passkeys)
+			.values({
+				userId: user.id,
+				credentialId: verified.credentialId,
+				publicKey: verified.publicKey,
+				signCount: verified.signCount,
+				name: input.name || "Passkey",
+			})
+			.returning({ id: passkeys.id, name: passkeys.name, createdAt: passkeys.createdAt })
+			.get()
+			.catch((error: unknown) => {
+				if (isUniqueViolation(error)) throw new HTTPException(409, { message: "This passkey is already registered" });
+				throw error;
+			});
+
+		audit(c, { action: "auth.passkey_register", metadata: { passkeyId: created.id } });
+		return c.json(created, 201);
+	})
+
+	.post("/passkeys/authenticate/options", async (c) => {
+		const challenge = randomChallenge();
+		const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS);
+		const record = await c
+			.get("db")
+			.insert(passkeyChallenges)
+			.values({ challenge, purpose: "authentication", expiresAt })
+			.returning({ id: passkeyChallenges.id })
+			.get();
+		const url = new URL(c.req.url);
+		return c.json({
+			challengeId: record.id,
+			publicKey: {
+				challenge,
+				rpId: url.hostname,
+				timeout: CHALLENGE_TTL_MS,
+				userVerification: "required",
+			},
+		});
+	})
+
+	.post("/passkeys/authenticate/verify", async (c) => {
+		const input = await parseBody(c, authenticationInput);
+		const challenge = await consumeChallenge(c, input.challengeId, "authentication");
+		const url = new URL(c.req.url);
+		const clientData = await verifyClientData(input.credential.response.clientDataJSON, "webauthn.get", challenge, url.origin);
+		if (input.credential.id !== input.credential.rawId) throw new HTTPException(400, { message: "Invalid passkey credential" });
+		const passkey = await c
+			.get("db")
+			.select()
+			.from(passkeys)
+			.where(eq(passkeys.credentialId, input.credential.rawId))
+			.get();
+		if (!passkey) throw new HTTPException(401, { message: "This passkey is not registered" });
+		const signCount = await verifyAuthentication(
+			input.credential.response.authenticatorData,
+			clientData,
+			input.credential.response.signature,
+			passkey.publicKey,
+			url.hostname,
+		);
+		if (passkey.signCount !== 0 && signCount !== 0 && signCount <= passkey.signCount) {
+			throw new HTTPException(401, { message: "This passkey may have been copied; use your password instead" });
+		}
+
+		const user = await c.get("db").select().from(users).where(eq(users.id, passkey.userId)).get();
+		if (!user || user.disabled) throw new HTTPException(401, { message: "This account is unavailable" });
+		await c
+			.get("db")
+			.update(passkeys)
+			.set({ signCount: Math.max(passkey.signCount, signCount), lastUsedAt: new Date() })
+			.where(eq(passkeys.id, passkey.id));
+		const session = await createSession(c.get("db"), user.id, {
+			userAgent: c.req.header("user-agent"),
+			ip: c.req.header("cf-connecting-ip"),
+		});
+		c.header("set-cookie", sessionCookie(session.token, session.expiresAt));
+		c.set("user", {
+			id: user.id,
+			email: user.email,
+			name: user.name,
+			role: user.role,
+			avatarKey: user.avatarKey,
+			mailLayout: user.mailLayout,
+			telegramChatId: user.telegramChatId,
+			canManageMailboxes: user.canManageMailboxes,
+		});
+		audit(c, { action: "auth.passkey_login", metadata: { passkeyId: passkey.id } });
 		return c.json(c.get("user"));
 	})
 
@@ -104,4 +275,23 @@ export const authRoutes = new Hono<AppBindings>()
 export async function instanceIsEmpty(db: AppBindings["Variables"]["db"]): Promise<boolean> {
 	const row = await db.select({ count: sql<number>`COUNT(*)` }).from(users).get();
 	return (row?.count ?? 0) === 0;
+}
+
+async function consumeChallenge(
+	c: Context<AppBindings>,
+	id: string,
+	purpose: "registration" | "authentication",
+	userId?: string,
+): Promise<string> {
+	const row = await c.get("db").select().from(passkeyChallenges).where(eq(passkeyChallenges.id, id)).get();
+	// Delete before verification: even a malformed assertion makes the ceremony single-use.
+	if (row) await c.get("db").delete(passkeyChallenges).where(eq(passkeyChallenges.id, row.id));
+	if (!row || row.purpose !== purpose || row.expiresAt <= new Date() || (userId !== undefined && row.userId !== userId)) {
+		throw new HTTPException(400, { message: "This passkey request has expired; try again" });
+	}
+	return row.challenge;
+}
+
+function isUniqueViolation(error: unknown): boolean {
+	return error instanceof Error && /unique|constraint/iu.test(error.message);
 }

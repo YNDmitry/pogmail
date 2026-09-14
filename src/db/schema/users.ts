@@ -60,6 +60,43 @@ export const sessions = sqliteTable(
 	],
 );
 
+/** A discoverable WebAuthn credential. Public keys are safe to retain in D1. */
+export const passkeys = sqliteTable(
+	"passkeys",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		/** base64url credential ID returned by the authenticator. */
+		credentialId: text("credential_id").notNull(),
+		/** base64url uncompressed P-256 public key (04 || x || y). */
+		publicKey: text("public_key").notNull(),
+		signCount: integer("sign_count").notNull().default(0),
+		name: text("name").notNull().default("Passkey"),
+		lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+		...timestamps(),
+	},
+	(t) => [
+		uniqueIndex("passkeys_credential_unq").on(t.credentialId),
+		index("passkeys_user_idx").on(t.userId),
+	],
+);
+
+/** Short-lived, single-use WebAuthn ceremonies. Keeping these server-side prevents replay. */
+export const passkeyChallenges = sqliteTable(
+	"passkey_challenges",
+	{
+		id: id(),
+		userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+		challenge: text("challenge").notNull(),
+		purpose: text("purpose", { enum: ["registration", "authentication"] }).notNull(),
+		expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [index("passkey_challenges_expires_idx").on(t.expiresAt), index("passkey_challenges_user_idx").on(t.userId)],
+);
+
 export const API_KEY_SCOPES = [
 	"messages:read",
 	"messages:send",

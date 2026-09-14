@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, List, MessagesSquare } from "lucide-react";
+import { Check, KeyRound, List, MessagesSquare, Trash2 } from "lucide-react";
 import { Button, SubmitButton } from "@/client/components/app/button";
 import { Input } from "@/client/components/ui";
 import { Card, Field } from "@/client/components/app/primitives";
@@ -10,6 +10,9 @@ import { useToast } from "@/client/components/app/toast-host";
 import { api, ApiError } from "@/client/lib/api";
 import { useSession } from "@/client/lib/queries";
 import { qk } from "@/client/lib/queries/keys";
+import { createPasskey, passkeysSupported } from "@/client/lib/passkeys";
+
+type Passkey = { id: string; name: string; createdAt: string; lastUsedAt: string | null };
 
 export const Route = createFileRoute("/_app/settings/profile")({ component: Profile });
 
@@ -35,6 +38,33 @@ function Profile() {
 
 	const [saving, setSaving] = useState<"idle" | "loading">("idle");
 	const [changing, setChanging] = useState<"idle" | "loading">("idle");
+	const [passkeys, setPasskeys] = useState<Passkey[]>([]);
+	const [passkeyPending, setPasskeyPending] = useState(false);
+	const [passkeySupported] = useState(passkeysSupported);
+
+	useEffect(() => {
+		void api.get<Passkey[]>("/api/settings/passkeys").then(setPasskeys).catch(() => undefined);
+	}, []);
+
+	async function addPasskey() {
+		if (!passkeySupported) return;
+		setPasskeyPending(true);
+		try {
+			const options = await api.post<Parameters<typeof createPasskey>[0]>("/api/auth/passkeys/register/options");
+			const response = await createPasskey(options);
+			const created = await api.post<Passkey>("/api/auth/passkeys/register/verify", {
+				...response,
+				name: "Passkey",
+			});
+			setPasskeys((current) => [...current, created]);
+			toast.ok("Passkey added", "You can now sign in with this device.");
+		} catch (error) {
+			if (error instanceof DOMException && error.name === "NotAllowedError") return;
+			toast.fail("Could not add passkey", error instanceof ApiError ? error.message : undefined);
+		} finally {
+			setPasskeyPending(false);
+		}
+	}
 
 	return (
 		<div className="space-y-8">
@@ -223,6 +253,57 @@ function Profile() {
 							Update
 						</Button>
 					</form>
+				</Card>
+			</section>
+
+			<section className="space-y-4">
+				<h2 className="display text-base">Passkeys</h2>
+				<p className="max-w-prose text-sm text-ink-2">
+					Use Face ID, Touch ID, Windows Hello, or your device lock instead of entering your password.
+				</p>
+
+				<Card className="divide-y divide-border">
+					{passkeys.length ? (
+						passkeys.map((passkey) => (
+							<div key={passkey.id} className="flex items-center gap-3 p-4">
+								<span className="grid size-9 shrink-0 place-items-center rounded-md bg-accent text-muted-foreground">
+									<KeyRound className="size-4" />
+								</span>
+								<span className="min-w-0 flex-1">
+									<span className="block text-sm font-medium text-foreground">{passkey.name}</span>
+									<span className="block text-xs text-muted-foreground">
+										{passkey.lastUsedAt ? `Last used ${new Date(passkey.lastUsedAt).toLocaleDateString()}` : "Not used yet"}
+									</span>
+								</span>
+								<Button
+									type="button"
+									variant="ghost"
+									size="icon"
+									aria-label={`Remove ${passkey.name}`}
+									onClick={async () => {
+										try {
+											await api.delete(`/api/settings/passkeys/${passkey.id}`);
+											setPasskeys((current) => current.filter((item) => item.id !== passkey.id));
+											toast.ok("Passkey removed");
+										} catch (error) {
+											toast.fail("Could not remove passkey", error instanceof ApiError ? error.message : undefined);
+										}
+									}}
+								>
+									<Trash2 className="size-4" />
+								</Button>
+							</div>
+						))
+					) : (
+						<p className="p-4 text-sm text-muted-foreground">No passkeys added yet.</p>
+					)}
+					<div className="p-4">
+						<Button type="button" variant="secondary" onClick={addPasskey} disabled={!passkeySupported || passkeyPending}>
+							<KeyRound className="size-4" />
+							{passkeyPending ? "Waiting for passkey…" : "Add passkey"}
+						</Button>
+						{!passkeySupported ? <p className="mt-2 text-xs text-muted-foreground">This browser does not support passkeys.</p> : null}
+					</div>
 				</Card>
 			</section>
 

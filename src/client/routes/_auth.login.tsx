@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
+import { KeyRound } from "lucide-react";
 import { api, ApiError } from "@/client/lib/api";
 import { AuthError, AuthField, authInputClass } from "@/client/components/app/auth-field";
-import { Input } from "@/client/components/ui";
-import { SubmitButton } from "@/client/components/app/button";
+import { Input, Separator } from "@/client/components/ui";
+import { Button, SubmitButton } from "@/client/components/app/button";
+import { passkeysSupported, requestPasskey } from "@/client/lib/passkeys";
 import type { SetupStatus } from "@/shared/contract/auth";
 
 export const Route = createFileRoute("/_auth/login")({
@@ -21,6 +23,7 @@ function Login() {
 	const { status } = Route.useRouteContext();
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
+	const [passkeyPending, setPasskeyPending] = useState(false);
 
 	async function submit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -39,6 +42,23 @@ function Login() {
 			setError(cause instanceof ApiError ? cause.message : "Could not sign in");
 		} finally {
 			setPending(false);
+		}
+	}
+
+	async function signInWithPasskey() {
+		setPasskeyPending(true);
+		setError(null);
+		try {
+			const options = await api.post<Parameters<typeof requestPasskey>[0]>("/api/auth/passkeys/authenticate/options");
+			const response = await requestPasskey(options);
+			await api.post("/api/auth/passkeys/authenticate/verify", response);
+			await router.invalidate();
+			await router.navigate({ to: "/mail/$folder", params: { folder: "inbox" } });
+		} catch (cause) {
+			if (cause instanceof DOMException && cause.name === "NotAllowedError") return;
+			setError(cause instanceof ApiError ? cause.message : "Could not sign in with passkey");
+		} finally {
+			setPasskeyPending(false);
 		}
 	}
 
@@ -67,6 +87,20 @@ function Login() {
 			<SubmitButton type="submit" state={pending ? "loading" : "idle"} className="h-11 w-full">
 				Sign in
 			</SubmitButton>
+
+			{passkeysSupported() ? (
+				<>
+					<div className="flex items-center gap-3 py-1 text-xs text-muted-foreground">
+						<Separator className="flex-1" />
+						or
+						<Separator className="flex-1" />
+					</div>
+					<Button type="button" variant="secondary" className="h-11 w-full" onClick={signInWithPasskey} disabled={passkeyPending}>
+						<KeyRound className="size-4" />
+						{passkeyPending ? "Waiting for passkey…" : "Sign in with passkey"}
+					</Button>
+				</>
+			) : null}
 
 			{status.allowRegistration ? (
 				<p className="text-center text-sm text-[var(--pogpin-auth-copy)]">

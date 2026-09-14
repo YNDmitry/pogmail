@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { eq } from "drizzle-orm";
-import { users } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { passkeys, users } from "@/db/schema";
 import {
 	changePasswordInput,
 	forwardingInput,
@@ -16,6 +16,28 @@ import { parseBody } from "./_util";
 import { deleteObject, putUpload, publicKeyFor } from "../storage";
 
 export const settingsRoutes = new Hono<AppBindings>()
+	.get("/passkeys", async (c) => {
+		const rows = await c
+			.get("db")
+			.select({ id: passkeys.id, name: passkeys.name, createdAt: passkeys.createdAt, lastUsedAt: passkeys.lastUsedAt })
+			.from(passkeys)
+			.where(eq(passkeys.userId, c.get("user").id))
+			.orderBy(passkeys.createdAt);
+		return c.json(rows);
+	})
+
+	.delete("/passkeys/:id", async (c) => {
+		const removed = await c
+			.get("db")
+			.delete(passkeys)
+			.where(and(eq(passkeys.id, c.req.param("id")), eq(passkeys.userId, c.get("user").id)))
+			.returning({ id: passkeys.id })
+			.get();
+		if (!removed) throw new HTTPException(404, { message: "Passkey not found" });
+		audit(c, { action: "auth.passkey_remove", metadata: { passkeyId: removed.id } });
+		return c.json({ ok: true });
+	})
+
 	.patch("/profile", async (c) => {
 		const input = await parseBody(c, updateProfileInput);
 

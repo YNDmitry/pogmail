@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import { id, timestamps } from "./_shared";
+import { createdAt, id, timestamps } from "./_shared";
 import { folders, mailboxes } from "./mailboxes";
 import { users } from "./users";
 
@@ -424,4 +424,18 @@ export const calendarEventLinks = sqliteTable(
 		uniqueIndex("calendar_event_links_connection_event_unq").on(t.connectionId, t.eventId),
 		uniqueIndex("calendar_event_links_connection_href_unq").on(t.connectionId, t.href),
 	],
+);
+
+/** Short-lived OAuth state, bound to both the browser user and a pending connection. */
+export const calendarOAuthStates = sqliteTable(
+	"calendar_oauth_states",
+	{
+		id: id(),
+		connectionId: text("connection_id").notNull().references(() => calendarConnections.id, { onDelete: "cascade" }),
+		userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+		state: text("state").notNull(),
+		expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [uniqueIndex("calendar_oauth_states_state_unq").on(t.state), index("calendar_oauth_states_expires_idx").on(t.expiresAt)],
 );

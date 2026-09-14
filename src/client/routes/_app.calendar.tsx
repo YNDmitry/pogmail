@@ -255,6 +255,7 @@ function Calendar() {
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
   const [caldavOpen, setCaldavOpen] = useState(false);
+  const [googleOpen, setGoogleOpen] = useState(false);
   const icsRef = useRef<HTMLInputElement>(null);
 
   /*
@@ -550,9 +551,8 @@ function Calendar() {
         description="Events you keep alongside your mail. Invitations you accept land here too."
         actions={
           <>
-            <Button size="sm" variant="secondary" onClick={() => setCaldavOpen(true)}>
-              Connect CalDAV
-            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setCaldavOpen(true)}>Connect CalDAV</Button>
+            <Button size="sm" variant="secondary" onClick={() => setGoogleOpen(true)}>Connect Google</Button>
             <Button size="sm" title="New event (N)" onClick={() => setDraft(draftForDay(today))}>
               <Plus className="size-3.5" />
               New event
@@ -861,6 +861,7 @@ function Calendar() {
           setCaldavOpen(false);
         }}
       />
+      <GoogleDialog open={googleOpen} onClose={() => setGoogleOpen(false)} />
 
       <Modal
         open={openDay !== null}
@@ -886,6 +887,29 @@ function Calendar() {
       </Modal>
     </div>
   );
+}
+
+function GoogleDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+  if (!open) return null;
+  const callback = `${location.origin}/api/calendar/connections/google/callback`;
+  return <Modal open onClose={onClose} title="Connect Google Calendar">
+    <form className="space-y-4" onSubmit={async (event) => {
+      event.preventDefault(); const form = new FormData(event.currentTarget); setSaving(true);
+      try {
+        const { url } = await api.post<{ url: string }>("/api/calendar/connections/google/start", { clientId: String(form.get("clientId")), clientSecret: String(form.get("clientSecret")) });
+        location.assign(url);
+      } catch (error) { toast.fail("Could not start Google connection", error instanceof ApiError ? error.message : undefined); setSaving(false); }
+    }}>
+      <p className="text-sm text-muted-foreground">In Google Cloud, enable Calendar API and create an OAuth Client of type <strong>Web application</strong>. Add this exact authorized redirect URI:</p>
+      <code className="machine block break-all rounded-md bg-accent px-3 py-2 text-xs text-foreground">{callback}</code>
+      <Field label="OAuth Client ID"><Input name="clientId" required /></Field>
+      <Field label="OAuth Client Secret"><Input name="clientSecret" type="password" required /></Field>
+      <p className="text-xs text-muted-foreground">The secret is encrypted immediately and is never returned to the browser.</p>
+      <div className="flex justify-end gap-2 pt-2"><Button type="button" variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? "Opening Google…" : "Continue with Google"}</Button></div>
+    </form>
+  </Modal>;
 }
 
 function CaldavDialog({ open, onClose, onConnected }: { open: boolean; onClose: () => void; onConnected: () => Promise<void> }) {

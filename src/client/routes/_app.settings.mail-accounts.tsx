@@ -91,7 +91,7 @@ function MailAccounts() {
 					</div>
 					<ConnectionFields prefix="imap" title="IMAP inbox" host="imap.example.com" port={993} />
 					<ConnectionFields prefix="smtp" title="SMTP sending" host="smtp.example.com" port={465} />
-					<SubmitButton state={busy ? "loading" : "idle"} loadingText="Checking servers…">Connect account</SubmitButton>
+					<SubmitButton type="submit" state={busy ? "loading" : "idle"} loadingText="Checking servers…">Connect account</SubmitButton>
 				</form>
 			</Card>
 

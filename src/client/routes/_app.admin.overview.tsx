@@ -166,7 +166,7 @@ function Overview() {
 				<p className="machine mt-4 text-[1.375rem] text-ink">{bytes(data?.storageBytes ?? 0)}</p>
 			</Card>
 
-			<Version />
+			<section id="version" className="scroll-mt-6"><Version /></section>
 			<TelegramBot />
 		</div>
 	);

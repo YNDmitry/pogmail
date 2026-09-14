@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import { Link, useRouter } from "@tanstack/react-router";
 import { motion } from "motion/react";
@@ -25,6 +26,8 @@ import { MailboxSwitcher } from "@/client/components/app/shell/mailbox-switcher"
 import { useLogout } from "@/client/lib/queries";
 import { interceptRouterLinks } from "@/client/lib/route-links";
 import { cn } from "@/client/lib/utils";
+import { api } from "@/client/lib/api";
+import { qk } from "@/client/lib/queries/keys";
 import type { SessionUser } from "@/shared/contract/auth";
 import type { MailboxSummary } from "@/shared/contract/mail";
 
@@ -114,6 +117,12 @@ export function AppSidebar({
 	const navigateInApp = useMemo(() => interceptRouterLinks(router), [router]);
 	const { isMobile } = useAnimatedSidebar();
 	const navCompact = compact && !isMobile;
+	const version = useQuery({
+		queryKey: qk.adminVersion,
+		queryFn: () => api.get<{ behind: boolean | null }>("/api/admin/version"),
+		enabled: user?.role === "admin",
+		staleTime: 60 * 60 * 1000,
+	});
 
 	return (
 		<AnimatedSidebar
@@ -203,6 +212,22 @@ export function AppSidebar({
 							</AnimatedSidebarGroupContent>
 						</AnimatedSidebarGroup>
 					))}
+					{version.data?.behind ? (
+						<div className="px-3 pt-2">
+							<Link
+								to="/admin"
+								hash="version"
+								className={cn(
+									"flex items-center gap-2 rounded-md bg-[var(--pogpin-warning-surface)] px-3 py-2 text-xs font-medium text-[var(--pogpin-warning)]",
+									navCompact && "justify-center px-2 text-transparent",
+								)}
+								title="Update available"
+							>
+								<span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />
+								<span className={cn(navCompact && "hidden")}>Update available</span>
+							</Link>
+						</div>
+					) : null}
 
 				</ScrollFade>
 			</AnimatedSidebarContent>

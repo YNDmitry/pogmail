@@ -310,6 +310,14 @@ export const adminRoutes = new Hono<AppBindings>()
 					})
 				: null;
 
+		const comparison =
+			BUILD_COMMIT && upstream && BUILD_COMMIT !== upstream.sha
+				? await fetch(`https://api.github.com/repos/${UPSTREAM_REPOSITORY}/compare/${BUILD_COMMIT}...${upstream.sha}`, {
+					headers: { accept: "application/vnd.github+json", "user-agent": "pogmail" },
+					cf: { cacheTtl: 3600, cacheEverything: true },
+				}).then(async (result) => result.ok ? (await result.json()) as { ahead_by: number } : null).catch(() => null)
+				: null;
+
 		return c.json({
 			repository: UPSTREAM_REPOSITORY,
 			commit: BUILD_COMMIT,
@@ -320,8 +328,8 @@ export const adminRoutes = new Hono<AppBindings>()
 				subject: upstream.commit.message.split("\n")[0] ?? "",
 				committedAt: upstream.commit.committer.date,
 			},
-			// Null, not false, when either side is unknown: "cannot tell" is not "current".
-			behind: BUILD_COMMIT && upstream ? BUILD_COMMIT !== upstream.sha : null,
+			// Unequal SHAs are not enough: a fork/merge can carry every upstream commit.
+			behind: BUILD_COMMIT && upstream ? BUILD_COMMIT === upstream.sha ? false : comparison ? comparison.ahead_by > 0 : null : null,
 		});
 	})
 

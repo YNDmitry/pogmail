@@ -47,6 +47,7 @@ import { ToastProvider } from "@/client/components/app/toast-host";
 import { AnimatedSidebarProvider } from "@/client/components/motion/animated-sidebar";
 import { ScrollFade, TooltipProvider } from "@/client/components/ui";
 import { IdentityProvider } from "@/client/lib/identity-context";
+import { InboxFavicon } from "@/client/components/app/inbox-favicon";
 import type { SessionUser } from "@/shared/contract/auth";
 
 export const Route = createFileRoute("/_app")({
@@ -183,6 +184,9 @@ function AppLayout() {
 		if (event.type === "message.new" || event.type === "message.sent" || event.type === "message.delivery") {
           void queryClient.invalidateQueries({ queryKey: ["messages"] });
         }
+		if (event.type === "message.new") {
+			void queryClient.invalidateQueries({ queryKey: qk.counts });
+		}
         if (event.type === "domain.status") {
           void queryClient.invalidateQueries({ queryKey: ["domains"] });
         }
@@ -301,6 +305,7 @@ function AppLayout() {
 
   return (
     <IdentityProvider appName={branding.data?.appName}>
+		<InboxFavicon unread={counts.data?.byStatus.received ?? 0} />
       <ToastProvider>
         <TooltipProvider>
           <AnimatedSidebarProvider

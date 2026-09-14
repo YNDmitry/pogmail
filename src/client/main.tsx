@@ -42,7 +42,10 @@ function ThemeFavicon() {
 
 	useEffect(() => {
 		const favicon = document.getElementById("theme-favicon") as HTMLLinkElement | null;
-		if (favicon) favicon.href = resolvedTheme === "dark" ? "/logo.svg" : "/logo-light.svg";
+		if (favicon) {
+			favicon.type = "image/svg+xml";
+			favicon.href = resolvedTheme === "dark" ? "/logo.svg" : "/logo-light.svg";
+		}
 	}, [resolvedTheme]);
 
 	return null;

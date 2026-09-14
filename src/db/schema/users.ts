@@ -97,6 +97,19 @@ export const passkeyChallenges = sqliteTable(
 	(t) => [index("passkey_challenges_expires_idx").on(t.expiresAt), index("passkey_challenges_user_idx").on(t.userId)],
 );
 
+/** One-time codes let a person recover access when every passkey is unavailable. */
+export const recoveryCodes = sqliteTable(
+	"recovery_codes",
+	{
+		id: id(),
+		userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+		codeHash: text("code_hash").notNull(),
+		usedAt: integer("used_at", { mode: "timestamp_ms" }),
+		createdAt: createdAt(),
+	},
+	(t) => [uniqueIndex("recovery_codes_hash_unq").on(t.codeHash), index("recovery_codes_user_idx").on(t.userId)],
+);
+
 export const API_KEY_SCOPES = [
 	"messages:read",
 	"messages:send",

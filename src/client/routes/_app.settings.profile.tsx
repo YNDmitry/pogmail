@@ -41,6 +41,8 @@ function Profile() {
 	const [passkeys, setPasskeys] = useState<Passkey[]>([]);
 	const [passkeyPending, setPasskeyPending] = useState(false);
 	const [passkeySupported] = useState(passkeysSupported);
+	const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+	const [recoveryPending, setRecoveryPending] = useState(false);
 
 	useEffect(() => {
 		void api.get<Passkey[]>("/api/settings/passkeys").then(setPasskeys).catch(() => undefined);
@@ -63,6 +65,19 @@ function Profile() {
 			toast.fail("Could not add passkey", error instanceof ApiError ? error.message : undefined);
 		} finally {
 			setPasskeyPending(false);
+		}
+	}
+
+	async function generateRecoveryCodes() {
+		setRecoveryPending(true);
+		try {
+			const result = await api.post<{ codes: string[] }>("/api/settings/recovery-codes");
+			setRecoveryCodes(result.codes);
+			toast.ok("Recovery codes created", "Save them somewhere private. Each code works once.");
+		} catch (error) {
+			toast.fail("Could not create recovery codes", error instanceof ApiError ? error.message : undefined);
+		} finally {
+			setRecoveryPending(false);
 		}
 	}
 
@@ -175,6 +190,16 @@ function Profile() {
 							</button>
 						);
 					})}
+				</Card>
+			</section>
+
+			<section className="space-y-4">
+				<h2 className="display text-base">Recovery codes</h2>
+				<p className="max-w-prose text-sm text-ink-2">Keep these offline. They let you sign in once if every passkey is unavailable, then you should add a new passkey.</p>
+				<Card className="p-5">
+					{recoveryCodes ? <div className="mb-4 grid grid-cols-2 gap-2 rounded-md bg-muted p-3 font-mono text-sm text-foreground sm:grid-cols-5">{recoveryCodes.map((code) => <code key={code}>{code}</code>)}</div> : null}
+					<Button type="button" variant="secondary" onClick={generateRecoveryCodes} disabled={recoveryPending}>{recoveryPending ? "Creating codes…" : recoveryCodes ? "Replace recovery codes" : "Create recovery codes"}</Button>
+					<p className="mt-2 text-xs text-muted-foreground">Creating another set invalidates the previous codes.</p>
 				</Card>
 			</section>
 

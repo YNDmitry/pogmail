@@ -24,6 +24,7 @@ function Login() {
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const [passkeyPending, setPasskeyPending] = useState(false);
+	const [usingRecoveryCode, setUsingRecoveryCode] = useState(false);
 
 	async function submit(event: React.FormEvent<HTMLFormElement>) {
 		event.preventDefault();
@@ -32,9 +33,9 @@ function Login() {
 
 		const form = new FormData(event.currentTarget);
 		try {
-			await api.post("/api/auth/login", {
+			await api.post(usingRecoveryCode ? "/api/auth/recovery-login" : "/api/auth/login", {
 				email: String(form.get("email")),
-				password: String(form.get("password")),
+				[usingRecoveryCode ? "code" : "password"]: String(form.get("password")),
 			});
 			await router.invalidate();
 			await router.navigate({ to: "/mail/$folder", params: { folder: "inbox" } });
@@ -72,12 +73,12 @@ function Login() {
 				<Input name="email" type="email" required autoComplete="username" autoFocus className={authInputClass} />
 			</AuthField>
 
-			<AuthField label="Password">
+			<AuthField label={usingRecoveryCode ? "Recovery code" : "Password"}>
 				<Input
 					name="password"
-					type="password"
+					type={usingRecoveryCode ? "text" : "password"}
 					required
-					autoComplete="current-password"
+					autoComplete={usingRecoveryCode ? "one-time-code" : "current-password"}
 					className={authInputClass}
 				/>
 			</AuthField>
@@ -85,8 +86,12 @@ function Login() {
 			{error ? <AuthError>{error}</AuthError> : null}
 
 			<SubmitButton type="submit" state={pending ? "loading" : "idle"} className="h-11 w-full">
-				Sign in
+				{usingRecoveryCode ? "Use recovery code" : "Sign in"}
 			</SubmitButton>
+
+			<Button type="button" variant="ghost" className="w-full" onClick={() => setUsingRecoveryCode((value) => !value)}>
+				{usingRecoveryCode ? "Use password instead" : "Use a recovery code"}
+			</Button>
 
 			{passkeysSupported() ? (
 				<>

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { and, eq } from "drizzle-orm";
-import { passkeys, users } from "@/db/schema";
+import { passkeys, recoveryCodes, users } from "@/db/schema";
 import {
 	changePasswordInput,
 	forwardingInput,
@@ -9,13 +9,31 @@ import {
 	updateProfileInput,
 } from "@/shared/contract/settings";
 import { audit } from "../audit";
-import { hashPassword, verifyPassword } from "../auth/password";
+import { hashPassword, sha256Hex, verifyPassword } from "../auth/password";
 import { destroyAllSessions } from "../auth/session";
 import type { AppBindings } from "../middleware/context";
 import { parseBody } from "./_util";
 import { deleteObject, putUpload, publicKeyFor } from "../storage";
 
+function createRecoveryCode(): string {
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+	const bytes = crypto.getRandomValues(new Uint8Array(10));
+	const raw = [...bytes].map((byte) => alphabet[byte % alphabet.length]).join("");
+	return `${raw.slice(0, 5)}-${raw.slice(5)}`;
+}
+
 export const settingsRoutes = new Hono<AppBindings>()
+	.post("/recovery-codes", async (c) => {
+		const codes = Array.from({ length: 10 }, createRecoveryCode);
+		await c.get("db").delete(recoveryCodes).where(eq(recoveryCodes.userId, c.get("user").id));
+		await c.get("db").insert(recoveryCodes).values(await Promise.all(codes.map(async (code) => ({
+			userId: c.get("user").id,
+			codeHash: await sha256Hex(code.replaceAll("-", "")),
+		}))));
+		audit(c, { action: "auth.recovery_codes_generate" });
+		return c.json({ codes });
+	})
+
 	.get("/passkeys", async (c) => {
 		const rows = await c
 			.get("db")

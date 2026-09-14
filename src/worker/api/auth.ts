@@ -1,12 +1,12 @@
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { getCookie } from "hono/cookie";
-import { eq, sql } from "drizzle-orm";
-import { appSettings, passkeyChallenges, passkeys, users } from "@/db/schema";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { appSettings, passkeyChallenges, passkeys, recoveryCodes, users } from "@/db/schema";
 import { z } from "zod";
 import { loginInput, registerInput } from "@/shared/contract/auth";
 import { audit } from "../audit";
-import { hashPassword, verifyPassword } from "../auth/password";
+import { hashPassword, sha256Hex, verifyPassword } from "../auth/password";
 import {
 	randomChallenge,
 	toBase64Url,
@@ -26,6 +26,7 @@ import type { AppBindings } from "../middleware/context";
 import { parseBody } from "./_util";
 
 const passkeyChallengeInput = z.object({ challengeId: z.string().min(1).max(64) });
+const recoveryLoginInput = z.object({ email: z.email(), code: z.string().min(6).max(32) });
 const registrationInput = passkeyChallengeInput.extend({
 	name: z.string().trim().min(1).max(120).optional(),
 	credential: z.object({
@@ -84,6 +85,22 @@ export const authRoutes = new Hono<AppBindings>()
 		audit(c, { action: "auth.login" });
 
 		return c.json(c.get("user"));
+	})
+
+	.post("/recovery-login", async (c) => {
+		const input = await parseBody(c, recoveryLoginInput);
+		const email = input.email.toLowerCase();
+		const { success } = await c.env.AUTH_RATE_LIMIT.limit({ key: `recovery:${email}` });
+		if (!success) throw new HTTPException(429, { message: "Too many attempts, try again shortly" });
+		const user = await c.get("db").select().from(users).where(eq(users.email, email)).get();
+		const hash = await sha256Hex(input.code.toUpperCase().replaceAll(/[^A-Z0-9]/g, ""));
+		const code = user ? await c.get("db").select().from(recoveryCodes).where(and(eq(recoveryCodes.userId, user.id), eq(recoveryCodes.codeHash, hash), isNull(recoveryCodes.usedAt))).get() : undefined;
+		if (!user || user.disabled || !code) throw new HTTPException(401, { message: "Invalid recovery code" });
+		await c.get("db").update(recoveryCodes).set({ usedAt: new Date() }).where(eq(recoveryCodes.id, code.id));
+		const session = await createSession(c.get("db"), user.id, { userAgent: c.req.header("user-agent"), ip: c.req.header("cf-connecting-ip") });
+		c.header("set-cookie", sessionCookie(session.token, session.expiresAt));
+		audit(c, { action: "auth.recovery_login" });
+		return c.json({ ok: true });
 	})
 
 	.post("/passkeys/register/options", requireAuth, async (c) => {

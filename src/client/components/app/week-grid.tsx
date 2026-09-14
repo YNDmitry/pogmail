@@ -123,6 +123,7 @@ export function WeekGrid({
 	onMove: (event: WeekEvent, start: Date, end: Date) => void;
 }) {
 	const bodyRef = useRef<HTMLDivElement>(null);
+	const scrolledWeekRef = useRef<number | null>(null);
 	const [drag, setDrag] = useState<Drag | null>(null);
 	const [now, setNow] = useState(() => new Date());
 
@@ -155,6 +156,24 @@ export function WeekGrid({
 	);
 
 	const blocks = useMemo(() => timed.flatMap((list, day) => layoutDay(list, day)), [timed]);
+
+	/*
+	 * Midnight is technically the start of a day, but it is almost never the
+	 * useful start of a calendar. Keep the opening viewport on working hours;
+	 * when today is visible, leave enough room above the current-time line to
+	 * make the next few hours readable. This only runs once for each week, so a
+	 * person scrolling through their day never gets pulled back unexpectedly.
+	 */
+	useEffect(() => {
+		const body = bodyRef.current;
+		const weekStart = days[0]?.getTime();
+		if (!body || weekStart === undefined || scrolledWeekRef.current === weekStart) return;
+
+		const todayInWeek = days.some((day) => sameDay(day, now));
+		const startMinutes = todayInWeek ? Math.max(7 * 60, minutesInto(now) - 3 * 60) : 8 * 60;
+		body.scrollTop = (startMinutes / 60) * HOUR;
+		scrolledWeekRef.current = weekStart;
+	}, [days, now]);
 
 	/** Where in the grid a pointer is, in day index and minutes past midnight. */
 	const locate = useCallback(

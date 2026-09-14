@@ -125,6 +125,8 @@ const DAY_SHORT = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
   month: "short",
 });
+const AGENDA_WEEKDAY = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+const AGENDA_MONTH = new Intl.DateTimeFormat(undefined, { month: "short" });
 
 /** A week can straddle two months, so it says both ends. */
 function WEEK_LABEL(days: Date[]): string {
@@ -465,6 +467,17 @@ function Calendar() {
     .toSorted(
       (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime(),
     );
+  const agendaDays = useMemo(() => {
+    const groups = new Map<number, { day: Date; events: CalendarEvent[] }>();
+    for (const event of monthEvents) {
+      const day = startOfDay(new Date(event.startsAt));
+      const key = day.getTime();
+      const group = groups.get(key) ?? { day, events: [] };
+      group.events.push(event);
+      groups.set(key, group);
+    }
+    return [...groups.values()];
+  }, [monthEvents]);
 
   async function importIcs(file: File | null) {
     if (!file) return;
@@ -762,18 +775,31 @@ function Calendar() {
           </div>
         </Card>
       ) : (
-        <Card>
+        <Card className="overflow-hidden">
           {monthEvents.length ? (
-            <ul className="divide-y divide-border">
-              {monthEvents.map((event) => (
-                <li key={event.id}>
-                  <AgendaRow
-                    event={event}
-                    onOpen={() => setDraft(draftFromEvent(event))}
-                  />
-                </li>
+            <div className="divide-y divide-border">
+              {agendaDays.map(({ day, events: dayEvents }) => (
+                <section key={day.getTime()} className="grid grid-cols-[5.5rem_minmax(0,1fr)]">
+                  <header className="border-r border-border bg-[var(--pogpin-shell-fill-soft)] px-3 py-3">
+                    <p className="field-label">{AGENDA_WEEKDAY.format(day)}</p>
+                    <p className="machine mt-1 text-lg font-medium leading-none text-foreground">
+                      {day.getDate()}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{AGENDA_MONTH.format(day)}</p>
+                  </header>
+                  <ul className="divide-y divide-border">
+                    {dayEvents.map((event) => (
+                      <li key={event.id}>
+                        <AgendaRow
+                          event={event}
+                          onOpen={() => setDraft(draftFromEvent(event))}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           ) : (
             <Empty
               title="Nothing this month"
@@ -910,21 +936,21 @@ function AgendaRow({
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-[var(--pogpin-shell-fill-soft)]"
+      className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--pogpin-shell-fill-soft)]"
     >
-      <div className="w-24 shrink-0">
-        <div className="text-sm font-medium text-foreground">
-          {DAY_LONG.format(start)}
-        </div>
-        <Machine className="text-xs">
-          {event.allDay
-            ? "All day"
-            : `${TIME.format(start)}–${TIME.format(end)}`}
+      <div className="w-16 shrink-0 text-right">
+        <Machine className="block text-[0.6875rem] text-foreground">
+          {event.allDay ? "All day" : TIME.format(start)}
         </Machine>
+        {!event.allDay ? (
+          <Machine className="mt-0.5 block text-[0.625rem]">
+            {TIME.format(end)}
+          </Machine>
+        ) : null}
       </div>
 
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm text-foreground">{event.title}</div>
+      <div className="min-w-0 flex-1 border-l border-border pl-3">
+        <div className="truncate text-sm font-medium text-foreground">{event.title}</div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           {event.location ? (
             <span className="flex min-w-0 items-center gap-1.5">

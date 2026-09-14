@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { count, eq, sql } from "drizzle-orm";
+import { count, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Database } from "@/db";
-import { domains, mailboxes, messages, SINGLETON_ID, telegramSettings, updateSettings, users } from "@/db/schema";
+import { backups, calendarConnections, domains, mailboxes, messages, SINGLETON_ID, telegramSettings, updateSettings, users } from "@/db/schema";
 import { audit } from "../audit";
 import { BUILD_COMMIT, BUILD_REPOSITORY, UPSTREAM_REPOSITORY } from "../build";
 import { decryptSecret, encryptSecret } from "../auth/secrets";
@@ -158,6 +158,17 @@ async function explain404(input: UpdateInput): Promise<string> {
 
 export const adminRoutes = new Hono<AppBindings>()
 	.use("*", requireAdmin)
+	.get("/health", async (c) => {
+		const [calendar, latestBackup] = await Promise.all([
+			c.get("db").select({ count: count() }).from(calendarConnections).where(isNotNull(calendarConnections.lastError)).get(),
+			c.get("db").select({ status: backups.status, createdAt: backups.createdAt, error: backups.error }).from(backups).orderBy(desc(backups.createdAt)).limit(1).get(),
+		]);
+		return c.json({
+			ok: (calendar?.count ?? 0) === 0 && latestBackup?.status !== "failed",
+			calendarConnectionsNeedingAttention: calendar?.count ?? 0,
+			latestBackup: latestBackup ?? null,
+		});
+	})
 	.get("/telegram/config", async (c) => {
 		const settings = await c.get("db").select({ telegramBotToken: telegramSettings.telegramBotToken }).from(telegramSettings).get();
 		return c.json({ hasToken: Boolean(settings?.telegramBotToken || c.env.TELEGRAM_BOT_TOKEN) });

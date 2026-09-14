@@ -41,6 +41,11 @@ type VersionData = {
 	upstream: { commit: string; url: string; subject: string; committedAt: string } | null;
 	behind: boolean | null;
 };
+type HealthData = {
+	ok: boolean;
+	calendarConnectionsNeedingAttention: number;
+	latestBackup: { status: string; createdAt: string; error: string | null } | null;
+};
 
 const STATUS_ORDER = ["received", "sent", "draft", "archived", "spam", "trash"];
 
@@ -65,6 +70,7 @@ function Overview() {
 	});
 
 	const data = overview.data;
+	const health = useQuery({ queryKey: ["admin", "health"], queryFn: () => api.get<HealthData>("/api/admin/health"), refetchInterval: 60_000 });
 
 	const byStatus = STATUS_ORDER.map((status) => ({
 		status,
@@ -104,6 +110,20 @@ function Overview() {
 							</dd>
 						</div>
 					))}
+				</dl>
+			</Card>
+
+			<Card className="p-6">
+				<div className="flex items-center justify-between gap-4">
+					<div>
+						<h2 className="display text-[0.9375rem] text-ink">Operations</h2>
+						<p className="mt-1.5 text-sm text-ink-2">Calendar connections and the most recent backup.</p>
+					</div>
+					<Tag tone={health.data?.ok ? "ok" : "wait"}>{health.data?.ok ? "Healthy" : "Needs attention"}</Tag>
+				</div>
+				<dl className="mt-5 divide-y divide-seam text-sm">
+					<div className="flex justify-between gap-4 py-2"><dt className="text-ink-2">Calendar sync errors</dt><dd className="machine text-ink">{health.data?.calendarConnectionsNeedingAttention ?? "—"}</dd></div>
+					<div className="flex justify-between gap-4 py-2"><dt className="text-ink-2">Latest backup</dt><dd className="text-right text-ink">{health.data?.latestBackup ? `${health.data.latestBackup.status} · ${new Date(health.data.latestBackup.createdAt).toLocaleDateString()}` : "No backups yet"}</dd></div>
 				</dl>
 			</Card>
 

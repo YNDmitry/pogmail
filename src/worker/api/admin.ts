@@ -329,6 +329,23 @@ export const adminRoutes = new Hono<AppBindings>()
 				}).then(async (result) => result.ok ? (await result.json()) as { ahead_by: number } : null).catch(() => null)
 				: null;
 
+		// A Worker built from a private copy has a merge commit GitHub upstream does
+		// not know about. Compare in that copy instead: it contains upstream's SHA
+		// after a real merge, and `behind_by` says exactly what has not arrived yet.
+		const saved = await c.get("db").select().from(updateSettings).where(eq(updateSettings.id, SINGLETON_ID)).get();
+		const installationRepository = saved?.repository ?? BUILD_REPOSITORY;
+		const installationToken = saved?.githubToken ? await decryptSecret(c.env, saved.githubToken) : null;
+		const installationComparison =
+			!comparison && BUILD_COMMIT && upstream && installationRepository
+				? await fetch(`https://api.github.com/repos/${installationRepository}/compare/${upstream.sha}...${BUILD_COMMIT}`, {
+					headers: {
+						accept: "application/vnd.github+json",
+						"user-agent": "pogmail",
+						...(installationToken ? { authorization: `Bearer ${installationToken}` } : {}),
+					},
+				}).then(async (result) => result.ok ? (await result.json()) as { behind_by: number } : null).catch(() => null)
+				: null;
+
 		return c.json({
 			repository: UPSTREAM_REPOSITORY,
 			commit: BUILD_COMMIT,
@@ -340,7 +357,15 @@ export const adminRoutes = new Hono<AppBindings>()
 				committedAt: upstream.commit.committer.date,
 			},
 			// Unequal SHAs are not enough: a fork/merge can carry every upstream commit.
-			behind: BUILD_COMMIT && upstream ? BUILD_COMMIT === upstream.sha ? false : comparison ? comparison.ahead_by > 0 : null : null,
+			behind: BUILD_COMMIT && upstream
+				? BUILD_COMMIT === upstream.sha
+					? false
+					: comparison
+						? comparison.ahead_by > 0
+						: installationComparison
+							? installationComparison.behind_by > 0
+							: null
+				: null,
 		});
 	})
 

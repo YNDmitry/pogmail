@@ -13,6 +13,7 @@ import {
 } from "../mailboxes/access";
 import type { AppBindings } from "../middleware/context";
 import { serveObject } from "../storage";
+import { notifyMailbox } from "../realtime/notify";
 import { forbidden, notFound, parseBody, parseQuery } from "./_util";
 
 const listQuery = z.object({
@@ -177,9 +178,14 @@ export const messageRoutes = new Hono<AppBindings>()
 			.update(messages)
 			.set(toUpdate(patch))
 			.where(and(inArray(messages.id, ids), inArray(messages.mailboxId, scope)))
-			.returning({ id: messages.id })
+			.returning({ id: messages.id, mailboxId: messages.mailboxId })
 			.all();
 
+		await Promise.all(
+			[...new Set(result.map((message) => message.mailboxId))].map((mailboxId) =>
+				notifyMailbox(c.env, mailboxId, { type: "message.changed", mailboxId }),
+			),
+		);
 		audit(c, { action: "message.bulk_update", metadata: { count: result.length, patch } });
 		return c.json({ updated: result.length });
 	})
@@ -324,6 +330,7 @@ export const messageRoutes = new Hono<AppBindings>()
 			.returning()
 			.get();
 
+		await notifyMailbox(c.env, message.mailboxId, { type: "message.changed", mailboxId: message.mailboxId });
 		return c.json(row);
 	})
 
@@ -351,6 +358,11 @@ export const messageRoutes = new Hono<AppBindings>()
 			.set({ status: "failed", lastError: null })
 			.where(and(eq(outboundDeliveries.outboundJobId, job.id), eq(outboundDeliveries.status, "permanent")));
 		await c.env.OUTBOUND_QUEUE.send({ kind: "outbound", jobId: job.id } satisfies OutboundSendMessage);
+		await notifyMailbox(c.env, message.mailboxId, {
+			type: "message.delivery",
+			mailboxId: message.mailboxId,
+			messageId: message.id,
+		});
 		audit(c, { action: "message.retry", messageId: message.id, mailboxId: message.mailboxId });
 		return c.json({ ok: true });
 	})
@@ -373,6 +385,7 @@ export const messageRoutes = new Hono<AppBindings>()
 		if (message.rawKey) keys.push(message.rawKey);
 		await Promise.all(keys.map((key) => c.env.MAIL_BUCKET.delete(key)));
 
+		await notifyMailbox(c.env, message.mailboxId, { type: "message.deleted", mailboxId: message.mailboxId });
 		audit(c, { action: "message.delete", messageId: message.id, mailboxId: message.mailboxId });
 		return c.json({ ok: true });
 	});

@@ -3,6 +3,7 @@ import { eq, lt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { backupSettings, backups } from "@/db/schema";
 import { BACKUP_TABLES, backupPartKey, deleteBackupObjects, type BackupTableManifest } from "./format";
+import { notifyAdmins } from "../realtime/notify";
 
 export type BackupParams = { backupId: string };
 
@@ -30,6 +31,7 @@ export class DatabaseBackupWorkflow extends WorkflowEntrypoint<Env, BackupParams
 
 			return { prefix, r2Key };
 		});
+		await notifyAdmins(this.env, { type: "backups.changed" });
 
 		const counts: Record<string, number> = {};
 		const manifests: { table: (typeof BACKUP_TABLES)[number]; manifestKey: string }[] = [];
@@ -107,6 +109,7 @@ export class DatabaseBackupWorkflow extends WorkflowEntrypoint<Env, BackupParams
 				})
 				.where(eq(backups.id, backupId));
 		});
+		await notifyAdmins(this.env, { type: "backups.changed" });
 
 		await step.do("prune", async () => {
 			const settings = await db.select().from(backupSettings).get();
@@ -120,6 +123,7 @@ export class DatabaseBackupWorkflow extends WorkflowEntrypoint<Env, BackupParams
 				await db.delete(backups).where(eq(backups.id, old.id));
 			}
 		});
+		await notifyAdmins(this.env, { type: "backups.changed" });
 	}
 }
 

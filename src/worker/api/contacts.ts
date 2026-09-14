@@ -8,6 +8,7 @@ import { sendableMailbox } from "./send";
 import type { OutboundSendMessage } from "../email/types";
 import type { AppBindings } from "../middleware/context";
 import { notFound, parseBody, parseQuery } from "./_util";
+import { notifyMailbox, notifyUser } from "../realtime/notify";
 
 const listQuery = z.object({
 	search: z.string().trim().max(120).optional(),
@@ -71,6 +72,8 @@ export const contactRoutes = new Hono<AppBindings>()
 			queued.push({ kind: "outbound", jobId: job.id });
 		}
 		for (let index = 0; index < queued.length; index += 100) await c.env.OUTBOUND_QUEUE.sendBatch(queued.slice(index, index + 100).map((body) => ({ body })));
+		await notifyMailbox(c.env, mailbox.id, { type: "message.changed", mailboxId: mailbox.id });
+		await notifyUser(c.env, c.get("user").id, { type: "contacts.changed" });
 		audit(c, { action: "contact.confirmation.send", mailboxId: mailbox.id, metadata: { recipients: queued.length } });
 		return c.json({ queued: queued.length }, 202);
 	})
@@ -80,6 +83,7 @@ export const contactRoutes = new Hono<AppBindings>()
 		const inserted = await c.get("db").insert(contacts).values(unique.map((contact) => ({
 			userId: c.get("user").id, email: contact.email, displayName: contact.displayName ?? null, source: "manual" as const, marketingStatus: "pending" as const,
 		}))).onConflictDoNothing().returning({ id: contacts.id }).all();
+		if (inserted.length > 0) await notifyUser(c.env, c.get("user").id, { type: "contacts.changed" });
 		audit(c, { action: "contact.import", metadata: { imported: inserted.length, skippedExisting: unique.length - inserted.length } });
 		return c.json({ imported: inserted.length, skippedExisting: unique.length - inserted.length });
 	})
@@ -90,6 +94,7 @@ export const contactRoutes = new Hono<AppBindings>()
 		)).all();
 		if (owned.length !== new Set(input.contactIds).size) notFound("Contact");
 		for (const contact of owned) await c.get("db").update(contacts).set({ tags: [...new Set([...contact.tags, input.tag])] }).where(eq(contacts.id, contact.id));
+		await notifyUser(c.env, c.get("user").id, { type: "contacts.changed" });
 		audit(c, { action: "contact.tag", metadata: { tag: input.tag, count: owned.length } });
 		return c.json({ updated: owned.length });
 	})
@@ -118,6 +123,7 @@ export const contactRoutes = new Hono<AppBindings>()
 			userId: c.get("user").id, name: input.name, description: input.description,
 		}).returning().get();
 		await c.get("db").insert(audienceMembers).values(owned.map((contact) => ({ audienceId: audience.id, contactId: contact.id })));
+		await notifyUser(c.env, c.get("user").id, { type: "contacts.changed" });
 		audit(c, { action: "audience.create", metadata: { audienceId: audience.id, members: owned.length } });
 		return c.json({ ...audience, memberCount: owned.length }, 201);
 	})
@@ -129,11 +135,13 @@ export const contactRoutes = new Hono<AppBindings>()
 		)).all();
 		if (owned.length !== new Set(input.contactIds).size) notFound("Contact");
 		await c.get("db").insert(audienceMembers).values(owned.map((contact) => ({ audienceId: audience.id, contactId: contact.id }))).onConflictDoNothing();
+		await notifyUser(c.env, c.get("user").id, { type: "contacts.changed" });
 		return c.json({ ok: true });
 	})
 	.delete("/audiences/:id", async (c) => {
 		const audience = await ownedAudience(c, c.req.param("id"));
 		await c.get("db").delete(audiences).where(eq(audiences.id, audience.id));
+		await notifyUser(c.env, c.get("user").id, { type: "contacts.changed" });
 		audit(c, { action: "audience.delete", metadata: { audienceId: audience.id } });
 		return c.json({ ok: true });
 	})
@@ -183,6 +191,7 @@ export const contactRoutes = new Hono<AppBindings>()
 			.returning()
 			.get();
 
+		await notifyUser(c.env, c.get("user").id, { type: "contacts.changed" });
 		return c.json(row, 201);
 	})
 
@@ -202,6 +211,7 @@ export const contactRoutes = new Hono<AppBindings>()
 			audit(c, { action: input.blocked ? "contact.block" : "contact.unblock", metadata: { email: row.email } });
 		}
 
+		await notifyUser(c.env, c.get("user").id, { type: "contacts.changed" });
 		return c.json(row);
 	})
 
@@ -214,6 +224,7 @@ export const contactRoutes = new Hono<AppBindings>()
 			.get();
 
 		if (!row) notFound("Contact");
+		await notifyUser(c.env, c.get("user").id, { type: "contacts.changed" });
 		return c.json({ ok: true });
 });
 

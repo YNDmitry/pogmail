@@ -140,7 +140,6 @@ function Contacts() {
     queryKey: qk.campaigns,
     queryFn: async () =>
       (await api.get<{ items: Campaign[] }>("/api/send/campaigns")).items,
-    refetchInterval: 5_000,
   });
   const selectable = (contacts.data ?? []).filter(
     (contact) => !contact.blocked && !contact.unsubscribedAt,

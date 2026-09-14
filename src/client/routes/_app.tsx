@@ -13,7 +13,7 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   Archive,
   CalendarDays,
@@ -39,7 +39,7 @@ import {
   useSession,
 } from "@/client/lib/queries";
 import { qk } from "@/client/lib/queries/keys";
-import { connectRealtime } from "@/client/lib/realtime";
+import { connectRealtime, type RealtimeEvent } from "@/client/lib/realtime";
 import { AppSidebar } from "@/client/components/app/sidebar";
 import { HeaderBar } from "@/client/components/app/shell/header-bar";
 import { AppCommandPalette } from "@/client/components/app/command-palette";
@@ -111,6 +111,54 @@ function readCompact(): boolean {
   }
 }
 
+function refreshRealtimeCache(queryClient: QueryClient, event: RealtimeEvent) {
+	switch (event.type) {
+		case "message.new":
+			void queryClient.invalidateQueries({ queryKey: ["messages"] });
+			void queryClient.invalidateQueries({ queryKey: qk.counts });
+			void queryClient.invalidateQueries({ queryKey: ["contacts"] });
+			break;
+		case "message.sent":
+			void queryClient.invalidateQueries({ queryKey: ["messages"] });
+			void queryClient.invalidateQueries({ queryKey: qk.campaigns });
+			break;
+		case "message.delivery":
+			void queryClient.invalidateQueries({ queryKey: ["messages"] });
+			void queryClient.invalidateQueries({ queryKey: qk.campaigns });
+			void queryClient.invalidateQueries({ queryKey: ["campaign-report"] });
+			void queryClient.invalidateQueries({ queryKey: ["contacts"] });
+			break;
+		case "message.changed":
+		case "message.deleted":
+			void queryClient.invalidateQueries({ queryKey: ["messages"] });
+			void queryClient.invalidateQueries({ queryKey: qk.counts });
+			break;
+		case "contacts.changed":
+			void queryClient.invalidateQueries({ queryKey: ["contacts"] });
+			void queryClient.invalidateQueries({ queryKey: qk.audiences });
+			break;
+		case "campaigns.changed":
+			void queryClient.invalidateQueries({ queryKey: qk.campaigns });
+			void queryClient.invalidateQueries({ queryKey: ["campaign-report"] });
+			break;
+		case "calendar.changed":
+			void queryClient.invalidateQueries({ queryKey: ["calendar"] });
+			void queryClient.invalidateQueries({ queryKey: ["admin", "health"] });
+			break;
+		case "backups.changed":
+			void queryClient.invalidateQueries({ queryKey: qk.backups });
+			void queryClient.invalidateQueries({ queryKey: qk.adminOverview });
+			void queryClient.invalidateQueries({ queryKey: ["admin", "health"] });
+			break;
+		case "domain.changed":
+			void queryClient.invalidateQueries({ queryKey: qk.domains });
+			void queryClient.invalidateQueries({ queryKey: qk.adminOverview });
+			break;
+		case "admin.overview":
+			void queryClient.invalidateQueries({ queryKey: qk.adminOverview });
+	}
+}
+
 export const MAIL_VIEWS = [
   { slug: "inbox", label: "Inbox", icon: Inbox, status: "received" },
   { slug: "starred", label: "Starred", icon: Star, status: null },
@@ -177,22 +225,17 @@ function AppLayout() {
     }
   }, [compact]);
 
-  // Live updates: the Durable Object pushes, the cache reacts. No polling.
-  useEffect(
-    () =>
-      connectRealtime((event) => {
-		if (event.type === "message.new" || event.type === "message.sent" || event.type === "message.delivery") {
-          void queryClient.invalidateQueries({ queryKey: ["messages"] });
-        }
-		if (event.type === "message.new") {
-			void queryClient.invalidateQueries({ queryKey: qk.counts });
-		}
-        if (event.type === "domain.status") {
-          void queryClient.invalidateQueries({ queryKey: ["domains"] });
-        }
-      }),
-    [queryClient],
-  );
+	// Live updates: the Durable Object pushes, the cache reacts.
+	useEffect(
+		() =>
+			connectRealtime(
+				(event) => refreshRealtimeCache(queryClient, event),
+				// Events are intentionally ephemeral. A reconnect therefore revalidates
+				// every visible query, recovering changes made while this tab was offline.
+				() => void queryClient.invalidateQueries({ type: "active" }),
+			),
+		[queryClient],
+	);
 
   useEffect(() => {
     document.title = branding.data?.appName ?? "Pogmail";

@@ -2,7 +2,10 @@
  * Reconnecting WebSocket to the user's Durable Object. The server only ever pushes,
  * so the client's sole job is to stay connected and hand events to the caller.
  */
-export function connectRealtime(onEvent: (event: RealtimeEvent) => void): () => void {
+export function connectRealtime(
+	onEvent: (event: RealtimeEvent) => void,
+	onConnected?: () => void,
+): () => void {
 	let socket: WebSocket | null = null;
 	let closed = false;
 	let attempt = 0;
@@ -16,7 +19,9 @@ export function connectRealtime(onEvent: (event: RealtimeEvent) => void): () => 
 		socket = new WebSocket(url);
 
 		socket.addEventListener("open", () => {
+			if (closed) return;
 			attempt = 0;
+			onConnected?.();
 		});
 
 		socket.addEventListener("message", (event) => {
@@ -48,4 +53,11 @@ export type RealtimeEvent =
 	| { type: "message.new"; mailboxId: string; messageId: string }
 	| { type: "message.sent"; mailboxId: string; messageId: string }
 	| { type: "message.delivery"; mailboxId: string; messageId: string }
-	| { type: "domain.status"; domainId: string; status: string };
+	| { type: "message.changed"; mailboxId: string }
+	| { type: "message.deleted"; mailboxId: string }
+	| { type: "contacts.changed" }
+	| { type: "campaigns.changed" }
+	| { type: "calendar.changed" }
+	| { type: "backups.changed" }
+	| { type: "domain.changed"; domainId: string }
+	| { type: "admin.overview" };

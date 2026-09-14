@@ -8,6 +8,7 @@ import { requireScope } from "../../middleware/auth";
 import type { AppBindings } from "../../middleware/context";
 import { forbidden, notFound, parseBody, parseQuery } from "../_util";
 import { domains, mailboxes } from "@/db/schema";
+import { notifyMailbox } from "../../realtime/notify";
 
 /**
  * Stable public API for API-key clients. Kept deliberately narrow and versioned: the
@@ -169,6 +170,11 @@ export const v1Routes = new Hono<AppBindings>()
 
 		const payload: OutboundSendMessage = { kind: "outbound", jobId: job.id };
 		await c.env.OUTBOUND_QUEUE.send(payload);
+		await notifyMailbox(c.env, resolved.id, {
+			type: "message.sent",
+			mailboxId: resolved.id,
+			messageId: message.id,
+		});
 
 		return c.json({ data: { id: message.id, status: "queued" } }, 202);
 	});

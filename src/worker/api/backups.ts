@@ -9,6 +9,7 @@ import { requireAdmin } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
 import { serveObject } from "../storage";
 import { notFound, parseBody } from "./_util";
+import { notifyAdmins } from "../realtime/notify";
 
 const settingsInput = z.object({
 	enabled: z.boolean(),
@@ -42,6 +43,7 @@ export const backupRoutes = new Hono<AppBindings>()
 			.get();
 
 		audit(c, { action: "backup.settings", metadata: { enabled: row.enabled } });
+		await notifyAdmins(c.env, { type: "backups.changed" });
 		return c.json(row);
 	})
 
@@ -56,6 +58,7 @@ export const backupRoutes = new Hono<AppBindings>()
 		// The workflow owns the long-running export; this request just starts it.
 		await c.env.BACKUP_WORKFLOW.create({ id: row.id, params: { backupId: row.id } });
 
+		await notifyAdmins(c.env, { type: "backups.changed" });
 		audit(c, { action: "backup.start", metadata: { id: row.id } });
 		return c.json(row, 202);
 	})
@@ -122,6 +125,7 @@ export const backupRoutes = new Hono<AppBindings>()
 		if (row.r2Key) await deleteBackupObjects(c.env, row.r2Key);
 		await c.get("db").delete(backups).where(eq(backups.id, row.id));
 
+		await notifyAdmins(c.env, { type: "backups.changed" });
 		audit(c, { action: "backup.delete", metadata: { id: row.id } });
 		return c.json({ ok: true });
 	});

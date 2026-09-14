@@ -7,6 +7,7 @@ import { audit } from "../audit";
 import { getPermission, hasAtLeast, resolveMailboxScope } from "../mailboxes/access";
 import type { AppBindings } from "../middleware/context";
 import { forbidden, parseBody, parseQuery } from "./_util";
+import { notifyMailbox } from "../realtime/notify";
 
 const exportQuery = z.object({
 	mailboxId: z.string().optional(),
@@ -154,6 +155,9 @@ export const importExportRoutes = new Hono<AppBindings>()
 			mailboxId: input.mailboxId,
 			metadata: { submitted: input.messages.length, imported },
 		});
+		if (imported > 0) {
+			await notifyMailbox(c.env, input.mailboxId, { type: "message.changed", mailboxId: input.mailboxId });
+		}
 
 		return c.json({ submitted: input.messages.length, imported });
 	});

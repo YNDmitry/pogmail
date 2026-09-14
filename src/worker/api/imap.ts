@@ -9,6 +9,7 @@ import { getPermission, hasAtLeast } from "../mailboxes/access";
 import { messageSnippet } from "../email/snippet";
 import type { AppBindings } from "../middleware/context";
 import { forbidden, parseBody } from "./_util";
+import { notifyMailbox } from "../realtime/notify";
 
 const credentials = z.object({
 	host: z.string().min(3).max(253),
@@ -106,6 +107,9 @@ export const imapRoutes = new Hono<AppBindings>()
 			mailboxId: input.mailboxId,
 			metadata: { host: input.host, folder: input.folder, imported, skipped },
 		});
+		if (imported > 0) {
+			await notifyMailbox(c.env, input.mailboxId, { type: "message.changed", mailboxId: input.mailboxId });
+		}
 
 		return c.json({ imported, skipped });
 	});

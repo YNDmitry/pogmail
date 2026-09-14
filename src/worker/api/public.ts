@@ -1,9 +1,10 @@
 import { Hono, type Context } from "hono";
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { z } from "zod";
-import { campaignLinkClicks, contacts, domains, mailboxes, messages, outboundJobs } from "@/db/schema";
+import { campaignLinkClicks, contacts, domains, emailCampaigns, mailboxes, messages, outboundJobs } from "@/db/schema";
 import type { AppBindings } from "../middleware/context";
 import { parseQuery } from "./_util";
+import { notifyMailbox, notifyUser } from "../realtime/notify";
 
 const tokenQuery = z.object({ token: z.string().uuid() });
 const unsubscribeInput = z.object({ token: z.string().uuid() });
@@ -34,8 +35,9 @@ export const publicRoutes = new Hono<AppBindings>()
 		const updated = await c.get("db").update(contacts).set({
 			marketingStatus: "subscribed", confirmedAt: new Date(), unsubscribedAt: null, welcomeSentAt: new Date(),
 		}).where(and(eq(contacts.confirmationToken, parsed.data.token), ne(contacts.marketingStatus, "subscribed")))
-			.returning({ id: contacts.id, email: contacts.email, displayName: contacts.displayName, confirmationMailboxId: contacts.confirmationMailboxId }).get();
+			.returning({ id: contacts.id, userId: contacts.userId, email: contacts.email, displayName: contacts.displayName, confirmationMailboxId: contacts.confirmationMailboxId }).get();
 		if (updated?.confirmationMailboxId) await queueWelcome(c, updated);
+		if (updated) await notifyUser(c.env, updated.userId, { type: "contacts.changed" });
 		return c.html(page(updated ? "Your subscription is confirmed. You can unsubscribe at any time." : "That confirmation link is no longer valid."), updated ? 200 : 404);
 	})
 	.get("/preferences", async (c) => {
@@ -53,26 +55,41 @@ export const publicRoutes = new Hono<AppBindings>()
 			marketingStatus: parsed.data.status,
 			unsubscribedAt: unsubscribed ? new Date() : null,
 			...(unsubscribed ? {} : { confirmedAt: new Date() }),
-		}).where(eq(contacts.unsubscribeToken, parsed.data.token)).returning({ id: contacts.id }).get();
+		}).where(eq(contacts.unsubscribeToken, parsed.data.token)).returning({ id: contacts.id, userId: contacts.userId }).get();
+		if (updated) await notifyUser(c.env, updated.userId, { type: "contacts.changed" });
 		return c.html(page(updated ? (unsubscribed ? "Your marketing subscription is paused." : "Your marketing subscription is active.") : "That preferences link is no longer valid."), updated ? 200 : 404);
 	})
 	.get("/click", async (c) => {
 		const parsed = tokenQuery.safeParse(c.req.query());
 		if (!parsed.success) return redirectHome(c.req.url);
-		const click = await c.get("db").select({ id: campaignLinkClicks.id, destination: campaignLinkClicks.destination })
-			.from(campaignLinkClicks).where(eq(campaignLinkClicks.token, parsed.data.token)).get();
+		const click = await c.get("db").select({
+			id: campaignLinkClicks.id,
+			destination: campaignLinkClicks.destination,
+			campaignUserId: emailCampaigns.userId,
+		})
+			.from(campaignLinkClicks)
+			.innerJoin(messages, eq(messages.id, campaignLinkClicks.messageId))
+			.leftJoin(emailCampaigns, eq(emailCampaigns.id, messages.campaignId))
+			.where(eq(campaignLinkClicks.token, parsed.data.token))
+			.get();
 		if (!click) return redirectHome(c.req.url);
 		await c.get("db").update(campaignLinkClicks).set({ clickedAt: new Date() }).where(and(
 			eq(campaignLinkClicks.id, click.id), isNull(campaignLinkClicks.clickedAt),
 		));
+		if (click.campaignUserId) await notifyUser(c.env, click.campaignUserId, { type: "campaigns.changed" });
 		return new Response(null, { status: 302, headers: { "cache-control": "no-store, max-age=0", location: click.destination } });
 	})
 	.get("/open", async (c) => {
 		const parsed = tokenQuery.safeParse(c.req.query());
 		if (parsed.success) {
-			await c.get("db").update(messages).set({ openedAt: new Date() }).where(and(
+			const opened = await c.get("db").update(messages).set({ openedAt: new Date() }).where(and(
 				eq(messages.openTrackingToken, parsed.data.token), isNull(messages.openedAt),
-		));
+			)).returning({ campaignId: messages.campaignId }).get();
+			if (opened?.campaignId) {
+				const campaign = await c.get("db").select({ userId: emailCampaigns.userId })
+					.from(emailCampaigns).where(eq(emailCampaigns.id, opened.campaignId)).get();
+				if (campaign) await notifyUser(c.env, campaign.userId, { type: "campaigns.changed" });
+			}
 		}
 		return new Response(transparentGif, { headers: { "cache-control": "no-store, max-age=0", "content-type": "image/gif" } });
 	})
@@ -92,7 +109,8 @@ export const publicRoutes = new Hono<AppBindings>()
 		if (!parsed.success) return c.html(page("That unsubscribe link is no longer valid."), 400);
 		const { token } = parsed.data;
 		const updated = await c.get("db").update(contacts).set({ marketingStatus: "unsubscribed", unsubscribedAt: new Date() })
-			.where(eq(contacts.unsubscribeToken, token)).returning({ id: contacts.id }).get();
+			.where(eq(contacts.unsubscribeToken, token)).returning({ id: contacts.id, userId: contacts.userId }).get();
+		if (updated) await notifyUser(c.env, updated.userId, { type: "contacts.changed" });
 		return c.html(page(updated ? "You have been unsubscribed." : "That unsubscribe link is no longer valid."), updated ? 200 : 404);
 	});
 
@@ -125,6 +143,7 @@ async function queueWelcome(c: Context<AppBindings>, contact: { id: string; emai
 	}).returning().get();
 	const job = await c.get("db").insert(outboundJobs).values({ messageId: message.id }).returning().get();
 	await c.env.OUTBOUND_QUEUE.send({ kind: "outbound", jobId: job.id });
+	await notifyMailbox(c.env, mailbox.id, { type: "message.sent", mailboxId: mailbox.id, messageId: message.id });
 }
 
 function escapeHtml(value: string) {

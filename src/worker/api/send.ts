@@ -10,6 +10,7 @@ import { forbidden, notFound, parseBody } from "./_util";
 import { deleteObject, putUpload, serveObject } from "../storage";
 import type { OutboundSendMessage } from "../email/types";
 import { nextScheduledDelay } from "../email/schedule";
+import { notifyMailbox, notifyUser } from "../realtime/notify";
 
 /*
  * Cloudflare rejects an outbound message over 25 MB, and base64 inflates the
@@ -190,6 +191,7 @@ export const sendRoutes = new Hono<AppBindings>()
 			.returning()
 			.get();
 
+		await notifyMailbox(c.env, mailbox.id, { type: "message.changed", mailboxId: mailbox.id });
 		return c.json(row, 201);
 	})
 
@@ -292,6 +294,11 @@ export const sendRoutes = new Hono<AppBindings>()
 			: undefined;
 		await c.env.OUTBOUND_QUEUE.send(payload, delaySeconds ? { delaySeconds } : undefined);
 
+		await notifyMailbox(c.env, mailbox.id, {
+			type: "message.sent",
+			mailboxId: mailbox.id,
+			messageId: message.id,
+		});
 		audit(c, { action: "message.send", mailboxId: mailbox.id, messageId: message.id });
 		return c.json({ ...message, jobId: job.id }, 202);
 	})
@@ -494,6 +501,14 @@ export const sendRoutes = new Hono<AppBindings>()
 			mailboxId: mailbox.id,
 			metadata: { campaignId: campaign.id, queued: queued.length, skippedBlocked, skippedUnsubscribed, skippedUnconfirmed, skippedMissing },
 		});
+		if (queued[0]) {
+			await notifyMailbox(c.env, mailbox.id, {
+				type: "message.sent",
+				mailboxId: mailbox.id,
+				messageId: queued[0].messageId,
+			});
+		}
+		await notifyUser(c.env, c.get("user").id, { type: "campaigns.changed" });
 		return c.json({ id: campaign.id, queued: queued.length, skippedBlocked, skippedUnsubscribed, skippedUnconfirmed, skippedMissing }, 202);
 	})
 
@@ -523,6 +538,7 @@ export const sendRoutes = new Hono<AppBindings>()
 			queued.push({ jobId: job.id });
 		}
 		await c.env.OUTBOUND_QUEUE.sendBatch(queued.map(({ jobId }) => ({ body: { kind: "outbound", jobId } satisfies OutboundSendMessage })));
+		await notifyMailbox(c.env, mailbox.id, { type: "message.changed", mailboxId: mailbox.id });
 		audit(c, { action: "campaign.test_send", mailboxId: mailbox.id, metadata: { recipients: unique.length } });
 		return c.json({ queued: unique.length }, 202);
 	})
@@ -544,6 +560,8 @@ export const sendRoutes = new Hono<AppBindings>()
 			await c.get("db").update(outboundJobs).set({ status: "failed", lastError: "Campaign cancelled" })
 				.where(and(inArray(outboundJobs.messageId, campaignMessages.map((message) => message.id)), eq(outboundJobs.status, "queued")));
 		}
+		await notifyMailbox(c.env, campaign.mailboxId, { type: "message.changed", mailboxId: campaign.mailboxId });
+		await notifyUser(c.env, c.get("user").id, { type: "campaigns.changed" });
 		audit(c, { action: "campaign.cancel", mailboxId: campaign.mailboxId, metadata: { campaignId: campaign.id } });
 		return c.json({ ok: true });
 	})
@@ -686,6 +704,11 @@ export const sendRoutes = new Hono<AppBindings>()
 		const payload: OutboundSendMessage = { kind: "outbound", jobId: job.id };
 		await c.env.OUTBOUND_QUEUE.send(payload);
 
+		await notifyMailbox(c.env, draft.mailboxId, {
+			type: "message.sent",
+			mailboxId: draft.mailboxId,
+			messageId: draft.id,
+		});
 		audit(c, { action: "message.send", mailboxId: draft.mailboxId, messageId: draft.id });
 		return c.json({ id: draft.id, jobId: job.id }, 202);
 	});

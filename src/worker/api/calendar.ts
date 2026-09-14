@@ -12,6 +12,7 @@ import { sendableMailbox } from "./send";
 import type { OutboundSendMessage } from "../email/types";
 import type { AppBindings } from "../middleware/context";
 import { notFound, parseBody, parseQuery } from "./_util";
+import { notifyMailbox, notifyUser } from "../realtime/notify";
 
 const rangeQuery = z.object({
 	/** Epoch milliseconds; the UI sends the visible month's bounds. */
@@ -82,6 +83,7 @@ export const calendarRoutes = new Hono<AppBindings>()
 		await c.get("db").insert(calendarOAuthStates).values({ connectionId: connection.id, userId: c.get("user").id, state, expiresAt: new Date(Date.now() + 10 * 60 * 1000) });
 		const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
 		url.search = new URLSearchParams({ client_id: input.clientId, redirect_uri: redirectUri, response_type: "code", scope: "https://www.googleapis.com/auth/calendar", access_type: "offline", prompt: "consent", state }).toString();
+		await notifyUser(c.env, c.get("user").id, { type: "calendar.changed" });
 		return c.json({ url: url.toString(), redirectUri });
 	})
 	.get("/connections/google/callback", async (c) => {
@@ -99,6 +101,7 @@ export const calendarRoutes = new Hono<AppBindings>()
 		const token = await response.json() as { refresh_token?: string; error_description?: string };
 		if (!response.ok || !token.refresh_token) throw new HTTPException(502, { message: token.error_description ?? "Google did not return a refresh token" });
 		await c.get("db").update(calendarConnections).set({ secret: await encryptSecret(c.env, JSON.stringify({ clientSecret, refreshToken: token.refresh_token })), lastError: null }).where(eq(calendarConnections.id, connection.id));
+		await notifyUser(c.env, connection.userId, { type: "calendar.changed" });
 		audit(c, { action: "calendar.google_connect", metadata: { connectionId: connection.id } });
 		return c.redirect("/calendar?google=connected");
 	})
@@ -110,6 +113,7 @@ export const calendarRoutes = new Hono<AppBindings>()
 	.delete("/connections/:id", async (c) => {
 		const removed = await c.get("db").delete(calendarConnections).where(and(eq(calendarConnections.id, c.req.param("id")), eq(calendarConnections.userId, c.get("user").id))).returning({ id: calendarConnections.id }).get();
 		if (!removed) notFound("Calendar connection");
+		await notifyUser(c.env, c.get("user").id, { type: "calendar.changed" });
 		audit(c, { action: "calendar.connection_remove", metadata: { connectionId: removed.id } });
 		return c.json({ ok: true });
 	})
@@ -155,6 +159,7 @@ export const calendarRoutes = new Hono<AppBindings>()
 			.returning()
 			.get();
 
+		await notifyUser(c.env, c.get("user").id, { type: "calendar.changed" });
 		return c.json(row, 201);
 	})
 
@@ -176,6 +181,7 @@ export const calendarRoutes = new Hono<AppBindings>()
 			.get();
 
 		if (!row) notFound("Event");
+		await notifyUser(c.env, c.get("user").id, { type: "calendar.changed" });
 		return c.json(row);
 	})
 
@@ -207,6 +213,7 @@ export const calendarRoutes = new Hono<AppBindings>()
 			.get();
 
 		if (!row) notFound("Event");
+		await notifyUser(c.env, c.get("user").id, { type: "calendar.changed" });
 		return c.json({ ok: true });
 	});
 
@@ -318,6 +325,7 @@ export const calendarInteropRoutes = new Hono<AppBindings>()
 		}
 
 		audit(c, { action: "calendar.import", metadata: { imported, found: parsed.length } });
+		if (imported > 0) await notifyUser(c.env, c.get("user").id, { type: "calendar.changed" });
 		return c.json({ imported, skipped: parsed.length - imported });
 	})
 
@@ -436,6 +444,11 @@ export const calendarInteropRoutes = new Hono<AppBindings>()
 		const payload: OutboundSendMessage = { kind: "outbound", jobId: job.id };
 		await c.env.OUTBOUND_QUEUE.send(payload);
 
+		await notifyMailbox(c.env, mailbox.id, {
+			type: "message.sent",
+			mailboxId: mailbox.id,
+			messageId: message.id,
+		});
 		audit(c, {
 			action: "calendar.invite",
 			mailboxId: mailbox.id,

@@ -4,6 +4,7 @@ import { calendarConnections, calendarEventLinks } from "@/db/schema";
 import { decryptSecret } from "../auth/secrets";
 import { deleteCaldavEvent, syncCaldav } from "./caldav";
 import { deleteGoogleEvent, googleHeaders, syncGoogle } from "./google";
+import { notifyUser } from "../realtime/notify";
 
 type Connection = typeof calendarConnections.$inferSelect;
 type Link = typeof calendarEventLinks.$inferSelect;
@@ -34,6 +35,7 @@ export async function syncCalendarConnection(
 			.update(calendarConnections)
 			.set({ lastSyncedAt: new Date(), lastError: null })
 			.where(eq(calendarConnections.id, connection.id));
+		await notifyUser(env, connection.userId, { type: "calendar.changed" });
 		return result;
 	} catch (error) {
 		const message = error instanceof Error
@@ -43,6 +45,7 @@ export async function syncCalendarConnection(
 			.update(calendarConnections)
 			.set({ lastError: message })
 			.where(eq(calendarConnections.id, connection.id));
+		await notifyUser(env, connection.userId, { type: "calendar.changed" });
 		throw error;
 	}
 }

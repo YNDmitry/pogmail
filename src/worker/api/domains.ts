@@ -21,6 +21,7 @@ import {
 import { requireMailboxManager } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
 import { notFound, parseBody } from "./_util";
+import { notifyMailboxManagers } from "../realtime/notify";
 
 const createInput = z.object({
   hostname: z
@@ -87,13 +88,14 @@ export const domainRoutes = new Hono<AppBindings>()
       metadata: { hostname, status: result.status },
     });
 
-    const saved = await c
+	const saved = await c
       .get("db")
       .select()
       .from(domains)
-      .where(eq(domains.id, domain.id))
-      .get();
-    return c.json(saved, 201);
+		.where(eq(domains.id, domain.id))
+		.get();
+	await notifyMailboxManagers(c.env, { type: "domain.changed", domainId: domain.id });
+	return c.json(saved, 201);
   })
 
   .get("/:id", async (c) => {
@@ -176,13 +178,14 @@ export const domainRoutes = new Hono<AppBindings>()
       metadata: { hostname: domain.hostname, ...result },
     });
 
-    const saved = await c
+	const saved = await c
       .get("db")
       .select()
       .from(domains)
-      .where(eq(domains.id, domain.id))
-      .get();
-    return c.json(saved);
+		.where(eq(domains.id, domain.id))
+		.get();
+	await notifyMailboxManagers(c.env, { type: "domain.changed", domainId: domain.id });
+	return c.json(saved);
   })
 
   .delete("/:id", requireMailboxManager, async (c) => {
@@ -196,7 +199,8 @@ export const domainRoutes = new Hono<AppBindings>()
 
     // Remote cleanup first: if it fails we still have the row to retry from.
     await deprovisionDomain(c.env, c.get("db"), domain.id);
-    await c.get("db").delete(domains).where(eq(domains.id, domain.id));
+	await c.get("db").delete(domains).where(eq(domains.id, domain.id));
+	await notifyMailboxManagers(c.env, { type: "domain.changed", domainId: domain.id });
 
     audit(c, {
       action: "domain.delete",

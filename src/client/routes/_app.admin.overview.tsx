@@ -70,7 +70,7 @@ function Overview() {
 	});
 
 	const data = overview.data;
-	const health = useQuery({ queryKey: ["admin", "health"], queryFn: () => api.get<HealthData>("/api/admin/health"), refetchInterval: 60_000 });
+	const health = useQuery({ queryKey: ["admin", "health"], queryFn: () => api.get<HealthData>("/api/admin/health") });
 
 	const byStatus = STATUS_ORDER.map((status) => ({
 		status,

@@ -57,11 +57,6 @@ function Backups() {
 	const data = useQuery({
 		queryKey: qk.backups,
 		queryFn: () => api.get<{ items: Backup[]; settings: Settings | null }>("/api/backups"),
-		// A running export finishes in the background; refresh while one is in flight.
-		refetchInterval: (query) =>
-			query.state.data?.items.some((item) => item.status === "running" || item.status === "queued")
-				? 4000
-				: false,
 	});
 
 	return (

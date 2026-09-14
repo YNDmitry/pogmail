@@ -6,6 +6,7 @@ import { contacts, domains, emailCampaigns, mailboxes, messageAttachments, messa
 import type { OutboundSendMessage } from "./types";
 import { safeEmailHtml } from "./html-safety";
 import { nextScheduledDelay } from "./schedule";
+import { notifyMailbox } from "../realtime/notify";
 
 /** A crashed consumer can leave a recipient claimed; after this, another job recovers it. */
 const DELIVERY_LEASE_MS = 5 * 60 * 1000;
@@ -46,6 +47,11 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 	if (row.campaignStatus === "cancelled") {
 		await db.update(outboundJobs).set({ status: "failed", lastError: "Campaign cancelled" })
 			.where(eq(outboundJobs.id, job.jobId));
+		await notifyMailbox(env, row.message.mailboxId, {
+			type: "message.delivery",
+			mailboxId: row.message.mailboxId,
+			messageId: row.message.id,
+		});
 		return;
 	}
 
@@ -61,6 +67,11 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 		.update(outboundJobs)
 		.set({ status: "sending", attempts: row.job.attempts + 1 })
 		.where(eq(outboundJobs.id, job.jobId));
+	await notifyMailbox(env, row.message.mailboxId, {
+		type: "message.delivery",
+		mailboxId: row.message.mailboxId,
+		messageId: row.message.id,
+	});
 
 	try {
 		const mime = createMimeMessage();
@@ -224,6 +235,11 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 				.update(outboundJobs)
 				.set({ status: "failed", lastError: permanentFailure.lastError ?? "A recipient was permanently rejected" })
 				.where(eq(outboundJobs.id, job.jobId));
+			await notifyMailbox(env, row.message.mailboxId, {
+				type: "message.delivery",
+				mailboxId: row.message.mailboxId,
+				messageId: row.message.id,
+			});
 			return;
 		}
 
@@ -235,11 +251,21 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 			.update(messages)
 			.set({ status: "sent", messageId })
 			.where(eq(messages.id, row.message.id));
+		await notifyMailbox(env, row.message.mailboxId, {
+			type: "message.delivery",
+			mailboxId: row.message.mailboxId,
+			messageId: row.message.id,
+		});
 	} catch (error) {
 		await db
 			.update(outboundJobs)
 			.set({ status: "failed", lastError: String(error).slice(0, 500) })
 			.where(eq(outboundJobs.id, job.jobId));
+		await notifyMailbox(env, row.message.mailboxId, {
+			type: "message.delivery",
+			mailboxId: row.message.mailboxId,
+			messageId: row.message.id,
+		});
 		throw error;
 	}
 }

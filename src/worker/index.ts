@@ -29,7 +29,7 @@ import {
 import { runDelivery } from "./email/webhooks";
 import { putRawMessage } from "./storage";
 import { queueRetryDelay } from "./queue/retry";
-import { notifyMailbox } from "./realtime/notify";
+import { notifyAdmins, notifyMailbox } from "./realtime/notify";
 import { syncCalendarConnection } from "./calendar/sync";
 
 export { RealtimeHub } from "./realtime/hub";
@@ -192,15 +192,21 @@ export default {
   async scheduled(_controller, env): Promise<void> {
     const db = getDb(env.DB);
 
-    await db
-      .update(messages)
-      .set({ snoozedUntil: null, status: "received", read: false })
+	const woken = await db
+		.update(messages)
+		.set({ snoozedUntil: null, status: "received", read: false })
       .where(
         and(
           isNotNull(messages.snoozedUntil),
-          lte(messages.snoozedUntil, new Date()),
-        ),
-      );
+			lte(messages.snoozedUntil, new Date()),
+		),
+	)
+		.returning({ mailboxId: messages.mailboxId });
+	await Promise.all(
+		[...new Set(woken.map((message) => message.mailboxId))].map((mailboxId) =>
+			notifyMailbox(env, mailboxId, { type: "message.changed", mailboxId }),
+		),
+	);
 
     const connections = await db.select().from(calendarConnections).all();
     for (const connection of connections) {
@@ -226,10 +232,11 @@ export default {
       id: row.id,
       params: { backupId: row.id },
     });
-    await db
-      .update(backupSettings)
-      .set({ lastRunAt: new Date() })
-      .where(eq(backupSettings.id, settings.id));
+	await db
+		.update(backupSettings)
+		.set({ lastRunAt: new Date() })
+		.where(eq(backupSettings.id, settings.id));
+	await notifyAdmins(env, { type: "backups.changed" });
   },
 } satisfies ExportedHandler<Env>;
 

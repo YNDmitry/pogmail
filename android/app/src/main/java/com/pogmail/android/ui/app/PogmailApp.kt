@@ -102,7 +102,32 @@ fun PogmailApp(
                     connectingInstance = true
                     instanceError = null
                     try {
-                        mobileApiClient.connectInstance(url)
+                        instanceUrlStore.save(mobileApiClient.verifyInstance(url))
+                        sessionState = SessionState.SignedOut
+                    } catch (error: Exception) {
+                        instanceError = error.message ?: "Could not reach this Pogmail instance."
+                    } finally {
+                        connectingInstance = false
+                    }
+                }
+            },
+        )
+        is SessionState.SwitchingInstance -> InstanceUrlScreen(
+            submitting = connectingInstance,
+            error = instanceError,
+            title = "Change instance",
+            description = "Connect to a different private Pogmail workspace.",
+            warning = "Continuing signs you out and removes downloaded mail from this device.",
+            onCancel = { sessionState = SessionState.Authenticated(state.session) },
+            onContinue = { url ->
+                scope.launch {
+                    connectingInstance = true
+                    instanceError = null
+                    try {
+                        val newInstanceUrl = mobileApiClient.verifyInstance(url)
+                        sessionRepository.clearLocalSession()
+                        cache.clear()
+                        instanceUrlStore.save(newInstanceUrl)
                         sessionState = SessionState.SignedOut
                     } catch (error: Exception) {
                         instanceError = error.message ?: "Could not reach this Pogmail instance."
@@ -145,6 +170,7 @@ fun PogmailApp(
 
         is SessionState.Authenticated -> AuthenticatedApp(
             session = state.session,
+            instanceUrl = instanceUrlStore.requireUrl(),
             syncRepository = syncRepository,
             cache = cache,
             onLogout = {
@@ -158,6 +184,7 @@ fun PogmailApp(
                     }
                 }
             },
+            onChangeInstance = { sessionState = SessionState.SwitchingInstance(state.session) },
         )
     }
 }
@@ -165,6 +192,7 @@ fun PogmailApp(
 private sealed interface SessionState {
     data object Restoring : SessionState
     data object SelectingInstance : SessionState
+    data class SwitchingInstance(val session: MobileSession) : SessionState
     data object SignedOut : SessionState
     data class Authenticated(val session: MobileSession) : SessionState
 }
@@ -179,9 +207,11 @@ private fun AppLoadingScreen() {
 @Composable
 private fun AuthenticatedApp(
     session: MobileSession,
+    instanceUrl: String,
     syncRepository: MailSyncRepository,
     cache: MailCacheDatabase,
     onLogout: () -> Unit,
+    onChangeInstance: () -> Unit,
 ) {
     LaunchedEffect(session.deviceSessionId) { runCatching { syncRepository.sync(session) } }
     var destination by remember { mutableStateOf(AppDestination.Inbox) }
@@ -245,7 +275,9 @@ private fun AuthenticatedApp(
                     modifier = contentModifier,
                     userName = session.user.name,
                     userEmail = session.user.email,
+                    instanceUrl = instanceUrl,
                     onOpenMailAccounts = { showMailAccounts = true },
+                    onChangeInstance = onChangeInstance,
                     onLogout = onLogout,
                 )
                 AppDestination.Compose -> ComposeScreen(

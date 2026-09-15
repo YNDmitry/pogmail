@@ -26,4 +26,9 @@ class MobileSessionRepository(
             tokenStore.clear()
         }
     }
+
+    /** Used when switching servers, where the old Worker may no longer be reachable. */
+    suspend fun clearLocalSession() {
+        tokenStore.clear()
+    }
 }

@@ -15,6 +15,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +32,10 @@ fun InstanceUrlScreen(
     submitting: Boolean,
     error: String?,
     onContinue: (String) -> Unit,
+    title: String = "Your Pogmail URL",
+    description: String = "Use the HTTPS address where your Pogmail Worker is deployed.",
+    warning: String? = null,
+    onCancel: (() -> Unit)? = null,
 ) {
     var url by remember { mutableStateOf("") }
 
@@ -51,12 +56,20 @@ fun InstanceUrlScreen(
                 style = MaterialTheme.typography.bodyLarge,
             )
             Spacer(Modifier.height(36.dp))
-            Text("Your Pogmail URL", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(
-                "Use the HTTPS address where your Pogmail Worker is deployed.",
+                description,
                 modifier = Modifier.padding(top = 8.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            warning?.let {
+                Text(
+                    it,
+                    modifier = Modifier.padding(top = 12.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             OutlinedTextField(
                 value = url,
                 onValueChange = { url = it },
@@ -83,6 +96,13 @@ fun InstanceUrlScreen(
                 ),
             ) {
                 Text(if (submitting) "Checking…" else "Continue", fontWeight = FontWeight.Bold)
+            }
+            onCancel?.let { cancel ->
+                TextButton(
+                    onClick = cancel,
+                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp),
+                    enabled = !submitting,
+                ) { Text("Cancel") }
             }
         }
     }

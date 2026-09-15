@@ -13,13 +13,13 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
-    suspend fun connectInstance(value: String): String {
+    suspend fun verifyInstance(value: String): String {
         val baseUrl = InstanceUrlStore.normalize(value)
         val status = requestJsonAt(baseUrl, "/api/setup/status", body = null, method = "GET")
         if (status.optBoolean("needsSetup", false)) {
             throw MobileApiException(409, "Finish initial setup for this Pogmail instance in the web app first.")
         }
-        return instanceUrlStore.save(baseUrl)
+        return baseUrl
     }
 
     suspend fun login(email: String, password: String): MobileSession = requestSession(

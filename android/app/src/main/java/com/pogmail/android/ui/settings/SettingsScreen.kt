@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Security
@@ -40,7 +41,9 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     userName: String,
     userEmail: String,
+    instanceUrl: String,
     onOpenMailAccounts: () -> Unit,
+    onChangeInstance: () -> Unit,
     onLogout: () -> Unit,
 ) {
     var notificationsEnabled by remember { mutableStateOf(true) }
@@ -101,6 +104,12 @@ fun SettingsScreen(
             trailing = { Switch(checked = notificationsEnabled, onCheckedChange = { notificationsEnabled = it }) },
         )
         SettingRow(Icons.Outlined.Security, "Privacy", "App lock and offline cache")
+        SettingRow(
+            Icons.Outlined.Dns,
+            "Pogmail instance",
+            instanceUrl.removePrefix("https://"),
+            onClick = onChangeInstance,
+        )
         SettingRow(
             Icons.AutoMirrored.Outlined.Logout,
             "Sign out",

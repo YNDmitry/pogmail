@@ -35,7 +35,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    modifier: Modifier = Modifier,
+    onOpenMailAccounts: () -> Unit,
+) {
     var notificationsEnabled by remember { mutableStateOf(true) }
 
     Column(
@@ -81,7 +84,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             fontWeight = FontWeight.Bold,
         )
         SettingRow(Icons.Outlined.Person, "Profile", "Name, signature and appearance")
-        SettingRow(Icons.Outlined.Sync, "Mail accounts", "2 accounts connected")
+        SettingRow(
+            Icons.Outlined.Sync,
+            "Mail accounts",
+            "2 accounts connected",
+            onClick = onOpenMailAccounts,
+        )
         SettingRow(
             Icons.Outlined.Notifications,
             "Notifications",
@@ -97,12 +105,13 @@ private fun SettingRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     description: String,
+    onClick: () -> Unit = {},
     trailing: @Composable (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = {})
+            .clickable(onClick = onClick)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

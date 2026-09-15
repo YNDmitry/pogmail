@@ -43,6 +43,7 @@ import com.pogmail.android.ui.inbox.InboxScreen
 import com.pogmail.android.ui.mail.MessageDetailScreen
 import com.pogmail.android.ui.model.MailPreview
 import com.pogmail.android.ui.search.SearchScreen
+import com.pogmail.android.ui.settings.MailAccountsScreen
 import com.pogmail.android.ui.settings.SettingsScreen
 
 private enum class AppDestination(val label: String) {
@@ -56,7 +57,9 @@ private enum class AppDestination(val label: String) {
 fun PogmailApp() {
     var destination by remember { mutableStateOf(AppDestination.Inbox) }
     var selectedMessage by remember { mutableStateOf<MailPreview?>(null) }
-    val showDock = destination != AppDestination.Compose && selectedMessage == null
+    var showMailAccounts by remember { mutableStateOf(false) }
+    val openedMessage = selectedMessage
+    val showDock = destination != AppDestination.Compose && openedMessage == null && !showMailAccounts
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -75,24 +78,34 @@ fun PogmailApp() {
             .fillMaxSize()
             .padding(innerPadding)
 
-        selectedMessage?.let { message ->
-            MessageDetailScreen(
+        when {
+            openedMessage != null -> MessageDetailScreen(
                 modifier = contentModifier,
-                message = message,
+                message = openedMessage,
                 onBack = { selectedMessage = null },
             )
-        } ?: when (destination) {
-            AppDestination.Inbox -> InboxScreen(
+
+            showMailAccounts -> MailAccountsScreen(
                 modifier = contentModifier,
-                onOpenMessage = { selectedMessage = it },
+                onBack = { showMailAccounts = false },
             )
 
-            AppDestination.Search -> SearchScreen(modifier = contentModifier)
-            AppDestination.Settings -> SettingsScreen(modifier = contentModifier)
-            AppDestination.Compose -> ComposeScreen(
-                modifier = contentModifier,
-                onClose = { destination = AppDestination.Inbox },
-            )
+            else -> when (destination) {
+                AppDestination.Inbox -> InboxScreen(
+                    modifier = contentModifier,
+                    onOpenMessage = { selectedMessage = it },
+                )
+
+                AppDestination.Search -> SearchScreen(modifier = contentModifier)
+                AppDestination.Settings -> SettingsScreen(
+                    modifier = contentModifier,
+                    onOpenMailAccounts = { showMailAccounts = true },
+                )
+                AppDestination.Compose -> ComposeScreen(
+                    modifier = contentModifier,
+                    onClose = { destination = AppDestination.Inbox },
+                )
+            }
         }
     }
 }

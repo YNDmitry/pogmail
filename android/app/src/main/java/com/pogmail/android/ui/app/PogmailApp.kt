@@ -42,12 +42,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pogmail.android.data.auth.MobileSession
+import com.pogmail.android.data.auth.MobileApiClient
 import com.pogmail.android.data.auth.MobileSessionRepository
 import com.pogmail.android.data.auth.PasskeyAuthenticator
+import com.pogmail.android.data.auth.InstanceUrlStore
 import com.pogmail.android.data.cache.MailCacheDatabase
 import com.pogmail.android.data.cache.MailSyncRepository
 import com.pogmail.android.ui.compose.ComposeScreen
 import com.pogmail.android.ui.auth.LoginScreen
+import com.pogmail.android.ui.auth.InstanceUrlScreen
 import com.pogmail.android.ui.inbox.InboxScreen
 import com.pogmail.android.ui.mail.MessageDetailScreen
 import com.pogmail.android.ui.model.MailPreview
@@ -67,6 +70,8 @@ private enum class AppDestination(val label: String) {
 @Composable
 fun PogmailApp(
     activity: Activity,
+    instanceUrlStore: InstanceUrlStore,
+    mobileApiClient: MobileApiClient,
     sessionRepository: MobileSessionRepository,
     passkeyAuthenticator: PasskeyAuthenticator,
     syncRepository: MailSyncRepository,
@@ -75,14 +80,38 @@ fun PogmailApp(
     var sessionState by remember { mutableStateOf<SessionState>(SessionState.Restoring) }
     var loginError by remember { mutableStateOf<String?>(null) }
     var submittingLogin by remember { mutableStateOf(false) }
+    var instanceError by remember { mutableStateOf<String?>(null) }
+    var connectingInstance by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(sessionRepository) {
-        sessionState = sessionRepository.restore()?.let(SessionState::Authenticated) ?: SessionState.SignedOut
+    LaunchedEffect(instanceUrlStore, sessionRepository) {
+        sessionState = if (instanceUrlStore.restore() == null) {
+            SessionState.SelectingInstance
+        } else {
+            sessionRepository.restore()?.let(SessionState::Authenticated) ?: SessionState.SignedOut
+        }
     }
 
     when (val state = sessionState) {
         SessionState.Restoring -> AppLoadingScreen()
+        SessionState.SelectingInstance -> InstanceUrlScreen(
+            submitting = connectingInstance,
+            error = instanceError,
+            onContinue = { url ->
+                scope.launch {
+                    connectingInstance = true
+                    instanceError = null
+                    try {
+                        mobileApiClient.connectInstance(url)
+                        sessionState = SessionState.SignedOut
+                    } catch (error: Exception) {
+                        instanceError = error.message ?: "Could not reach this Pogmail instance."
+                    } finally {
+                        connectingInstance = false
+                    }
+                }
+            },
+        )
         SessionState.SignedOut -> LoginScreen(
             submitting = submittingLogin,
             error = loginError,
@@ -135,6 +164,7 @@ fun PogmailApp(
 
 private sealed interface SessionState {
     data object Restoring : SessionState
+    data object SelectingInstance : SessionState
     data object SignedOut : SessionState
     data class Authenticated(val session: MobileSession) : SessionState
 }

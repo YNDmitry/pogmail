@@ -4,14 +4,6 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-val pogmailApiBaseUrl = providers.gradleProperty("POGMAIL_API_BASE_URL")
-    .orElse("https://pogmail.dev")
-    .get()
-    .trimEnd('/')
-val escapedPogmailApiBaseUrl = pogmailApiBaseUrl
-    .replace("\\", "\\\\")
-    .replace("\"", "\\\"")
-
 android {
     namespace = "com.pogmail.android"
     compileSdk = 37
@@ -46,10 +38,6 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
-    }
-
-    defaultConfig {
-        buildConfigField("String", "POGMAIL_API_BASE_URL", "\"$escapedPogmailApiBaseUrl\"")
     }
 }
 

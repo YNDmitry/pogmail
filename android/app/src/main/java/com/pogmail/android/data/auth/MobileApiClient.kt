@@ -6,15 +6,21 @@ import com.pogmail.android.data.cache.CachedFolder
 import com.pogmail.android.data.cache.CachedMailbox
 import com.pogmail.android.data.cache.CachedMessage
 import com.pogmail.android.data.cache.MailSyncBatch
-import java.net.URI
 import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-class MobileApiClient(baseUrl: String) {
-    private val baseUrl = baseUrl.trimEnd('/').also(::requireSecureBaseUrl)
+class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
+    suspend fun connectInstance(value: String): String {
+        val baseUrl = InstanceUrlStore.normalize(value)
+        val status = requestJsonAt(baseUrl, "/api/setup/status", body = null, method = "GET")
+        if (status.optBoolean("needsSetup", false)) {
+            throw MobileApiException(409, "Finish initial setup for this Pogmail instance in the web app first.")
+        }
+        return instanceUrlStore.save(baseUrl)
+    }
 
     suspend fun login(email: String, password: String): MobileSession = requestSession(
         path = "/auth/login",
@@ -72,8 +78,16 @@ class MobileApiClient(baseUrl: String) {
         body: JSONObject?,
         accessToken: String? = null,
         method: String = "POST",
+    ): JSONObject = requestJsonAt(instanceUrlStore.requireUrl(), "/api/mobile$path", body, accessToken, method)
+
+    private suspend fun requestJsonAt(
+        baseUrl: String,
+        path: String,
+        body: JSONObject?,
+        accessToken: String? = null,
+        method: String = "POST",
     ): JSONObject = withContext(Dispatchers.IO) {
-        val connection = (URL("$baseUrl/api/mobile$path").openConnection() as HttpsURLConnection).apply {
+        val connection = (URL("$baseUrl$path").openConnection() as HttpsURLConnection).apply {
             requestMethod = method
             connectTimeout = 15_000
             readTimeout = 30_000
@@ -94,7 +108,12 @@ class MobileApiClient(baseUrl: String) {
             if (status !in 200..299) {
                 val message = runCatching { JSONObject(payload).optString("error") }
                     .getOrDefault("")
-                    .ifBlank { "Request failed" }
+                    .ifBlank {
+                        when (status) {
+                            404, 405 -> "This URL does not expose a Pogmail Worker."
+                            else -> "The server returned HTTP $status."
+                        }
+                    }
                 throw MobileApiException(status, message)
             }
             JSONObject(payload)
@@ -152,8 +171,3 @@ private inline fun org.json.JSONArray.filterItems(predicate: (JSONObject) -> Boo
     List(length()) { index -> getJSONObject(index) }.filter(predicate)
 
 private fun JSONObject.stringOrNull(name: String): String? = if (isNull(name)) null else getString(name)
-
-private fun requireSecureBaseUrl(value: String) {
-    val uri = runCatching { URI(value) }.getOrElse { throw IllegalArgumentException("Invalid API base URL") }
-    require(uri.scheme == "https" && !uri.host.isNullOrBlank()) { "Pogmail API URL must use HTTPS" }
-}

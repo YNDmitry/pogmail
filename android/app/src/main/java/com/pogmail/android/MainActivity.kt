@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.view.WindowCompat
+import com.pogmail.android.data.auth.InstanceUrlStore
+import com.pogmail.android.data.auth.MobileApiClient
 import com.pogmail.android.data.auth.MobileSessionRepository
 import com.pogmail.android.data.auth.PasskeyAuthenticator
 import com.pogmail.android.data.cache.MailCacheDatabase
@@ -30,6 +32,8 @@ class MainActivity : ComponentActivity() {
             (application as PogmailApplication).let { app ->
                 PogmailAndroidApp(
                     this@MainActivity,
+                    app.instanceUrlStore,
+                    app.mobileApiClient,
                     app.mobileSessionRepository,
                     app.passkeyAuthenticator,
                     app.mailSyncRepository,
@@ -43,6 +47,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun PogmailAndroidApp(
     activity: Activity,
+    instanceUrlStore: InstanceUrlStore,
+    mobileApiClient: MobileApiClient,
     sessionRepository: MobileSessionRepository,
     passkeyAuthenticator: PasskeyAuthenticator,
     syncRepository: MailSyncRepository,
@@ -64,7 +70,15 @@ private fun PogmailAndroidApp(
 
     PogmailTheme(darkTheme = darkTheme) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            PogmailApp(activity, sessionRepository, passkeyAuthenticator, syncRepository, cache)
+            PogmailApp(
+                activity,
+                instanceUrlStore,
+                mobileApiClient,
+                sessionRepository,
+                passkeyAuthenticator,
+                syncRepository,
+                cache,
+            )
         }
     }
 }

@@ -3,6 +3,7 @@ import type { Database } from "@/db";
 import { sessions, users } from "@/db/schema";
 import type { SessionUser } from "@/shared/contract/auth";
 import { sha256Hex } from "./password";
+import { destroyAllMobileSessions } from "./mobile-session";
 
 export const SESSION_COOKIE = "pb_session";
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -78,7 +79,10 @@ export async function destroySession(db: Database, token: string | undefined): P
 
 /** Revokes every session for a user — used on password change and account disable. */
 export async function destroyAllSessions(db: Database, userId: string): Promise<void> {
-	await db.delete(sessions).where(eq(sessions.userId, userId));
+	await Promise.all([
+		db.delete(sessions).where(eq(sessions.userId, userId)),
+		destroyAllMobileSessions(db, userId),
+	]);
 }
 
 export function sessionCookie(token: string, expiresAt: Date): string {

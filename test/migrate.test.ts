@@ -41,6 +41,18 @@ describe("bundled migrations", () => {
 		expect(indexes.results).toHaveLength(1);
 	});
 
+	it("installs hashed mobile device session storage", async () => {
+		const tables = await env.DB.prepare(
+			"SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('mobile_device_sessions', 'mobile_access_tokens') ORDER BY name",
+		).all<{ name: string }>();
+		const indexes = await env.DB.prepare(
+			"SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('mobile_device_sessions_refresh_unq', 'mobile_access_tokens_token_unq')",
+		).all<{ name: string }>();
+
+		expect(tables.results.map((row) => row.name)).toEqual(["mobile_access_tokens", "mobile_device_sessions"]);
+		expect(indexes.results).toHaveLength(2);
+	});
+
 	it("re-applies nothing once every file is recorded", async () => {
 		for (const migration of readMigrations()) {
 			await env.DB.prepare("INSERT OR IGNORE INTO d1_migrations (name) VALUES (?)")

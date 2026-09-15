@@ -5,13 +5,14 @@ import { and, eq, gt, isNull, or } from "drizzle-orm";
 import type { Database } from "@/db";
 import { apiKeys, users, type ApiKeyScope } from "@/db/schema";
 import type { SessionUser } from "@/shared/contract/auth";
+import { resolveMobileAccessToken } from "../auth/mobile-session";
 import { sha256Hex } from "../auth/password";
 import { resolveSession, sessionUserColumns, SESSION_COOKIE, toSessionUser } from "../auth/session";
 import type { AppBindings } from "./context";
 
 /**
- * Both auth surfaces resolve here and fail as 401, never as an unhandled throw.
- * Session cookie first, then `Authorization: Bearer` for the public API.
+ * Every auth surface resolves here and fails as 401, never as an unhandled throw.
+ * Browser cookie first, then a mobile access token, then a scoped API key.
  */
 export const requireAuth: MiddlewareHandler<AppBindings> = async (c, next) => {
 	const db = c.get("db");
@@ -20,6 +21,16 @@ export const requireAuth: MiddlewareHandler<AppBindings> = async (c, next) => {
 	if (session) {
 		c.set("user", session);
 		c.set("apiKeyScopes", null);
+		c.set("mobileSessionId", null);
+		await next();
+		return;
+	}
+
+	const mobile = await resolveMobileAccessToken(db, bearerToken(c.req.header("authorization")));
+	if (mobile) {
+		c.set("user", mobile.user);
+		c.set("apiKeyScopes", null);
+		c.set("mobileSessionId", mobile.deviceSessionId);
 		await next();
 		return;
 	}
@@ -29,6 +40,18 @@ export const requireAuth: MiddlewareHandler<AppBindings> = async (c, next) => {
 
 	c.set("user", key.user);
 	c.set("apiKeyScopes", key.scopes);
+	c.set("mobileSessionId", null);
+	await next();
+};
+
+/** Endpoints that must only accept an Android bearer token, never a web cookie or API key. */
+export const requireMobileAuth: MiddlewareHandler<AppBindings> = async (c, next) => {
+	const mobile = await resolveMobileAccessToken(c.get("db"), bearerToken(c.req.header("authorization")));
+	if (!mobile) throw new HTTPException(401, { message: "Not authenticated" });
+
+	c.set("user", mobile.user);
+	c.set("apiKeyScopes", null);
+	c.set("mobileSessionId", mobile.deviceSessionId);
 	await next();
 };
 
@@ -95,4 +118,8 @@ function executionContext(c: Context<AppBindings>): { waitUntil(promise: Promise
 	} catch {
 		return null;
 	}
+}
+
+function bearerToken(header: string | undefined): string | undefined {
+	return header?.match(/^Bearer\s+(.+)$/i)?.[1];
 }

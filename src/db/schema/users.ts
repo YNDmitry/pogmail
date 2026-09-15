@@ -60,6 +60,51 @@ export const sessions = sqliteTable(
 	],
 );
 
+/**
+ * A long-lived, per-device mobile login. Refresh tokens are SHA-256 hashes, so
+ * a D1 export cannot be replayed as an Android session.
+ */
+export const mobileDeviceSessions = sqliteTable(
+	"mobile_device_sessions",
+	{
+		id: id(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		refreshTokenHash: text("refresh_token_hash").notNull(),
+		deviceName: text("device_name").notNull(),
+		platform: text("platform").notNull().default("android"),
+		appVersion: text("app_version"),
+		ip: text("ip"),
+		lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
+		expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+		revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
+		...timestamps(),
+	},
+	(t) => [
+		uniqueIndex("mobile_device_sessions_refresh_unq").on(t.refreshTokenHash),
+		index("mobile_device_sessions_user_idx").on(t.userId, t.expiresAt),
+	],
+);
+
+/** Short-lived bearer credentials issued to one mobile device session. */
+export const mobileAccessTokens = sqliteTable(
+	"mobile_access_tokens",
+	{
+		id: id(),
+		deviceSessionId: text("device_session_id")
+			.notNull()
+			.references(() => mobileDeviceSessions.id, { onDelete: "cascade" }),
+		tokenHash: text("token_hash").notNull(),
+		expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		uniqueIndex("mobile_access_tokens_token_unq").on(t.tokenHash),
+		index("mobile_access_tokens_session_idx").on(t.deviceSessionId, t.expiresAt),
+	],
+);
+
 /** A discoverable WebAuthn credential. Public keys are safe to retain in D1. */
 export const passkeys = sqliteTable(
 	"passkeys",

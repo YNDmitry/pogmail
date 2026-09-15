@@ -49,6 +49,7 @@ import com.pogmail.android.data.auth.PasskeyAuthenticator
 import com.pogmail.android.data.auth.InstanceUrlStore
 import com.pogmail.android.data.cache.MailCacheDatabase
 import com.pogmail.android.data.cache.MailSyncRepository
+import com.pogmail.android.data.mail.MobileMessageRepository
 import com.pogmail.android.ui.compose.ComposeScreen
 import com.pogmail.android.ui.auth.LoginScreen
 import com.pogmail.android.ui.auth.InstanceUrlScreen
@@ -173,6 +174,7 @@ fun PogmailApp(
             session = state.session,
             instanceUrl = instanceUrlStore.requireUrl(),
             sessionRepository = sessionRepository,
+            messageRepository = MobileMessageRepository(mobileApiClient, sessionRepository),
             syncRepository = syncRepository,
             cache = cache,
             onSessionUpdated = { sessionState = SessionState.Authenticated(it) },
@@ -217,6 +219,7 @@ private fun AuthenticatedApp(
     session: MobileSession,
     instanceUrl: String,
     sessionRepository: MobileSessionRepository,
+    messageRepository: MobileMessageRepository,
     syncRepository: MailSyncRepository,
     cache: MailCacheDatabase,
     onSessionUpdated: (MobileSession) -> Unit,
@@ -273,6 +276,9 @@ private fun AuthenticatedApp(
             openedMessage != null -> MessageDetailScreen(
                 modifier = contentModifier,
                 message = openedMessage,
+                session = session,
+                messageRepository = messageRepository,
+                onSessionUpdated = onSessionUpdated,
                 onBack = { selectedMessage = null },
             )
 

@@ -7,6 +7,7 @@ import com.pogmail.android.data.cache.CachedMailbox
 import com.pogmail.android.data.cache.CachedMessage
 import com.pogmail.android.data.cache.MailSyncBatch
 import java.net.URL
+import java.net.URLEncoder
 import javax.net.ssl.HttpsURLConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -65,6 +66,15 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
 
     suspend fun sync(accessToken: String, cursor: Long): MailSyncBatch = parseSync(
         requestJson("/sync?cursor=$cursor", body = null, accessToken = accessToken, method = "GET"),
+    )
+
+    suspend fun message(accessToken: String, messageId: String): MobileMessageDetail = parseMessage(
+        requestJson(
+            "/messages/${URLEncoder.encode(messageId, Charsets.UTF_8)}",
+            body = null,
+            accessToken = accessToken,
+            method = "GET",
+        ),
     )
 
     private suspend fun requestSession(path: String, body: JSONObject): MobileSession =
@@ -157,11 +167,40 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
             deletedMessageIds = tombstones.filterItems { it.getString("resourceType") == "message" }.map { it.getString("resourceId") },
         )
     }
+
+    private fun parseMessage(json: JSONObject): MobileMessageDetail = MobileMessageDetail(
+        id = json.getString("id"),
+        bodyText = json.stringOrNull("bodyText"),
+        bodyHtml = json.stringOrNull("bodyHtml"),
+        attachments = json.getJSONArray("attachments").mapItems { attachment ->
+            MobileMessageAttachment(
+                id = attachment.getString("id"),
+                filename = attachment.getString("filename"),
+                contentType = attachment.getString("contentType"),
+                sizeBytes = attachment.getLong("sizeBytes"),
+            )
+        },
+    )
 }
 
 data class PasskeyAuthenticationOptions(
     val challengeId: String,
     val requestJson: String,
+)
+
+data class MobileMessageDetail(
+    val id: String,
+    val bodyText: String?,
+    /** Sanitised by the Worker. The native reader uses it only as a text fallback. */
+    val bodyHtml: String?,
+    val attachments: List<MobileMessageAttachment>,
+)
+
+data class MobileMessageAttachment(
+    val id: String,
+    val filename: String,
+    val contentType: String,
+    val sizeBytes: Long,
 )
 
 private inline fun <T> org.json.JSONArray.mapItems(transform: (JSONObject) -> T): List<T> =

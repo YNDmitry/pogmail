@@ -48,7 +48,7 @@ class InstanceUrlStore(private val context: Context) {
                 uri.userInfo != null ||
                 uri.query != null ||
                 uri.fragment != null ||
-                (uri.path != null && uri.path != "/")
+                (uri.path != null && uri.path.isNotEmpty() && uri.path != "/")
             ) {
                 throw MobileApiException(400, "Enter the HTTPS address of a Pogmail instance.")
             }

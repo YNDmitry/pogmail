@@ -10,7 +10,14 @@
   },
   "assets": {
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/.well-known/assetlinks.json"]
+  },
+  // These public values identify the Android app that is allowed to use
+  // Credential Manager with each independently deployed Pogmail instance.
+  // Set the release signing fingerprint for each production copy before deploy.
+  "vars": {
+    "ANDROID_APP_PACKAGE": "com.pogmail.android",
+    "ANDROID_APP_SHA256_CERT_FINGERPRINTS": "96:B1:83:3B:A6:CD:08:19:A5:4D:59:0A:0B:A5:D1:50:A7:D3:6A:E6:3D:15:5F:8E:F6:F2:17:0B:BC:28:97:3A"
   },
   "d1_databases": [
     {

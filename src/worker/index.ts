@@ -41,10 +41,49 @@ export { DatabaseRestoreWorkflow } from "./backups/restore-workflow";
 
 /** Set on forwarded mail so a forward loop terminates instead of amplifying. */
 const FORWARDED_HEADER = "x-pogmail-forwarded";
+const ASSET_LINKS_PATH = "/.well-known/assetlinks.json";
+const SHA256_FINGERPRINT = /^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/;
+
+function assetLinksResponse(env: Env, method: string): Response {
+  const packageName = env.ANDROID_APP_PACKAGE.trim();
+  const fingerprints = env.ANDROID_APP_SHA256_CERT_FINGERPRINTS.split(",")
+    .map((fingerprint) => fingerprint.trim().toUpperCase())
+    .filter((fingerprint) => SHA256_FINGERPRINT.test(fingerprint));
+
+  if (!packageName || fingerprints.length === 0) {
+    return new Response("Not Found", { status: 404 });
+  }
+
+  const body = JSON.stringify([
+    {
+      relation: ["delegate_permission/common.get_login_creds"],
+      target: {
+        namespace: "android_app",
+        package_name: packageName,
+        sha256_cert_fingerprints: fingerprints,
+      },
+    },
+  ]);
+
+  return new Response(method === "HEAD" ? null : body, {
+    headers: {
+      "cache-control": "public, max-age=300",
+      "content-type": "application/json; charset=utf-8",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
+
+    if (
+      url.pathname === ASSET_LINKS_PATH &&
+      (request.method === "GET" || request.method === "HEAD")
+    ) {
+      return assetLinksResponse(env, request.method);
+    }
 
     // The WebSocket upgrade cannot go through Hono: it must reach the Durable
     // Object as a raw request, and only after the cookie is verified.

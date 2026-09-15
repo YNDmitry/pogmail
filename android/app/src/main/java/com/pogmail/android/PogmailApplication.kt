@@ -9,6 +9,7 @@ import com.pogmail.android.data.cache.MailSyncRepository
 
 class PogmailApplication : Application() {
     private val apiClient by lazy { MobileApiClient(BuildConfig.POGMAIL_API_BASE_URL) }
+    val mailCacheDatabase by lazy { MailCacheDatabase.create(applicationContext) }
 
     val mobileSessionRepository: MobileSessionRepository by lazy {
         MobileSessionRepository(
@@ -18,6 +19,6 @@ class PogmailApplication : Application() {
     }
 
     val mailSyncRepository: MailSyncRepository by lazy {
-        MailSyncRepository(apiClient, MailCacheDatabase.create(applicationContext))
+        MailSyncRepository(apiClient, mailCacheDatabase)
     }
 }

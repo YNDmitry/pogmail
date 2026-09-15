@@ -42,6 +42,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pogmail.android.data.auth.MobileSession
 import com.pogmail.android.data.auth.MobileSessionRepository
+import com.pogmail.android.data.cache.MailCacheDatabase
+import com.pogmail.android.data.cache.MailSyncRepository
 import com.pogmail.android.ui.compose.ComposeScreen
 import com.pogmail.android.ui.auth.LoginScreen
 import com.pogmail.android.ui.inbox.InboxScreen
@@ -61,7 +63,7 @@ private enum class AppDestination(val label: String) {
 }
 
 @Composable
-fun PogmailApp(sessionRepository: MobileSessionRepository) {
+fun PogmailApp(sessionRepository: MobileSessionRepository, syncRepository: MailSyncRepository, cache: MailCacheDatabase) {
     var sessionState by remember { mutableStateOf<SessionState>(SessionState.Restoring) }
     var loginError by remember { mutableStateOf<String?>(null) }
     var submittingLogin by remember { mutableStateOf(false) }
@@ -93,6 +95,8 @@ fun PogmailApp(sessionRepository: MobileSessionRepository) {
 
         is SessionState.Authenticated -> AuthenticatedApp(
             session = state.session,
+            syncRepository = syncRepository,
+            cache = cache,
             onLogout = {
                 scope.launch {
                     try {
@@ -124,8 +128,11 @@ private fun AppLoadingScreen() {
 @Composable
 private fun AuthenticatedApp(
     session: MobileSession,
+    syncRepository: MailSyncRepository,
+    cache: MailCacheDatabase,
     onLogout: () -> Unit,
 ) {
+    LaunchedEffect(session.deviceSessionId) { runCatching { syncRepository.sync(session) } }
     var destination by remember { mutableStateOf(AppDestination.Inbox) }
     var selectedMessage by remember { mutableStateOf<MailPreview?>(null) }
     var showMailAccounts by remember { mutableStateOf(false) }
@@ -178,6 +185,7 @@ private fun AuthenticatedApp(
                 AppDestination.Inbox -> InboxScreen(
                     modifier = contentModifier,
                     accountAddress = session.user.email,
+                    messages = cache.dao().observeMessages(),
                     onOpenMessage = { selectedMessage = it },
                 )
 

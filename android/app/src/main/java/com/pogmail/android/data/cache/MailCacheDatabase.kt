@@ -10,6 +10,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
 import androidx.room.withTransaction
+import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "cached_mailboxes")
 data class CachedMailbox(
@@ -55,6 +56,7 @@ interface MailCacheDao {
     @Upsert suspend fun upsertMessages(items: List<CachedMessage>)
     @Upsert suspend fun saveState(state: SyncState)
     @Query("SELECT cursor FROM sync_state WHERE `key` = :key") suspend fun cursor(key: String): Long?
+    @Query("SELECT * FROM cached_messages ORDER BY receivedAt DESC") fun observeMessages(): Flow<List<CachedMessage>>
     @Query("DELETE FROM cached_messages WHERE id IN (:ids)") suspend fun deleteMessages(ids: List<String>)
     @Query("DELETE FROM cached_folders WHERE id IN (:ids)") suspend fun deleteFolders(ids: List<String>)
     @Query("DELETE FROM cached_mailboxes WHERE id IN (:ids)") suspend fun deleteMailboxes(ids: List<String>)

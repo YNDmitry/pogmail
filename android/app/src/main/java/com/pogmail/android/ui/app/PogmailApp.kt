@@ -28,9 +28,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,7 +40,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.pogmail.android.data.auth.MobileSession
+import com.pogmail.android.data.auth.MobileSessionRepository
 import com.pogmail.android.ui.compose.ComposeScreen
+import com.pogmail.android.ui.auth.LoginScreen
 import com.pogmail.android.ui.inbox.InboxScreen
 import com.pogmail.android.ui.mail.MessageDetailScreen
 import com.pogmail.android.ui.model.MailPreview
@@ -46,6 +51,7 @@ import com.pogmail.android.ui.search.SearchScreen
 import com.pogmail.android.ui.settings.MailAccountsScreen
 import com.pogmail.android.ui.settings.ConnectMailAccountScreen
 import com.pogmail.android.ui.settings.SettingsScreen
+import kotlinx.coroutines.launch
 
 private enum class AppDestination(val label: String) {
     Inbox("Inbox"),
@@ -55,7 +61,71 @@ private enum class AppDestination(val label: String) {
 }
 
 @Composable
-fun PogmailApp() {
+fun PogmailApp(sessionRepository: MobileSessionRepository) {
+    var sessionState by remember { mutableStateOf<SessionState>(SessionState.Restoring) }
+    var loginError by remember { mutableStateOf<String?>(null) }
+    var submittingLogin by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(sessionRepository) {
+        sessionState = sessionRepository.restore()?.let(SessionState::Authenticated) ?: SessionState.SignedOut
+    }
+
+    when (val state = sessionState) {
+        SessionState.Restoring -> AppLoadingScreen()
+        SessionState.SignedOut -> LoginScreen(
+            submitting = submittingLogin,
+            error = loginError,
+            onLogin = { email, password ->
+                scope.launch {
+                    submittingLogin = true
+                    loginError = null
+                    try {
+                        sessionState = SessionState.Authenticated(sessionRepository.login(email, password))
+                    } catch (error: Exception) {
+                        loginError = error.message ?: "Could not sign in. Please try again."
+                    } finally {
+                        submittingLogin = false
+                    }
+                }
+            },
+        )
+
+        is SessionState.Authenticated -> AuthenticatedApp(
+            session = state.session,
+            onLogout = {
+                scope.launch {
+                    try {
+                        sessionRepository.logout(state.session)
+                    } catch (_: Exception) {
+                        // The repository already removed encrypted local state.
+                    } finally {
+                        sessionState = SessionState.SignedOut
+                    }
+                }
+            },
+        )
+    }
+}
+
+private sealed interface SessionState {
+    data object Restoring : SessionState
+    data object SignedOut : SessionState
+    data class Authenticated(val session: MobileSession) : SessionState
+}
+
+@Composable
+private fun AppLoadingScreen() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text("Pogmail", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun AuthenticatedApp(
+    session: MobileSession,
+    onLogout: () -> Unit,
+) {
     var destination by remember { mutableStateOf(AppDestination.Inbox) }
     var selectedMessage by remember { mutableStateOf<MailPreview?>(null) }
     var showMailAccounts by remember { mutableStateOf(false) }
@@ -107,13 +177,17 @@ fun PogmailApp() {
             else -> when (destination) {
                 AppDestination.Inbox -> InboxScreen(
                     modifier = contentModifier,
+                    accountAddress = session.user.email,
                     onOpenMessage = { selectedMessage = it },
                 )
 
                 AppDestination.Search -> SearchScreen(modifier = contentModifier)
                 AppDestination.Settings -> SettingsScreen(
                     modifier = contentModifier,
+                    userName = session.user.name,
+                    userEmail = session.user.email,
                     onOpenMailAccounts = { showMailAccounts = true },
+                    onLogout = onLogout,
                 )
                 AppDestination.Compose -> ComposeScreen(
                     modifier = contentModifier,

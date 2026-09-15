@@ -64,6 +64,18 @@ the Android app should not call them until their contracts are added.
 - DataStore for preferences and WorkManager for reliable, deferrable sync.
 - Strictly avoid logs containing addresses, tokens, MIME bodies or attachments.
 
+### Implemented authentication slice
+
+- The Compose sign-in flow uses the mobile Worker API and shows only
+  server-provided, user-safe errors.
+- The refresh token, access token and user identity are one AES-GCM encrypted
+  DataStore value. Its AES-256 key is generated in Android Keystore; backups
+  are disabled for the app.
+- The API origin is a public Gradle build parameter (`POGMAIL_API_BASE_URL`),
+  not a committed environment file. The client accepts HTTPS origins only.
+- Settings includes sign-out, which revokes the current device remotely when
+  online and always clears the encrypted local session.
+
 ## 3. First usable release
 
 1. Login, logout and remote device-session revocation.

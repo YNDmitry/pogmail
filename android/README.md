@@ -16,13 +16,22 @@ cd android
 ```
 
 Open the `android/` directory in Android Studio to run on an emulator or device.
-The starter screen has no backend connection and contains no credentials.
+The app signs in through the Worker mobile-session API. It never receives IMAP
+or SMTP passwords.
+
+The default public API origin is `https://pogmail.dev`. For a development or
+self-hosted instance, pass an HTTPS origin at build time; keep it in your local
+Gradle user configuration rather than version control:
+
+```sh
+./gradlew :app:assembleDebug -PPOGMAIL_API_BASE_URL=https://mail.example.com
+```
 
 ## Next implementation boundaries
 
 - All IMAP/SMTP credentials stay encrypted in the Pogmail Worker; never store
   or connect to them directly from the Android application.
-- Add the mobile session and incremental-sync API before building mailbox UI.
+- The mobile session API is implemented; incremental sync and FCM are next.
 - Keep server URLs, FCM configuration and signing material outside Git.
 
 See [PLAN.md](PLAN.md) for the production delivery plan.

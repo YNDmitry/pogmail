@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pogmail.android.data.auth.MobileSession
+import com.pogmail.android.data.auth.MobileApiException
 import com.pogmail.android.data.auth.MobileApiClient
 import com.pogmail.android.data.auth.MobileSessionRepository
 import com.pogmail.android.data.auth.PasskeyAuthenticator
@@ -171,8 +172,15 @@ fun PogmailApp(
         is SessionState.Authenticated -> AuthenticatedApp(
             session = state.session,
             instanceUrl = instanceUrlStore.requireUrl(),
+            sessionRepository = sessionRepository,
             syncRepository = syncRepository,
             cache = cache,
+            onSessionUpdated = { sessionState = SessionState.Authenticated(it) },
+            onSessionExpired = {
+                sessionRepository.clearLocalSession()
+                cache.clear()
+                sessionState = SessionState.SignedOut
+            },
             onLogout = {
                 scope.launch {
                     try {
@@ -208,12 +216,34 @@ private fun AppLoadingScreen() {
 private fun AuthenticatedApp(
     session: MobileSession,
     instanceUrl: String,
+    sessionRepository: MobileSessionRepository,
     syncRepository: MailSyncRepository,
     cache: MailCacheDatabase,
+    onSessionUpdated: (MobileSession) -> Unit,
+    onSessionExpired: suspend () -> Unit,
     onLogout: () -> Unit,
     onChangeInstance: () -> Unit,
 ) {
-    LaunchedEffect(session.deviceSessionId) { runCatching { syncRepository.sync(session) } }
+    LaunchedEffect(session.deviceSessionId) {
+        try {
+            val activeSession = sessionRepository.refreshIfExpiring(session)
+            syncRepository.sync(activeSession)
+            if (activeSession != session) onSessionUpdated(activeSession)
+        } catch (error: MobileApiException) {
+            if (error.statusCode != 401) return@LaunchedEffect
+            try {
+                val refreshedSession = sessionRepository.refresh(session)
+                syncRepository.sync(refreshedSession)
+                onSessionUpdated(refreshedSession)
+            } catch (refreshError: MobileApiException) {
+                if (refreshError.statusCode == 401) onSessionExpired()
+            } catch (_: Exception) {
+                // Keep cached mail available while an offline refresh is retried later.
+            }
+        } catch (_: Exception) {
+            // Foreground sync is best-effort; the cached inbox remains usable offline.
+        }
+    }
     var destination by remember { mutableStateOf(AppDestination.Inbox) }
     var selectedMessage by remember { mutableStateOf<MailPreview?>(null) }
     var showMailAccounts by remember { mutableStateOf(false) }

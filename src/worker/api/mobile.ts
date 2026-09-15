@@ -1,14 +1,43 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { and, desc, eq, isNull } from "drizzle-orm";
-import { mobileDeviceSessions, users } from "@/db/schema";
+import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { folders, messages, mobileDeviceSessions, mobileSyncEvents, users } from "@/db/schema";
 import { mobileLoginInput, mobileRefreshInput } from "@/shared/contract/mobile";
+import { z } from "zod";
 import { audit } from "../audit";
 import { createMobileSession, destroyMobileSession, rotateMobileRefreshToken } from "../auth/mobile-session";
 import { verifyPassword } from "../auth/password";
 import { requireMobileAuth } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
-import { parseBody } from "./_util";
+import { listAccessibleMailboxes } from "../mailboxes/access";
+import { parseBody, parseQuery } from "./_util";
+
+const syncQuery = z.object({
+	/** Last successfully applied mobile sync event. Zero starts a complete first sync. */
+	cursor: z.coerce.number().int().min(0).default(0),
+	limit: z.coerce.number().int().min(1).max(200).default(100),
+});
+
+const mobileMessageColumns = {
+	id: messages.id,
+	mailboxId: messages.mailboxId,
+	threadId: messages.threadId,
+	direction: messages.direction,
+	status: messages.status,
+	folderId: messages.folderId,
+	subject: messages.subject,
+	fromAddress: messages.fromAddress,
+	fromName: messages.fromName,
+	toAddresses: messages.toAddresses,
+	snippet: messages.snippet,
+	read: messages.read,
+	starred: messages.starred,
+	snoozedUntil: messages.snoozedUntil,
+	hasAttachments: messages.hasAttachments,
+	sizeBytes: messages.sizeBytes,
+	receivedAt: messages.receivedAt,
+	updatedAt: messages.updatedAt,
+} as const;
 
 /** Android-only session issuance. These routes deliberately never set a cookie. */
 export const mobileRoutes = new Hono<AppBindings>()
@@ -100,6 +129,73 @@ export const mobileDeviceRoutes = new Hono<AppBindings>()
 
 		audit(c, { action: "mobile.device_revoke", metadata: { deviceSessionId: revoked.id } });
 		return c.json({ ok: true });
+	})
+
+	/**
+	 * A bounded, cursor-based delta. Mailbox and folder snapshots are small and
+	 * authoritative; message tombstones let offline clients remove hard deletes.
+	 */
+	.get("/sync", async (c) => {
+		const query = await parseQuery(c, syncQuery);
+		const mailboxes = await listAccessibleMailboxes(c.get("db"), c.get("user"));
+		const mailboxIds = mailboxes.map((mailbox) => mailbox.id);
+		if (mailboxIds.length === 0) {
+			return c.json({ cursor: query.cursor, hasMore: false, mailboxes: [], folders: [], messages: [], tombstones: [] });
+		}
+
+		const [events, currentFolders] = await Promise.all([
+			c
+				.get("db")
+				.select()
+				.from(mobileSyncEvents)
+				.where(and(gt(mobileSyncEvents.sequence, query.cursor), inArray(mobileSyncEvents.mailboxId, mailboxIds)))
+				.orderBy(asc(mobileSyncEvents.sequence))
+				.limit(query.limit)
+				.all(),
+			c
+				.get("db")
+				.select({
+					id: folders.id,
+					mailboxId: folders.mailboxId,
+					name: folders.name,
+					color: folders.color,
+					position: folders.position,
+					updatedAt: folders.updatedAt,
+				})
+				.from(folders)
+				.where(inArray(folders.mailboxId, mailboxIds))
+				.orderBy(asc(folders.position), asc(folders.name))
+				.all(),
+		]);
+
+		const messageIds = events
+			.filter((event) => event.resourceType === "message" && event.operation === "upsert")
+			.map((event) => event.resourceId);
+		const currentMessages = messageIds.length === 0
+			? []
+			: await c
+					.get("db")
+					.select(mobileMessageColumns)
+					.from(messages)
+					.where(and(inArray(messages.id, messageIds), inArray(messages.mailboxId, mailboxIds)))
+					.all();
+
+		const last = events.at(-1);
+		return c.json({
+			cursor: last?.sequence ?? query.cursor,
+			hasMore: events.length === query.limit,
+			mailboxes,
+			folders: currentFolders,
+			messages: currentMessages,
+			tombstones: events
+				.filter((event) => event.operation === "delete")
+				.map((event) => ({
+					resourceType: event.resourceType,
+					resourceId: event.resourceId,
+					mailboxId: event.mailboxId,
+					sequence: event.sequence,
+				})),
+		});
 	});
 
 function toUser(user: typeof users.$inferSelect) {

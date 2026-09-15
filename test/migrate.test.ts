@@ -53,6 +53,18 @@ describe("bundled migrations", () => {
 		expect(indexes.results).toHaveLength(2);
 	});
 
+	it("installs the ordered mobile sync event journal", async () => {
+		const tables = await env.DB.prepare(
+			"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'mobile_sync_events'",
+		).all<{ name: string }>();
+		const triggers = await env.DB.prepare(
+			"SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'mobile_sync_messages_delete'",
+		).all<{ name: string }>();
+
+		expect(tables.results).toHaveLength(1);
+		expect(triggers.results).toHaveLength(1);
+	});
+
 	it("re-applies nothing once every file is recorded", async () => {
 		for (const migration of readMigrations()) {
 			await env.DB.prepare("INSERT OR IGNORE INTO d1_migrations (name) VALUES (?)")

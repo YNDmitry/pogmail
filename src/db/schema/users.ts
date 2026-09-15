@@ -105,6 +105,26 @@ export const mobileAccessTokens = sqliteTable(
 	],
 );
 
+/** Ordered, mailbox-scoped changes consumed by offline mobile clients. */
+export const MOBILE_SYNC_RESOURCE_TYPES = ["mailbox", "folder", "message"] as const;
+export type MobileSyncResourceType = (typeof MOBILE_SYNC_RESOURCE_TYPES)[number];
+export const MOBILE_SYNC_OPERATIONS = ["upsert", "delete"] as const;
+export type MobileSyncOperation = (typeof MOBILE_SYNC_OPERATIONS)[number];
+
+export const mobileSyncEvents = sqliteTable(
+	"mobile_sync_events",
+	{
+		sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+		/** Kept after a mailbox is deleted so active clients can remove local data. */
+		mailboxId: text("mailbox_id").notNull(),
+		resourceType: text("resource_type", { enum: MOBILE_SYNC_RESOURCE_TYPES }).notNull(),
+		resourceId: text("resource_id").notNull(),
+		operation: text("operation", { enum: MOBILE_SYNC_OPERATIONS }).notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [index("mobile_sync_events_mailbox_sequence_idx").on(t.mailboxId, t.sequence)],
+);
+
 /** A discoverable WebAuthn credential. Public keys are safe to retain in D1. */
 export const passkeys = sqliteTable(
 	"passkeys",

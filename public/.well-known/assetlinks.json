@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.get_login_creds"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.pogmail.android",
+      "sha256_cert_fingerprints": [
+        "96:B1:83:3B:A6:CD:08:19:A5:4D:59:0A:0B:A5:D1:50:A7:D3:6A:E6:3D:15:5F:8E:F6:F2:17:0B:BC:28:97:3A"
+      ]
+    }
+  }
+]

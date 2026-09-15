@@ -11,6 +11,8 @@ export type AppBindings = {
 		user: SessionUser;
 		/** Null for cookie sessions, which carry every scope the user's role allows. */
 		apiKeyScopes: ApiKeyScope[] | null;
+		/** Set for Android bearer sessions; null for cookies and API keys. */
+		mobileSessionId: string | null;
 	};
 };
 

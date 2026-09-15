@@ -37,6 +37,23 @@ Before the mailbox UI is built, extend the Worker with a mobile auth surface.
 - Enqueue push work from existing mail processing; do not make FCM delivery a
   synchronous dependency of inbound mail.
 
+### Implemented contract
+
+The first backend slice is available under `/api/mobile`:
+
+- `POST /auth/login` issues a 15-minute `accessToken` and a 90-day rotating
+  `refreshToken`, scoped to a named Android device.
+- `POST /auth/refresh` rotates both credentials. Replaying the old refresh
+  token fails.
+- `POST /auth/logout` revokes the current device. `GET /auth/me`, `GET
+  /devices` and `DELETE /devices/:id` provide identity and remote-device
+  management.
+- The normal authenticated Worker APIs accept the short-lived Android bearer
+  token, so IMAP/SMTP credentials stay entirely on the server.
+
+FCM registration and incremental mailbox sync are the next backend slices;
+the Android app should not call them until their contracts are added.
+
 ## 2. Android foundation
 
 - Kotlin, Jetpack Compose and Material 3.

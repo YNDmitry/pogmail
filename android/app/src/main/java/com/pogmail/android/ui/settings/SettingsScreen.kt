@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
@@ -37,7 +38,10 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SettingsScreen(
     modifier: Modifier = Modifier,
+    userName: String,
+    userEmail: String,
     onOpenMailAccounts: () -> Unit,
+    onLogout: () -> Unit,
 ) {
     var notificationsEnabled by remember { mutableStateOf(true) }
 
@@ -70,8 +74,8 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Dmitry M.", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("dmitry@pogmail.dev", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(userName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(userEmail, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Icon(Icons.Outlined.ChevronRight, contentDescription = "Open profile")
             }
@@ -97,6 +101,12 @@ fun SettingsScreen(
             trailing = { Switch(checked = notificationsEnabled, onCheckedChange = { notificationsEnabled = it }) },
         )
         SettingRow(Icons.Outlined.Security, "Privacy", "App lock and offline cache")
+        SettingRow(
+            Icons.AutoMirrored.Outlined.Logout,
+            "Sign out",
+            "Remove this device session",
+            onClick = onLogout,
+        )
     }
 }
 

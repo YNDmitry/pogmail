@@ -3,6 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val pogmailApiBaseUrl = providers.gradleProperty("POGMAIL_API_BASE_URL")
+    .orElse("https://pogmail.dev")
+    .get()
+    .trimEnd('/')
+val escapedPogmailApiBaseUrl = pogmailApiBaseUrl
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+
 android {
     namespace = "com.pogmail.android"
     compileSdk = 37
@@ -38,6 +46,10 @@ android {
         compose = true
         buildConfig = true
     }
+
+    defaultConfig {
+        buildConfigField("String", "POGMAIL_API_BASE_URL", "\"$escapedPogmailApiBaseUrl\"")
+    }
 }
 
 dependencies {
@@ -52,6 +64,7 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.4.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")

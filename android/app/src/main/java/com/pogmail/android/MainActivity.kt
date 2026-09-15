@@ -14,7 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.view.WindowCompat
+import com.pogmail.android.data.auth.MobileSessionRepository
 import com.pogmail.android.ui.app.PogmailApp
+import com.pogmail.android.ui.auth.LoginScreen
 import com.pogmail.android.ui.theme.PogmailTheme
 
 class MainActivity : ComponentActivity() {
@@ -22,13 +24,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            PogmailAndroidApp()
+            PogmailAndroidApp((application as PogmailApplication).mobileSessionRepository)
         }
     }
 }
 
 @Composable
-private fun PogmailAndroidApp() {
+private fun PogmailAndroidApp(sessionRepository: MobileSessionRepository) {
     val darkTheme = isSystemInDarkTheme()
     val view = LocalView.current
 
@@ -45,7 +47,7 @@ private fun PogmailAndroidApp() {
 
     PogmailTheme(darkTheme = darkTheme) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            PogmailApp()
+            PogmailApp(sessionRepository)
         }
     }
 }
@@ -54,6 +56,6 @@ private fun PogmailAndroidApp() {
 @Composable
 private fun PogmailAppPreview() {
     PogmailTheme {
-        PogmailAndroidApp()
+        LoginScreen(submitting = false, error = null, onLogin = { _, _ -> })
     }
 }

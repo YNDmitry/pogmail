@@ -48,6 +48,7 @@ import com.pogmail.android.ui.model.previewMessages
 @Composable
 fun InboxScreen(
     modifier: Modifier = Modifier,
+    accountAddress: String,
     onOpenMessage: (MailPreview) -> Unit,
 ) {
     var selectedFilter by remember { mutableStateOf("Primary") }
@@ -59,7 +60,7 @@ fun InboxScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item { InboxTopBar() }
-        item { MailboxHeading(unreadCount) }
+        item { MailboxHeading(accountAddress, unreadCount) }
         item { FilterRow(selected = selectedFilter, onSelect = { selectedFilter = it }) }
         item {
             Text(
@@ -109,7 +110,7 @@ private fun InboxTopBar() {
 }
 
 @Composable
-private fun MailboxHeading(unreadCount: Int) {
+private fun MailboxHeading(accountAddress: String, unreadCount: Int) {
     Column(modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp)) {
         Text("Inbox", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
         Row(
@@ -117,7 +118,7 @@ private fun MailboxHeading(unreadCount: Int) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "dmitry@pogmail.dev",
+                text = accountAddress,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium,
             )

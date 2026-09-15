@@ -25,6 +25,23 @@ class MobileApiClient(baseUrl: String) {
             .put("appVersion", BuildConfig.VERSION_NAME),
     )
 
+    suspend fun passkeyOptions(): PasskeyAuthenticationOptions {
+        val response = requestJson("/auth/passkeys/options", JSONObject())
+        return PasskeyAuthenticationOptions(
+            challengeId = response.getString("challengeId"),
+            requestJson = response.getJSONObject("publicKey").toString(),
+        )
+    }
+
+    suspend fun loginWithPasskey(challengeId: String, credentialJson: String): MobileSession = requestSession(
+        path = "/auth/passkeys/verify",
+        body = JSONObject()
+            .put("challengeId", challengeId)
+            .put("credential", JSONObject(credentialJson))
+            .put("deviceName", "${Build.MANUFACTURER} ${Build.MODEL}".trim().take(120))
+            .put("appVersion", BuildConfig.VERSION_NAME),
+    )
+
     suspend fun refresh(session: MobileSession): MobileSession {
         val refreshed = requestTokens(
             path = "/auth/refresh",
@@ -122,6 +139,11 @@ class MobileApiClient(baseUrl: String) {
         )
     }
 }
+
+data class PasskeyAuthenticationOptions(
+    val challengeId: String,
+    val requestJson: String,
+)
 
 private inline fun <T> org.json.JSONArray.mapItems(transform: (JSONObject) -> T): List<T> =
     List(length()) { index -> transform(getJSONObject(index)) }

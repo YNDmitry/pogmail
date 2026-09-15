@@ -14,5 +14,24 @@ export const mobileRefreshInput = z.object({
 	appVersion: z.string().trim().min(1).max(64).optional(),
 });
 
+const mobilePasskeyCredential = z.object({
+	id: z.string().min(1).max(2048),
+	rawId: z.string().min(1).max(2048),
+	response: z.object({
+		clientDataJSON: z.string().min(1).max(16_384),
+		authenticatorData: z.string().min(1).max(2048),
+		signature: z.string().min(1).max(2048),
+	}),
+});
+
+/** WebAuthn assertion plus the device metadata for a new Android session. */
+export const mobilePasskeyVerifyInput = z.object({
+	challengeId: z.string().min(1).max(64),
+	credential: mobilePasskeyCredential,
+	deviceName: z.string().trim().min(1).max(120),
+	appVersion: z.string().trim().min(1).max(64).optional(),
+});
+
 export type MobileLoginInput = z.infer<typeof mobileLoginInput>;
 export type MobileRefreshInput = z.infer<typeof mobileRefreshInput>;
+export type MobilePasskeyVerifyInput = z.infer<typeof mobilePasskeyVerifyInput>;

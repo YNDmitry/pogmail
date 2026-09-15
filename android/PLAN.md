@@ -76,6 +76,11 @@ server-side writer, including inbound and external-account sync.
 
 - The Compose sign-in flow uses the mobile Worker API and shows only
   server-provided, user-safe errors.
+- Credential Manager can sign in with a saved passkey. The Worker validates the
+  Android signing origin and returns the same rotating, device-scoped session
+  as password sign-in.
+- Each deployed instance serves `/.well-known/assetlinks.json` from its Worker,
+  configured with that Android application's package and signing certificate.
 - The refresh token, access token and user identity are one AES-GCM encrypted
   DataStore value. Its AES-256 key is generated in Android Keystore; backups
   are disabled for the app.

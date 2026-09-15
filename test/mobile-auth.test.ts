@@ -42,6 +42,19 @@ function request(path: string, body?: unknown, accessToken?: string) {
 }
 
 describe("mobile authentication", () => {
+	it("starts a discoverable Android passkey ceremony", async () => {
+		const response = await api.fetch(request("/auth/passkeys/options", {}), env);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			challengeId: expect.any(String),
+			publicKey: {
+				challenge: expect.any(String),
+				rpId: "pogmail.test",
+				userVerification: "required",
+			},
+		});
+	});
+
 	it("issues, rotates and revokes per-device Android tokens", async () => {
 		const user = await seedUser();
 		const login = await api.fetch(

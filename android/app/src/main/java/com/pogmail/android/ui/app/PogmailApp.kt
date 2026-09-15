@@ -1,5 +1,6 @@
 package com.pogmail.android.ui.app
 
+import android.app.Activity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pogmail.android.data.auth.MobileSession
 import com.pogmail.android.data.auth.MobileSessionRepository
+import com.pogmail.android.data.auth.PasskeyAuthenticator
 import com.pogmail.android.data.cache.MailCacheDatabase
 import com.pogmail.android.data.cache.MailSyncRepository
 import com.pogmail.android.ui.compose.ComposeScreen
@@ -63,7 +65,13 @@ private enum class AppDestination(val label: String) {
 }
 
 @Composable
-fun PogmailApp(sessionRepository: MobileSessionRepository, syncRepository: MailSyncRepository, cache: MailCacheDatabase) {
+fun PogmailApp(
+    activity: Activity,
+    sessionRepository: MobileSessionRepository,
+    passkeyAuthenticator: PasskeyAuthenticator,
+    syncRepository: MailSyncRepository,
+    cache: MailCacheDatabase,
+) {
     var sessionState by remember { mutableStateOf<SessionState>(SessionState.Restoring) }
     var loginError by remember { mutableStateOf<String?>(null) }
     var submittingLogin by remember { mutableStateOf(false) }
@@ -86,6 +94,19 @@ fun PogmailApp(sessionRepository: MobileSessionRepository, syncRepository: MailS
                         sessionState = SessionState.Authenticated(sessionRepository.login(email, password))
                     } catch (error: Exception) {
                         loginError = error.message ?: "Could not sign in. Please try again."
+                    } finally {
+                        submittingLogin = false
+                    }
+                }
+            },
+            onPasskeyLogin = {
+                scope.launch {
+                    submittingLogin = true
+                    loginError = null
+                    try {
+                        sessionState = SessionState.Authenticated(passkeyAuthenticator.signIn(activity))
+                    } catch (error: Exception) {
+                        loginError = error.message ?: "Could not sign in with a passkey."
                     } finally {
                         submittingLogin = false
                     }

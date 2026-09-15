@@ -30,7 +30,7 @@ export async function verifyClientData(
 	encoded: string,
 	expectedType: "webauthn.create" | "webauthn.get",
 	challenge: string,
-	origin: string,
+	expectedOrigins: string | readonly string[],
 ): Promise<Uint8Array> {
 	const clientData = fromBase64Url(encoded);
 	let parsed: { type?: unknown; challenge?: unknown; origin?: unknown; crossOrigin?: unknown };
@@ -39,10 +39,12 @@ export async function verifyClientData(
 	} catch {
 		throw invalid("Invalid WebAuthn client data");
 	}
+	const origins = typeof expectedOrigins === "string" ? [expectedOrigins] : expectedOrigins;
 	if (
 		parsed.type !== expectedType ||
 		parsed.challenge !== challenge ||
-		parsed.origin !== origin ||
+		typeof parsed.origin !== "string" ||
+		!origins.includes(parsed.origin) ||
 		parsed.crossOrigin === true
 	) {
 		throw invalid("Passkey response did not match this sign-in request");

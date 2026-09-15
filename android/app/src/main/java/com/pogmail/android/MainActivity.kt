@@ -14,7 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.view.WindowCompat
-import com.pogmail.android.ui.inbox.InboxScreen
+import com.pogmail.android.ui.app.PogmailApp
 import com.pogmail.android.ui.theme.PogmailTheme
 
 class MainActivity : ComponentActivity() {
@@ -22,13 +22,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            PogmailApp()
+            PogmailAndroidApp()
         }
     }
 }
 
 @Composable
-private fun PogmailApp() {
+private fun PogmailAndroidApp() {
     val darkTheme = isSystemInDarkTheme()
     val view = LocalView.current
 
@@ -45,7 +45,7 @@ private fun PogmailApp() {
 
     PogmailTheme(darkTheme = darkTheme) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            InboxScreen()
+            PogmailApp()
         }
     }
 }
@@ -54,6 +54,6 @@ private fun PogmailApp() {
 @Composable
 private fun PogmailAppPreview() {
     PogmailTheme {
-        PogmailApp()
+        PogmailAndroidApp()
     }
 }

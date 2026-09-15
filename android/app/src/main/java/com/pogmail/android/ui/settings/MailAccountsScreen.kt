@@ -38,7 +38,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun MailAccountsScreen(modifier: Modifier = Modifier, onBack: () -> Unit) {
+fun MailAccountsScreen(
+    modifier: Modifier = Modifier,
+    onBack: () -> Unit,
+    onConnectAccount: () -> Unit,
+    connectionNotice: String?,
+) {
     var syncNote by remember { mutableStateOf("Last sync: just now") }
 
     LazyColumn(
@@ -62,7 +67,7 @@ fun MailAccountsScreen(modifier: Modifier = Modifier, onBack: () -> Unit) {
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
-                IconButton(onClick = {}) {
+                IconButton(onClick = onConnectAccount) {
                     Icon(Icons.Outlined.Add, contentDescription = "Add mail account")
                 }
             }
@@ -76,6 +81,18 @@ fun MailAccountsScreen(modifier: Modifier = Modifier, onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
+            }
+        }
+        connectionNotice?.let { notice ->
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ) {
+                    Text(notice, modifier = Modifier.padding(14.dp), style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
         item {
@@ -105,7 +122,7 @@ fun MailAccountsScreen(modifier: Modifier = Modifier, onBack: () -> Unit) {
         }
         item {
             Button(
-                onClick = {},
+                onClick = onConnectAccount,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp),

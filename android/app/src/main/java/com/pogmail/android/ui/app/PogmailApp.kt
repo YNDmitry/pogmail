@@ -44,6 +44,7 @@ import com.pogmail.android.ui.mail.MessageDetailScreen
 import com.pogmail.android.ui.model.MailPreview
 import com.pogmail.android.ui.search.SearchScreen
 import com.pogmail.android.ui.settings.MailAccountsScreen
+import com.pogmail.android.ui.settings.ConnectMailAccountScreen
 import com.pogmail.android.ui.settings.SettingsScreen
 
 private enum class AppDestination(val label: String) {
@@ -58,8 +59,10 @@ fun PogmailApp() {
     var destination by remember { mutableStateOf(AppDestination.Inbox) }
     var selectedMessage by remember { mutableStateOf<MailPreview?>(null) }
     var showMailAccounts by remember { mutableStateOf(false) }
+    var showConnectAccount by remember { mutableStateOf(false) }
+    var connectionNotice by remember { mutableStateOf<String?>(null) }
     val openedMessage = selectedMessage
-    val showDock = destination != AppDestination.Compose && openedMessage == null && !showMailAccounts
+    val showDock = destination != AppDestination.Compose && openedMessage == null && !showMailAccounts && !showConnectAccount
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -85,9 +88,20 @@ fun PogmailApp() {
                 onBack = { selectedMessage = null },
             )
 
+            showConnectAccount -> ConnectMailAccountScreen(
+                modifier = contentModifier,
+                onClose = { showConnectAccount = false },
+                onConnect = { address ->
+                    connectionNotice = "Connection request prepared for $address"
+                    showConnectAccount = false
+                },
+            )
+
             showMailAccounts -> MailAccountsScreen(
                 modifier = contentModifier,
                 onBack = { showMailAccounts = false },
+                onConnectAccount = { showConnectAccount = true },
+                connectionNotice = connectionNotice,
             )
 
             else -> when (destination) {

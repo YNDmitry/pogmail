@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.view.WindowCompat
 import com.pogmail.android.data.auth.MobileSessionRepository
+import com.pogmail.android.data.auth.PasskeyAuthenticator
 import com.pogmail.android.data.cache.MailCacheDatabase
 import com.pogmail.android.data.cache.MailSyncRepository
 import com.pogmail.android.ui.app.PogmailApp
@@ -27,14 +28,26 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             (application as PogmailApplication).let { app ->
-                PogmailAndroidApp(app.mobileSessionRepository, app.mailSyncRepository, app.mailCacheDatabase)
+                PogmailAndroidApp(
+                    this@MainActivity,
+                    app.mobileSessionRepository,
+                    app.passkeyAuthenticator,
+                    app.mailSyncRepository,
+                    app.mailCacheDatabase,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun PogmailAndroidApp(sessionRepository: MobileSessionRepository, syncRepository: MailSyncRepository, cache: MailCacheDatabase) {
+private fun PogmailAndroidApp(
+    activity: Activity,
+    sessionRepository: MobileSessionRepository,
+    passkeyAuthenticator: PasskeyAuthenticator,
+    syncRepository: MailSyncRepository,
+    cache: MailCacheDatabase,
+) {
     val darkTheme = isSystemInDarkTheme()
     val view = LocalView.current
 
@@ -51,7 +64,7 @@ private fun PogmailAndroidApp(sessionRepository: MobileSessionRepository, syncRe
 
     PogmailTheme(darkTheme = darkTheme) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            PogmailApp(sessionRepository, syncRepository, cache)
+            PogmailApp(activity, sessionRepository, passkeyAuthenticator, syncRepository, cache)
         }
     }
 }
@@ -60,6 +73,6 @@ private fun PogmailAndroidApp(sessionRepository: MobileSessionRepository, syncRe
 @Composable
 private fun PogmailAppPreview() {
     PogmailTheme {
-        LoginScreen(submitting = false, error = null, onLogin = { _, _ -> })
+        LoginScreen(submitting = false, error = null, onLogin = { _, _ -> }, onPasskeyLogin = {})
     }
 }

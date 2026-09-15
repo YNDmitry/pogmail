@@ -60,6 +60,10 @@ interface MailCacheDao {
     @Query("DELETE FROM cached_messages WHERE id IN (:ids)") suspend fun deleteMessages(ids: List<String>)
     @Query("DELETE FROM cached_folders WHERE id IN (:ids)") suspend fun deleteFolders(ids: List<String>)
     @Query("DELETE FROM cached_mailboxes WHERE id IN (:ids)") suspend fun deleteMailboxes(ids: List<String>)
+    @Query("DELETE FROM cached_messages") suspend fun clearMessages()
+    @Query("DELETE FROM cached_folders") suspend fun clearFolders()
+    @Query("DELETE FROM cached_mailboxes") suspend fun clearMailboxes()
+    @Query("DELETE FROM sync_state") suspend fun clearSyncState()
 }
 
 @Database(entities = [CachedMailbox::class, CachedFolder::class, CachedMessage::class, SyncState::class], version = 1, exportSchema = true)
@@ -74,6 +78,13 @@ abstract class MailCacheDatabase : RoomDatabase() {
         dao().deleteFolders(batch.deletedFolderIds)
         dao().deleteMailboxes(batch.deletedMailboxIds)
         dao().saveState(SyncState(SYNC_CURSOR_KEY, batch.cursor))
+    }
+
+    suspend fun clear() = withTransaction {
+        dao().clearMessages()
+        dao().clearFolders()
+        dao().clearMailboxes()
+        dao().clearSyncState()
     }
 
     companion object {

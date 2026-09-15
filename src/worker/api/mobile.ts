@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
-import { folders, messages, mobileDeviceSessions, mobileSyncEvents, passkeyChallenges, passkeys, users } from "@/db/schema";
+import { folders, messageAttachments, messages, mobileDeviceSessions, mobileSyncEvents, passkeyChallenges, passkeys, users } from "@/db/schema";
 import { mobileLoginInput, mobilePasskeyVerifyInput, mobileRefreshInput } from "@/shared/contract/mobile";
 import { z } from "zod";
 import { audit } from "../audit";
@@ -10,7 +10,8 @@ import { verifyPassword } from "../auth/password";
 import { randomChallenge, toBase64Url, verifyAuthentication, verifyClientData } from "../auth/passkey";
 import { requireMobileAuth } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
-import { listAccessibleMailboxes } from "../mailboxes/access";
+import { safeEmailHtml } from "../email/html-safety";
+import { listAccessibleMailboxIds, listAccessibleMailboxes } from "../mailboxes/access";
 import { parseBody, parseQuery } from "./_util";
 
 const syncQuery = z.object({
@@ -155,6 +156,50 @@ export const mobileRoutes = new Hono<AppBindings>()
 	})
 
 	.get("/auth/me", requireMobileAuth, (c) => c.json(c.get("user")));
+
+/**
+ * Bodies stay out of /sync so an inbox refresh never downloads an entire
+ * mailbox. The reader fetches one scoped message on demand instead.
+ */
+mobileRoutes.get("/messages/:id", requireMobileAuth, async (c) => {
+	const mailboxIds = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
+	if (mailboxIds.length === 0) throw new HTTPException(404, { message: "Message not found" });
+
+	const message = await c
+		.get("db")
+		.select({
+			id: messages.id,
+			mailboxId: messages.mailboxId,
+			subject: messages.subject,
+			fromAddress: messages.fromAddress,
+			fromName: messages.fromName,
+			toAddresses: messages.toAddresses,
+			ccAddresses: messages.ccAddresses,
+			replyTo: messages.replyTo,
+			bodyText: messages.bodyText,
+			bodyHtml: messages.bodyHtml,
+			receivedAt: messages.receivedAt,
+		})
+		.from(messages)
+		.where(and(eq(messages.id, c.req.param("id")), inArray(messages.mailboxId, mailboxIds)))
+		.get();
+	if (!message) throw new HTTPException(404, { message: "Message not found" });
+
+	const attachments = await c
+		.get("db")
+		.select({
+			id: messageAttachments.id,
+			filename: messageAttachments.filename,
+			contentType: messageAttachments.contentType,
+			sizeBytes: messageAttachments.sizeBytes,
+			disposition: messageAttachments.disposition,
+		})
+		.from(messageAttachments)
+		.where(eq(messageAttachments.messageId, message.id))
+		.all();
+
+	return c.json({ ...message, bodyHtml: safeEmailHtml(message.bodyHtml), attachments });
+});
 
 export const mobileDeviceRoutes = new Hono<AppBindings>()
 	.use("*", requireMobileAuth)

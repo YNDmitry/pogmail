@@ -84,8 +84,9 @@ server-side writer, including inbound and external-account sync.
 - The refresh token, access token and user identity are one AES-GCM encrypted
   DataStore value. Its AES-256 key is generated in Android Keystore; backups
   are disabled for the app.
-- The API origin is a public Gradle build parameter (`POGMAIL_API_BASE_URL`),
-  not a committed environment file. The client accepts HTTPS origins only.
+- On first launch, the user enters the public HTTPS URL of their Pogmail
+  instance. The app verifies its Worker before persisting the non-secret origin
+  and showing sign-in.
 - Settings includes sign-out, which revokes the current device remotely when
   online and always clears the encrypted local session.
 

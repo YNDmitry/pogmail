@@ -46,7 +46,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pogmail.android.ui.model.MailPreview
-import com.pogmail.android.ui.model.previewMessages
 
 @Composable
 fun InboxScreen(
@@ -57,7 +56,15 @@ fun InboxScreen(
 ) {
     var selectedFilter by remember { mutableStateOf("Primary") }
     val cached by messages.collectAsState(emptyList())
-    val previews = cached.map { message -> MailPreview(message.id, message.fromName ?: message.fromAddress, message.fromAddress, message.subject ?: "(No subject)", message.snippet ?: "", "", !message.read) }
+    val previews = cached
+        .filter { message ->
+            when (selectedFilter) {
+                "Unread" -> !message.read
+                "Starred" -> message.starred
+                else -> true
+            }
+        }
+        .map { message -> MailPreview(message.id, message.fromName ?: message.fromAddress, message.fromAddress, message.subject ?: "(No subject)", message.snippet ?: "", "", !message.read) }
     val unreadCount = previews.count { it.unread }
 
     LazyColumn(

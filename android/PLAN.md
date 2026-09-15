@@ -54,6 +54,14 @@ The first backend slice is available under `/api/mobile`:
 FCM registration and incremental mailbox sync are the next backend slices;
 the Android app should not call them until their contracts are added.
 
+### Implemented incremental-sync contract
+
+`GET /api/mobile/sync?cursor=<sequence>&limit=100` now returns a bounded,
+ordered delta. The response includes authoritative accessible mailbox and
+folder metadata, message summaries only, hard-delete tombstones and the next
+cursor. D1 triggers record mailbox, folder and message changes from every
+server-side writer, including inbound and external-account sync.
+
 ## 2. Android foundation
 
 - Kotlin, Jetpack Compose and Material 3.

@@ -36,6 +36,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.flow.Flow
+import com.pogmail.android.data.cache.CachedMessage
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,10 +52,13 @@ import com.pogmail.android.ui.model.previewMessages
 fun InboxScreen(
     modifier: Modifier = Modifier,
     accountAddress: String,
+    messages: Flow<List<CachedMessage>>,
     onOpenMessage: (MailPreview) -> Unit,
 ) {
     var selectedFilter by remember { mutableStateOf("Primary") }
-    val unreadCount = previewMessages.count { it.unread }
+    val cached by messages.collectAsState(emptyList())
+    val previews = cached.map { message -> MailPreview(message.id, message.fromName ?: message.fromAddress, message.fromAddress, message.subject ?: "(No subject)", message.snippet ?: "", "", !message.read) }
+    val unreadCount = previews.count { it.unread }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -71,7 +77,7 @@ fun InboxScreen(
                 fontWeight = FontWeight.Bold,
             )
         }
-        items(previewMessages, key = { it.id }) { message ->
+        items(previews, key = { it.id }) { message ->
             MessageRow(message = message, onClick = { onOpenMessage(message) })
         }
         item { Spacer(Modifier.height(16.dp)) }

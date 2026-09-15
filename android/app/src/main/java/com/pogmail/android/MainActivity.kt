@@ -15,6 +15,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.view.WindowCompat
 import com.pogmail.android.data.auth.MobileSessionRepository
+import com.pogmail.android.data.cache.MailCacheDatabase
+import com.pogmail.android.data.cache.MailSyncRepository
 import com.pogmail.android.ui.app.PogmailApp
 import com.pogmail.android.ui.auth.LoginScreen
 import com.pogmail.android.ui.theme.PogmailTheme
@@ -24,13 +26,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            PogmailAndroidApp((application as PogmailApplication).mobileSessionRepository)
+            (application as PogmailApplication).let { app ->
+                PogmailAndroidApp(app.mobileSessionRepository, app.mailSyncRepository, app.mailCacheDatabase)
+            }
         }
     }
 }
 
 @Composable
-private fun PogmailAndroidApp(sessionRepository: MobileSessionRepository) {
+private fun PogmailAndroidApp(sessionRepository: MobileSessionRepository, syncRepository: MailSyncRepository, cache: MailCacheDatabase) {
     val darkTheme = isSystemInDarkTheme()
     val view = LocalView.current
 
@@ -47,7 +51,7 @@ private fun PogmailAndroidApp(sessionRepository: MobileSessionRepository) {
 
     PogmailTheme(darkTheme = darkTheme) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            PogmailApp(sessionRepository)
+            PogmailApp(sessionRepository, syncRepository, cache)
         }
     }
 }

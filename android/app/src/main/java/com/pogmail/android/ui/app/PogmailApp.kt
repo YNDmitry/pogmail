@@ -270,7 +270,11 @@ private fun AuthenticatedApp(
                     onOpenMessage = { selectedMessage = it },
                 )
 
-                AppDestination.Search -> SearchScreen(modifier = contentModifier)
+                AppDestination.Search -> SearchScreen(
+                    modifier = contentModifier,
+                    messages = cache.dao().observeMessages(),
+                    onOpenMessage = { selectedMessage = it },
+                )
                 AppDestination.Settings -> SettingsScreen(
                     modifier = contentModifier,
                     userName = session.user.name,

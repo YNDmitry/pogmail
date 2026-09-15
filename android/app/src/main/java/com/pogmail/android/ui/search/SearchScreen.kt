@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,19 +26,49 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.pogmail.android.ui.model.previewMessages
+import com.pogmail.android.data.cache.CachedMessage
+import com.pogmail.android.ui.model.MailPreview
+import kotlinx.coroutines.flow.Flow
 
 @Composable
-fun SearchScreen(modifier: Modifier = Modifier) {
+fun SearchScreen(
+    modifier: Modifier = Modifier,
+    messages: Flow<List<CachedMessage>>,
+    onOpenMessage: (MailPreview) -> Unit,
+) {
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("All mail") }
-    val results = previewMessages.filter {
-        query.isBlank() || it.sender.contains(query, ignoreCase = true) || it.subject.contains(query, ignoreCase = true)
-    }
+    val cached by messages.collectAsState(emptyList())
+    val results = cached
+        .filter { message ->
+            when (filter) {
+                "Unread" -> !message.read
+                "Attachments" -> message.hasAttachments
+                else -> true
+            }
+        }
+        .map { message ->
+            MailPreview(
+                message.id,
+                message.fromName ?: message.fromAddress,
+                message.fromAddress,
+                message.subject ?: "(No subject)",
+                message.snippet ?: "",
+                "",
+                !message.read,
+            )
+        }
+        .filter { message ->
+            query.isBlank() ||
+                message.sender.contains(query, ignoreCase = true) ||
+                message.subject.contains(query, ignoreCase = true) ||
+                message.preview.contains(query, ignoreCase = true)
+        }
 
     LazyColumn(
         modifier = modifier
@@ -80,7 +111,12 @@ fun SearchScreen(modifier: Modifier = Modifier) {
             )
         }
         items(results, key = { it.id }) { message ->
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenMessage(message) }
+                    .padding(vertical = 4.dp),
+            ) {
                 Text(message.sender, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                 Text(
                     message.subject,

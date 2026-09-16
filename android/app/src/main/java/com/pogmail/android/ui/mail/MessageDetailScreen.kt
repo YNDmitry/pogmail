@@ -41,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -56,10 +57,12 @@ import com.pogmail.android.data.auth.MobileMessageAttachment
 import com.pogmail.android.data.auth.MobileMessageDetail
 import com.pogmail.android.data.auth.MobileMessageState
 import com.pogmail.android.data.auth.MobileSession
+import com.pogmail.android.data.cache.CachedFolder
 import com.pogmail.android.data.mail.MobileAttachmentRepository
 import com.pogmail.android.data.mail.MobileMessageRepository
 import com.pogmail.android.ui.model.MailPreview
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
 
 @Composable
 fun MessageDetailScreen(
@@ -68,6 +71,7 @@ fun MessageDetailScreen(
     session: MobileSession,
     attachmentRepository: MobileAttachmentRepository,
     messageRepository: MobileMessageRepository,
+    folders: Flow<List<CachedFolder>>,
     onSessionUpdated: (MobileSession) -> Unit,
     onMessageStateChanged: (MobileMessageState) -> Unit,
     onReply: () -> Unit,
@@ -88,6 +92,7 @@ fun MessageDetailScreen(
     var updatingAction by remember(message.id) { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val cachedFolders by folders.collectAsState(emptyList())
 
     LaunchedEffect(message.id, reloadKey) {
         loading = true
@@ -179,6 +184,23 @@ fun MessageDetailScreen(
                     ?: detail?.bodyHtml?.toPlainText().orEmpty()
                 onForward("\n\n--- Forwarded message ---\nFrom: ${message.senderAddress}\nSubject: ${message.subject}\n\n$body")
             },
+            folders = cachedFolders.filter { it.mailboxId == message.mailboxId },
+            onMoveToFolder = { folderId ->
+                scope.launch {
+                    updatingAction = true
+                    actionError = null
+                    try {
+                        val updated = messageRepository.update(session, message.id, folderId = folderId)
+                        if (updated.session != session) onSessionUpdated(updated.session)
+                        onMessageStateChanged(updated.message)
+                        onBack()
+                    } catch (exception: Exception) {
+                        actionError = exception.message ?: "Could not move this message."
+                    } finally {
+                        updatingAction = false
+                    }
+                }
+            },
             onBack = onBack,
         )
         Text(message.subject, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -231,6 +253,8 @@ private fun ReaderToolbar(
     onAction: (status: String?, snoozedUntil: Long?, clearSnooze: Boolean) -> Unit,
     onReplyAll: () -> Unit,
     onForward: () -> Unit,
+    folders: List<CachedFolder>,
+    onMoveToFolder: (String) -> Unit,
     onBack: () -> Unit,
 ) {
     Row(
@@ -266,6 +290,13 @@ private fun ReaderToolbar(
                         onClick = { onActionMenuChange(false); onForward() },
                         leadingIcon = { Icon(Icons.Outlined.Forward, contentDescription = null) },
                     )
+                    folders.forEach { folder ->
+                        DropdownMenuItem(
+                            text = { Text("Move to ${folder.name}") },
+                            onClick = { onActionMenuChange(false); onMoveToFolder(folder.id) },
+                            leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("Archive") },
                         onClick = { onActionMenuChange(false); onAction("archived", null, false) },

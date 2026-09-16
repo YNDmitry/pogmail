@@ -291,6 +291,7 @@ private fun AuthenticatedApp(
                 session = session,
                 attachmentRepository = attachmentRepository,
                 messageRepository = messageRepository,
+                folders = cache.dao().observeFolders(),
                 onSessionUpdated = onSessionUpdated,
                 onMessageStateChanged = { updated ->
                     scope.launch {
@@ -363,6 +364,7 @@ private fun AuthenticatedApp(
                     modifier = contentModifier,
                     accountAddress = session.user.email,
                     messages = cache.dao().observeMessages(),
+                    folders = cache.dao().observeFolders(),
                     onOpenMessage = { selectedMessage = it },
                 )
 

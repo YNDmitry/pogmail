@@ -61,6 +61,7 @@ interface MailCacheDao {
     @Upsert suspend fun saveState(state: SyncState)
     @Query("SELECT cursor FROM sync_state WHERE `key` = :key") suspend fun cursor(key: String): Long?
     @Query("SELECT * FROM cached_messages ORDER BY receivedAt DESC") fun observeMessages(): Flow<List<CachedMessage>>
+    @Query("SELECT * FROM cached_folders ORDER BY position ASC, name ASC") fun observeFolders(): Flow<List<CachedFolder>>
     @Query("UPDATE cached_messages SET read = :read, starred = :starred, status = :status, folderId = :folderId, snoozedUntil = :snoozedUntil WHERE id = :id")
     suspend fun setMessageState(id: String, read: Boolean, starred: Boolean, status: String, folderId: String?, snoozedUntil: Long?)
     @Query("DELETE FROM cached_messages WHERE id IN (:ids)") suspend fun deleteMessages(ids: List<String>)

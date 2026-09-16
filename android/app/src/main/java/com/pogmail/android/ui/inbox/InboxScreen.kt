@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.flow.Flow
 import com.pogmail.android.data.cache.CachedMessage
+import com.pogmail.android.data.cache.CachedFolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,13 +54,18 @@ fun InboxScreen(
     modifier: Modifier = Modifier,
     accountAddress: String,
     messages: Flow<List<CachedMessage>>,
+    folders: Flow<List<CachedFolder>>,
     onOpenMessage: (MailPreview) -> Unit,
 ) {
     var selectedFilter by remember { mutableStateOf(MailboxView.Inbox) }
+    var selectedFolderId by remember { mutableStateOf<String?>(null) }
     val cached by messages.collectAsState(emptyList())
+    val cachedFolders by folders.collectAsState(emptyList())
     val previews = cached
         .filter { message ->
-            when (selectedFilter) {
+            when {
+                selectedFolderId != null -> message.folderId == selectedFolderId
+                else -> when (selectedFilter) {
                 MailboxView.Inbox -> message.status == "received" && message.folderId == null && (message.snoozedUntil == null || message.snoozedUntil <= System.currentTimeMillis())
                 MailboxView.Unread -> !message.read
                 MailboxView.Starred -> message.starred
@@ -68,6 +74,7 @@ fun InboxScreen(
                 MailboxView.Spam -> message.status == "spam"
                 MailboxView.Trash -> message.status == "trash"
                 MailboxView.Snoozed -> (message.snoozedUntil ?: 0) > System.currentTimeMillis()
+                }
             }
         }
         .map { message -> MailPreview(
@@ -92,8 +99,11 @@ fun InboxScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item { InboxTopBar() }
-        item { MailboxHeading(selectedFilter.label, accountAddress, unreadCount) }
-        item { FilterRow(selected = selectedFilter, onSelect = { selectedFilter = it }) }
+        item { MailboxHeading(cachedFolders.firstOrNull { it.id == selectedFolderId }?.name ?: selectedFilter.label, accountAddress, unreadCount) }
+        item { FilterRow(selected = selectedFilter, onSelect = { selectedFilter = it; selectedFolderId = null }) }
+        if (cachedFolders.isNotEmpty()) {
+            item { FolderRow(selectedFolderId, cachedFolders, onSelect = { selectedFolderId = it }) }
+        }
         item {
             Text(
                 text = "TODAY",
@@ -107,6 +117,18 @@ fun InboxScreen(
             MessageRow(message = message, onClick = { onOpenMessage(message) })
         }
         item { Spacer(Modifier.height(16.dp)) }
+    }
+}
+
+@Composable
+private fun FolderRow(selectedFolderId: String?, folders: List<CachedFolder>, onSelect: (String?) -> Unit) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            FilterChip(selected = selectedFolderId == null, onClick = { onSelect(null) }, label = { Text("All folders") })
+        }
+        items(folders, key = { it.id }) { folder ->
+            FilterChip(selected = selectedFolderId == folder.id, onClick = { onSelect(folder.id) }, label = { Text(folder.name) })
+        }
     }
 }
 

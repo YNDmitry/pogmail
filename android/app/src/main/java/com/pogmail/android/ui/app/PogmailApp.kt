@@ -49,7 +49,9 @@ import com.pogmail.android.data.auth.PasskeyAuthenticator
 import com.pogmail.android.data.auth.InstanceUrlStore
 import com.pogmail.android.data.cache.MailCacheDatabase
 import com.pogmail.android.data.cache.MailSyncRepository
+import com.pogmail.android.data.mail.MobileComposeRepository
 import com.pogmail.android.data.mail.MobileMessageRepository
+import com.pogmail.android.ui.compose.ComposeDraft
 import com.pogmail.android.ui.compose.ComposeScreen
 import com.pogmail.android.ui.auth.LoginScreen
 import com.pogmail.android.ui.auth.InstanceUrlScreen
@@ -174,6 +176,7 @@ fun PogmailApp(
             session = state.session,
             instanceUrl = instanceUrlStore.requireUrl(),
             sessionRepository = sessionRepository,
+            composeRepository = MobileComposeRepository(mobileApiClient, sessionRepository),
             messageRepository = MobileMessageRepository(mobileApiClient, sessionRepository),
             syncRepository = syncRepository,
             cache = cache,
@@ -219,6 +222,7 @@ private fun AuthenticatedApp(
     session: MobileSession,
     instanceUrl: String,
     sessionRepository: MobileSessionRepository,
+    composeRepository: MobileComposeRepository,
     messageRepository: MobileMessageRepository,
     syncRepository: MailSyncRepository,
     cache: MailCacheDatabase,
@@ -227,6 +231,7 @@ private fun AuthenticatedApp(
     onLogout: () -> Unit,
     onChangeInstance: () -> Unit,
 ) {
+    val scope = rememberCoroutineScope()
     LaunchedEffect(session.deviceSessionId) {
         try {
             val activeSession = sessionRepository.refreshIfExpiring(session)
@@ -249,6 +254,7 @@ private fun AuthenticatedApp(
     }
     var destination by remember { mutableStateOf(AppDestination.Inbox) }
     var selectedMessage by remember { mutableStateOf<MailPreview?>(null) }
+    var composeDraft by remember { mutableStateOf<ComposeDraft?>(null) }
     var showMailAccounts by remember { mutableStateOf(false) }
     var showConnectAccount by remember { mutableStateOf(false) }
     var connectionNotice by remember { mutableStateOf<String?>(null) }
@@ -263,7 +269,10 @@ private fun AuthenticatedApp(
                 FloatingDock(
                     selectedDestination = destination,
                     onSelect = { destination = it },
-                    onCompose = { destination = AppDestination.Compose },
+                    onCompose = {
+                        composeDraft = null
+                        destination = AppDestination.Compose
+                    },
                 )
             }
         },
@@ -279,6 +288,18 @@ private fun AuthenticatedApp(
                 session = session,
                 messageRepository = messageRepository,
                 onSessionUpdated = onSessionUpdated,
+                onReply = {
+                    composeDraft = ComposeDraft(
+                        recipient = openedMessage.senderAddress,
+                        subject = openedMessage.subject.takeUnless { it.startsWith("Re:", ignoreCase = true) }
+                            ?.let { "Re: $it" }
+                            ?: openedMessage.subject,
+                        mailboxId = openedMessage.mailboxId,
+                        replyToMessageId = openedMessage.id,
+                    )
+                    selectedMessage = null
+                    destination = AppDestination.Compose
+                },
                 onBack = { selectedMessage = null },
             )
 
@@ -322,7 +343,21 @@ private fun AuthenticatedApp(
                 )
                 AppDestination.Compose -> ComposeScreen(
                     modifier = contentModifier,
-                    onClose = { destination = AppDestination.Inbox },
+                    session = session,
+                    composeRepository = composeRepository,
+                    initialDraft = composeDraft,
+                    onSessionUpdated = onSessionUpdated,
+                    onClose = {
+                        composeDraft = null
+                        destination = AppDestination.Inbox
+                    },
+                    onSent = { activeSession ->
+                        composeDraft = null
+                        destination = AppDestination.Inbox
+                        scope.launch {
+                            runCatching { syncRepository.sync(activeSession) }
+                        }
+                    },
                 )
             }
         }

@@ -49,7 +49,8 @@ const composeShape = z.object({
 	scheduledFor: z.number().int().nullable().optional(),
 });
 
-const composeInput = composeShape.superRefine(validateRecipientLimit);
+export const composeInput = composeShape.superRefine(validateRecipientLimit);
+export type ComposeInput = z.infer<typeof composeInput>;
 
 /*
  * A campaign intentionally makes one message per contact. Apart from keeping
@@ -250,56 +251,7 @@ export const sendRoutes = new Hono<AppBindings>()
 	/** Composes and queues a message. Sending itself happens on the outbound queue. */
 	.post("/", async (c) => {
 		const input = await parseBody(c, composeInput);
-		const mailbox = await sendableMailbox(c, input.mailboxId, { requireSending: true });
-
-		const message = await c
-			.get("db")
-			.insert(messages)
-			.values({
-				mailboxId: mailbox.id,
-				authorUserId: c.get("user").id,
-				direction: "outbound",
-				status: "sent",
-				threadId: input.threadId ?? crypto.randomUUID(),
-				inReplyTo: input.inReplyTo ?? null,
-				subject: input.subject || null,
-				fromAddress: mailbox.address,
-				fromName: mailbox.displayName,
-				toAddresses: input.to,
-				ccAddresses: input.cc,
-				bccAddresses: input.bcc,
-				bodyText: input.bodyText || null,
-				bodyHtml: input.bodyHtml ?? null,
-				snippet: input.bodyText.replace(/\s+/g, " ").trim().slice(0, 200),
-				read: true,
-				receivedAt: new Date(),
-			})
-			.returning()
-			.get();
-
-		const job = await c
-			.get("db")
-			.insert(outboundJobs)
-			.values({
-				messageId: message.id,
-				scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
-			})
-			.returning()
-			.get();
-
-		const payload: OutboundSendMessage = { kind: "outbound", jobId: job.id };
-		// A scheduled send waits in the queue rather than in a table someone has to poll.
-		const delaySeconds = input.scheduledFor
-			? nextScheduledDelay(new Date(input.scheduledFor))
-			: undefined;
-		await c.env.OUTBOUND_QUEUE.send(payload, delaySeconds ? { delaySeconds } : undefined);
-
-		await notifyMailbox(c.env, mailbox.id, {
-			type: "message.sent",
-			mailboxId: mailbox.id,
-			messageId: message.id,
-		});
-		audit(c, { action: "message.send", mailboxId: mailbox.id, messageId: message.id });
+		const { message, job } = await queueComposedMessage(c, input);
 		return c.json({ ...message, jobId: job.id }, 202);
 	})
 
@@ -849,6 +801,62 @@ async function removeUnusedInlineAttachments(
 	if ((await attachedBytes(c, messageId)) === 0) {
 		await c.get("db").update(messages).set({ hasAttachments: false }).where(eq(messages.id, messageId));
 	}
+}
+
+/**
+ * Creates the immutable outbound record and hands delivery to Queues. Both the
+ * web and mobile APIs use this boundary, so they share permission, delivery
+ * tracking, SMTP and Cloudflare Email Sending behaviour.
+ */
+export async function queueComposedMessage(c: Context<AppBindings>, input: ComposeInput) {
+	const mailbox = await sendableMailbox(c, input.mailboxId, { requireSending: true });
+
+	const message = await c
+		.get("db")
+		.insert(messages)
+		.values({
+			mailboxId: mailbox.id,
+			authorUserId: c.get("user").id,
+			direction: "outbound",
+			status: "sent",
+			threadId: input.threadId ?? crypto.randomUUID(),
+			inReplyTo: input.inReplyTo ?? null,
+			subject: input.subject || null,
+			fromAddress: mailbox.address,
+			fromName: mailbox.displayName,
+			toAddresses: input.to,
+			ccAddresses: input.cc,
+			bccAddresses: input.bcc,
+			bodyText: input.bodyText || null,
+			bodyHtml: input.bodyHtml ?? null,
+			snippet: input.bodyText.replace(/\s+/g, " ").trim().slice(0, 200),
+			read: true,
+			receivedAt: new Date(),
+		})
+		.returning()
+		.get();
+
+	const job = await c
+		.get("db")
+		.insert(outboundJobs)
+		.values({
+			messageId: message.id,
+			scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
+		})
+		.returning()
+		.get();
+
+	const payload: OutboundSendMessage = { kind: "outbound", jobId: job.id };
+	const delaySeconds = input.scheduledFor ? nextScheduledDelay(new Date(input.scheduledFor)) : undefined;
+	await c.env.OUTBOUND_QUEUE.send(payload, delaySeconds ? { delaySeconds } : undefined);
+
+	await notifyMailbox(c.env, mailbox.id, {
+		type: "message.sent",
+		mailboxId: mailbox.id,
+		messageId: message.id,
+	});
+	audit(c, { action: "message.send", mailboxId: mailbox.id, messageId: message.id });
+	return { message, job };
 }
 
 /**

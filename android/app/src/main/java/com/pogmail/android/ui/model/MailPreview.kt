@@ -9,6 +9,7 @@ data class MailPreview(
     val time: String,
     val unread: Boolean,
     val label: String? = null,
+    val mailboxId: String? = null,
 )
 
 val previewMessages = listOf(

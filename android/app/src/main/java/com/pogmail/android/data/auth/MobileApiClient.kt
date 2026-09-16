@@ -77,6 +77,29 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
         ),
     )
 
+    suspend fun senders(accessToken: String): List<MobileSender> =
+        requestJson("/senders", body = null, accessToken = accessToken, method = "GET")
+            .getJSONArray("items")
+            .mapItems { sender ->
+                MobileSender(
+                    id = sender.getString("id"),
+                    address = sender.getString("address"),
+                    displayName = sender.stringOrNull("displayName"),
+                )
+            }
+
+    suspend fun send(accessToken: String, request: MobileComposeRequest): MobileSendResult =
+        requestJson(
+            "/send",
+            JSONObject()
+                .put("mailboxId", request.mailboxId)
+                .put("to", org.json.JSONArray(request.recipients.map { address -> JSONObject().put("address", address) }))
+                .put("subject", request.subject)
+                .put("bodyText", request.bodyText)
+                .apply { request.replyToMessageId?.let { put("replyToMessageId", it) } },
+            accessToken,
+        ).let { response -> MobileSendResult(response.getString("id"), response.getString("jobId")) }
+
     private suspend fun requestSession(path: String, body: JSONObject): MobileSession =
         parseSession(requestJson(path, body))
 
@@ -201,6 +224,25 @@ data class MobileMessageAttachment(
     val filename: String,
     val contentType: String,
     val sizeBytes: Long,
+)
+
+data class MobileSender(
+    val id: String,
+    val address: String,
+    val displayName: String?,
+)
+
+data class MobileComposeRequest(
+    val mailboxId: String,
+    val recipients: List<String>,
+    val subject: String,
+    val bodyText: String,
+    val replyToMessageId: String? = null,
+)
+
+data class MobileSendResult(
+    val messageId: String,
+    val jobId: String,
 )
 
 private inline fun <T> org.json.JSONArray.mapItems(transform: (JSONObject) -> T): List<T> =

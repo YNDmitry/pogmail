@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Refresh
@@ -51,6 +52,7 @@ fun MessageDetailScreen(
     session: MobileSession,
     messageRepository: MobileMessageRepository,
     onSessionUpdated: (MobileSession) -> Unit,
+    onReply: () -> Unit,
     onBack: () -> Unit,
 ) {
     var detail by remember(message.id) { mutableStateOf<MobileMessageDetail?>(null) }
@@ -93,7 +95,7 @@ fun MessageDetailScreen(
                 message = error.orEmpty(),
                 onRetry = { reloadKey += 1 },
             )
-            detail != null -> MessageBody(detail!!)
+            detail != null -> MessageBody(detail!!, onReply)
         }
     }
 }
@@ -143,7 +145,7 @@ private fun SenderHeader(message: MailPreview) {
 }
 
 @Composable
-private fun MessageBody(detail: MobileMessageDetail) {
+private fun MessageBody(detail: MobileMessageDetail, onReply: () -> Unit) {
     val text = detail.bodyText?.takeIf { it.isNotBlank() }
         ?: detail.bodyHtml?.toPlainText()?.takeIf { it.isNotBlank() }
         ?: "This message has no readable text."
@@ -169,6 +171,13 @@ private fun MessageBody(detail: MobileMessageDetail) {
                 )
             }
         }
+    }
+    OutlinedButton(
+        onClick = onReply,
+        modifier = Modifier.padding(top = 28.dp, bottom = 36.dp),
+    ) {
+        Icon(Icons.AutoMirrored.Outlined.Reply, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+        Text("Reply")
     }
 }
 

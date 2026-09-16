@@ -64,7 +64,16 @@ fun InboxScreen(
                 else -> true
             }
         }
-        .map { message -> MailPreview(message.id, message.fromName ?: message.fromAddress, message.fromAddress, message.subject ?: "(No subject)", message.snippet ?: "", "", !message.read) }
+        .map { message -> MailPreview(
+            id = message.id,
+            sender = message.fromName ?: message.fromAddress,
+            senderAddress = message.fromAddress,
+            subject = message.subject ?: "(No subject)",
+            preview = message.snippet ?: "",
+            time = "",
+            unread = !message.read,
+            mailboxId = message.mailboxId,
+        ) }
     val unreadCount = previews.count { it.unread }
 
     LazyColumn(

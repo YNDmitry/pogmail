@@ -11,7 +11,8 @@ import { randomChallenge, toBase64Url, verifyAuthentication, verifyClientData } 
 import { requireMobileAuth } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
 import { safeEmailHtml } from "../email/html-safety";
-import { listAccessibleMailboxIds, listAccessibleMailboxes } from "../mailboxes/access";
+import { canSendFrom, listAccessibleMailboxIds, listAccessibleMailboxes } from "../mailboxes/access";
+import { composeInput, queueComposedMessage } from "./send";
 import { parseBody, parseQuery } from "./_util";
 
 const syncQuery = z.object({
@@ -21,6 +22,19 @@ const syncQuery = z.object({
 });
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const SHA256_FINGERPRINT = /^(?:[A-F0-9]{2}:){31}[A-F0-9]{2}$/;
+const mobileAddress = z.object({ address: z.email(), name: z.string().max(120).optional() });
+const mobileSendInput = z.object({
+	mailboxId: z.string().min(1),
+	to: z.array(mobileAddress).min(1).max(50),
+	subject: z.string().max(300).default(""),
+	bodyText: z.string().max(500_000).default(""),
+	/** An internal id, never an arbitrary MIME header supplied by the client. */
+	replyToMessageId: z.string().min(1).optional(),
+}).superRefine((input, ctx) => {
+	if (new Set(input.to.map((entry) => entry.address.toLowerCase())).size !== input.to.length) {
+		ctx.addIssue({ code: "custom", message: "Each recipient may only appear once" });
+	}
+});
 
 const mobileMessageColumns = {
 	id: messages.id,
@@ -199,6 +213,52 @@ mobileRoutes.get("/messages/:id", requireMobileAuth, async (c) => {
 		.all();
 
 	return c.json({ ...message, bodyHtml: safeEmailHtml(message.bodyHtml), attachments });
+});
+
+mobileRoutes.get("/senders", requireMobileAuth, async (c) => {
+	const items = (await listAccessibleMailboxes(c.get("db"), c.get("user")))
+		.filter((mailbox) => !mailbox.disabled && canSendFrom(mailbox.permission))
+		.map((mailbox) => ({
+			id: mailbox.id,
+			address: mailbox.address,
+			displayName: mailbox.displayName,
+			source: mailbox.source,
+		}));
+	return c.json({ items });
+});
+
+/** Mobile clients may compose plain-text mail or reply to a message they can read. */
+mobileRoutes.post("/send", requireMobileAuth, async (c) => {
+	const input = await parseBody(c, mobileSendInput);
+	const mailboxIds = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
+	let inReplyTo: string | null = null;
+	let threadId: string | null = null;
+	if (input.replyToMessageId) {
+		const original = await c
+			.get("db")
+			.select({ mailboxId: messages.mailboxId, messageId: messages.messageId, threadId: messages.threadId })
+			.from(messages)
+			.where(and(eq(messages.id, input.replyToMessageId), inArray(messages.mailboxId, mailboxIds)))
+			.get();
+		if (!original) throw new HTTPException(404, { message: "Message not found" });
+		if (original.mailboxId !== input.mailboxId) {
+			throw new HTTPException(422, { message: "Replies must use the original message's mailbox" });
+		}
+		inReplyTo = original.messageId;
+		threadId = original.threadId;
+	}
+
+	const { message, job } = await queueComposedMessage(c, composeInput.parse({
+		mailboxId: input.mailboxId,
+		to: input.to,
+		cc: [],
+		bcc: [],
+		subject: input.subject,
+		bodyText: input.bodyText,
+		inReplyTo,
+		threadId,
+	}));
+	return c.json({ id: message.id, mailboxId: message.mailboxId, status: message.status, jobId: job.id }, 202);
 });
 
 export const mobileDeviceRoutes = new Hono<AppBindings>()

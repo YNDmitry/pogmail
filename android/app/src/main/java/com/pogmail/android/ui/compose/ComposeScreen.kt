@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
 data class ComposeDraft(
     val recipient: String = "",
     val subject: String = "",
+    val body: String = "",
     val mailboxId: String? = null,
     val replyToMessageId: String? = null,
 )
@@ -62,7 +63,7 @@ fun ComposeScreen(
 ) {
     var recipient by remember(initialDraft) { mutableStateOf(initialDraft?.recipient.orEmpty()) }
     var subject by remember(initialDraft) { mutableStateOf(initialDraft?.subject.orEmpty()) }
-    var body by remember(initialDraft) { mutableStateOf("") }
+    var body by remember(initialDraft) { mutableStateOf(initialDraft?.body.orEmpty()) }
     var senders by remember { mutableStateOf<List<MobileSender>>(emptyList()) }
     var selectedSenderId by remember(initialDraft) { mutableStateOf(initialDraft?.mailboxId) }
     var loadingSenders by remember { mutableStateOf(true) }

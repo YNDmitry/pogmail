@@ -10,6 +10,10 @@ data class MailPreview(
     val unread: Boolean,
     val label: String? = null,
     val mailboxId: String? = null,
+    val starred: Boolean = false,
+    val status: String = "received",
+    val folderId: String? = null,
+    val snoozedUntil: Long? = null,
 )
 
 val previewMessages = listOf(

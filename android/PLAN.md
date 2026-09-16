@@ -143,3 +143,45 @@ server-side writer, including inbound and external-account sync.
 4. Add inbox/read/compose and local cache.
 5. Add attachments, foreground realtime and background FCM sync.
 6. Complete security hardening, observability, device QA and Play delivery.
+
+## Web parity delivery board
+
+Android follows the same permission model and Worker business rules as the web
+app. It does not connect directly to IMAP, SMTP, D1 or R2. Each block is a
+complete vertical slice: a scoped mobile contract, Worker contract tests,
+native screen and offline-cache behaviour where relevant.
+
+### Mail workspace
+
+- [x] Device auth, passkeys, instance selection and remote sign-out.
+- [x] Incremental mailbox/folder/message cache, inbox, reader, search,
+  attachments, compose and reply.
+- [x] Read/star state, system mail views and archive/inbox/spam/trash/snooze
+  actions.
+- [ ] Thread view, reply-all, forward, bulk selection and custom folder moves.
+- [ ] Server-backed drafts with autosave, attachment upload and scheduled send.
+- [ ] Delivery status, retry, raw MIME download and message-level activity.
+
+### Personal workspace
+
+- [ ] Contacts: search, create/edit, groups, CSV import/export and compose
+  recipient suggestions.
+- [ ] Calendar: day/week/month views, event editing, ICS import/export and
+  invitation delivery.
+- [ ] Profile: name, avatar, mail layout, passkey management and API keys where
+  appropriate for a mobile device.
+- [ ] Mail settings: mailboxes, sharing, aliases, custom folders, rules,
+  templates and external IMAP/SMTP account health/sync.
+
+### Administration
+
+- [ ] Instance overview, audit activity, mailbox administration and routing.
+- [ ] Domains, DNS onboarding, deliverability, suppressions and webhooks.
+- [ ] Branding, backups/restore, migrations and safe self-update controls.
+
+### Release platform
+
+- [ ] Foreground realtime connection, FCM token lifecycle and WorkManager
+  incremental sync.
+- [ ] Notification controls, biometric app lock, no-offline-body mode,
+  accessibility, UI/repository tests and Play internal-test release gate.

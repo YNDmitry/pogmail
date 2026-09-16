@@ -8,6 +8,8 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.room.Upsert
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +38,8 @@ data class CachedMessage(
     @PrimaryKey val id: String,
     val mailboxId: String,
     val folderId: String?,
+    val status: String,
+    val snoozedUntil: Long?,
     val subject: String?,
     val fromAddress: String,
     val fromName: String?,
@@ -57,6 +61,9 @@ interface MailCacheDao {
     @Upsert suspend fun saveState(state: SyncState)
     @Query("SELECT cursor FROM sync_state WHERE `key` = :key") suspend fun cursor(key: String): Long?
     @Query("SELECT * FROM cached_messages ORDER BY receivedAt DESC") fun observeMessages(): Flow<List<CachedMessage>>
+    @Query("SELECT * FROM cached_folders ORDER BY position ASC, name ASC") fun observeFolders(): Flow<List<CachedFolder>>
+    @Query("UPDATE cached_messages SET read = :read, starred = :starred, status = :status, folderId = :folderId, snoozedUntil = :snoozedUntil WHERE id = :id")
+    suspend fun setMessageState(id: String, read: Boolean, starred: Boolean, status: String, folderId: String?, snoozedUntil: Long?)
     @Query("DELETE FROM cached_messages WHERE id IN (:ids)") suspend fun deleteMessages(ids: List<String>)
     @Query("DELETE FROM cached_folders WHERE id IN (:ids)") suspend fun deleteFolders(ids: List<String>)
     @Query("DELETE FROM cached_mailboxes WHERE id IN (:ids)") suspend fun deleteMailboxes(ids: List<String>)
@@ -66,7 +73,7 @@ interface MailCacheDao {
     @Query("DELETE FROM sync_state") suspend fun clearSyncState()
 }
 
-@Database(entities = [CachedMailbox::class, CachedFolder::class, CachedMessage::class, SyncState::class], version = 1, exportSchema = true)
+@Database(entities = [CachedMailbox::class, CachedFolder::class, CachedMessage::class, SyncState::class], version = 2, exportSchema = true)
 abstract class MailCacheDatabase : RoomDatabase() {
     abstract fun dao(): MailCacheDao
 
@@ -94,7 +101,16 @@ abstract class MailCacheDatabase : RoomDatabase() {
             context,
             MailCacheDatabase::class.java,
             "pogmail_mail_cache",
-        ).build()
+        ).addMigrations(MIGRATION_1_2).build()
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // The cache can always be rehydrated, but retaining it avoids a blank
+                // inbox after upgrading the client.
+                db.execSQL("ALTER TABLE cached_messages ADD COLUMN status TEXT NOT NULL DEFAULT 'received'")
+                db.execSQL("ALTER TABLE cached_messages ADD COLUMN snoozedUntil INTEGER")
+            }
+        }
     }
 }
 

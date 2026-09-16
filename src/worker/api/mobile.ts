@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
-import { folders, messageAttachments, messages, mobileDeviceSessions, mobileSyncEvents, passkeyChallenges, passkeys, users } from "@/db/schema";
+import { folders, MESSAGE_STATUSES, messageAttachments, messages, mobileDeviceSessions, mobileSyncEvents, passkeyChallenges, passkeys, users } from "@/db/schema";
 import { mobileLoginInput, mobilePasskeyVerifyInput, mobileRefreshInput } from "@/shared/contract/mobile";
 import { z } from "zod";
 import { audit } from "../audit";
@@ -10,8 +10,10 @@ import { verifyPassword } from "../auth/password";
 import { randomChallenge, toBase64Url, verifyAuthentication, verifyClientData } from "../auth/passkey";
 import { requireMobileAuth } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
+import { notifyMailbox } from "../realtime/notify";
 import { safeEmailHtml } from "../email/html-safety";
-import { canSendFrom, listAccessibleMailboxIds, listAccessibleMailboxes } from "../mailboxes/access";
+import { canSendFrom, getPermission, hasAtLeast, listAccessibleMailboxIds, listAccessibleMailboxes } from "../mailboxes/access";
+import { serveObject } from "../storage";
 import { composeInput, queueComposedMessage } from "./send";
 import { parseBody, parseQuery } from "./_util";
 
@@ -34,6 +36,20 @@ const mobileSendInput = z.object({
 	if (new Set(input.to.map((entry) => entry.address.toLowerCase())).size !== input.to.length) {
 		ctx.addIssue({ code: "custom", message: "Each recipient may only appear once" });
 	}
+});
+const mobileMessagePatchInput = z.object({
+	read: z.boolean().optional(),
+	starred: z.boolean().optional(),
+	status: z.enum(MESSAGE_STATUSES).optional(),
+	/** A folder is tied to a mailbox; `null` clears a prior custom folder. */
+	folderId: z.string().min(1).nullable().optional(),
+	/** Epoch milliseconds. `null` brings a snoozed message back immediately. */
+	snoozedUntil: z.number().int().nullable().optional(),
+}).refine((input) => Object.values(input).some((value) => value !== undefined), {
+	message: "Provide at least one message change",
+});
+const mobileBulkPatchInput = mobileMessagePatchInput.extend({
+	ids: z.array(z.string().min(1)).min(1).max(100),
 });
 
 const mobileMessageColumns = {
@@ -176,7 +192,8 @@ export const mobileRoutes = new Hono<AppBindings>()
  * mailbox. The reader fetches one scoped message on demand instead.
  */
 mobileRoutes.get("/messages/:id", requireMobileAuth, async (c) => {
-	const mailboxIds = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
+	const accessibleMailboxes = await listAccessibleMailboxes(c.get("db"), c.get("user"));
+	const mailboxIds = accessibleMailboxes.map((mailbox) => mailbox.id);
 	if (mailboxIds.length === 0) throw new HTTPException(404, { message: "Message not found" });
 
 	const message = await c
@@ -212,7 +229,121 @@ mobileRoutes.get("/messages/:id", requireMobileAuth, async (c) => {
 		.where(eq(messageAttachments.messageId, message.id))
 		.all();
 
-	return c.json({ ...message, bodyHtml: safeEmailHtml(message.bodyHtml), attachments });
+	return c.json({
+		...message,
+		mailboxAddress: accessibleMailboxes.find((mailbox) => mailbox.id === message.mailboxId)?.address ?? null,
+		bodyHtml: safeEmailHtml(message.bodyHtml),
+		attachments,
+	});
+});
+
+/** Streams one attachment after proving the device can read its parent message. */
+mobileRoutes.get("/messages/:id/attachments/:attachmentId", requireMobileAuth, async (c) => {
+	const mailboxIds = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
+	if (mailboxIds.length === 0) throw new HTTPException(404, { message: "Attachment not found" });
+	const attachment = await c
+		.get("db")
+		.select({
+			filename: messageAttachments.filename,
+			r2Key: messageAttachments.r2Key,
+		})
+		.from(messageAttachments)
+		.innerJoin(messages, eq(messages.id, messageAttachments.messageId))
+		.where(and(
+			eq(messages.id, c.req.param("id")),
+			eq(messageAttachments.id, c.req.param("attachmentId")),
+			inArray(messages.mailboxId, mailboxIds),
+		))
+		.get();
+	if (!attachment) throw new HTTPException(404, { message: "Attachment not found" });
+
+	const response = await serveObject(c.env, attachment.r2Key, attachment.filename);
+	response.headers.set("x-content-type-options", "nosniff");
+	return response;
+});
+
+/**
+ * Narrow mobile action surface. Reading a shared mailbox is distinct from
+ * changing it, so a read-only collaborator receives the same 403 as the web
+ * client rather than silently changing somebody else's mail.
+ */
+mobileRoutes.patch("/messages/bulk", requireMobileAuth, async (c) => {
+	const { ids, ...input } = await parseBody(c, mobileBulkPatchInput);
+	const mailboxIds = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
+	if (mailboxIds.length === 0) return c.json({ updated: 0 });
+	const rows = await c.get("db").select({ id: messages.id, mailboxId: messages.mailboxId })
+		.from(messages).where(and(inArray(messages.id, ids), inArray(messages.mailboxId, mailboxIds))).all();
+	const writable = new Set<string>();
+	for (const mailboxId of new Set(rows.map((row) => row.mailboxId))) {
+		if (hasAtLeast(await getPermission(c.get("db"), c.get("user"), mailboxId), "full_access")) writable.add(mailboxId);
+	}
+	const targetIds = rows.filter((row) => writable.has(row.mailboxId)).map((row) => row.id);
+	if (targetIds.length === 0) return c.json({ updated: 0 });
+	const updated = await c.get("db").update(messages).set({
+		...(input.read !== undefined ? { read: input.read } : {}),
+		...(input.starred !== undefined ? { starred: input.starred } : {}),
+		...(input.status !== undefined ? { status: input.status, folderId: input.status === "received" ? undefined : null } : {}),
+	}).where(inArray(messages.id, targetIds)).returning({ id: messages.id, mailboxId: messages.mailboxId }).all();
+	await Promise.all([...new Set(updated.map((row) => row.mailboxId))].map((mailboxId) => notifyMailbox(c.env, mailboxId, { type: "message.changed", mailboxId })));
+	audit(c, { action: "message.mobile_bulk_update", metadata: { count: updated.length } });
+	return c.json({ updated: updated.length, ids: updated.map((row) => row.id) });
+});
+
+mobileRoutes.patch("/messages/:id", requireMobileAuth, async (c) => {
+	const input = await parseBody(c, mobileMessagePatchInput);
+	const mailboxIds = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
+	if (mailboxIds.length === 0) throw new HTTPException(404, { message: "Message not found" });
+	const message = await c
+		.get("db")
+		.select({ id: messages.id, mailboxId: messages.mailboxId })
+		.from(messages)
+		.where(and(eq(messages.id, c.req.param("id")), inArray(messages.mailboxId, mailboxIds)))
+		.get();
+	if (!message) throw new HTTPException(404, { message: "Message not found" });
+	const permission = await getPermission(c.get("db"), c.get("user"), message.mailboxId);
+	if (!hasAtLeast(permission, "full_access")) throw new HTTPException(403, { message: "Read-only access to this mailbox" });
+
+	if (input.folderId) {
+		const folder = await c
+			.get("db")
+			.select({ mailboxId: folders.mailboxId })
+			.from(folders)
+			.where(eq(folders.id, input.folderId))
+			.get();
+		if (!folder) throw new HTTPException(404, { message: "Folder not found" });
+		if (folder.mailboxId !== message.mailboxId) {
+			throw new HTTPException(422, { message: "A folder can only contain mail from its own mailbox" });
+		}
+	}
+
+	const movesToFolder = input.folderId !== undefined && input.folderId !== null;
+	const movesToSystemView = !movesToFolder && input.status !== undefined && input.status !== "received";
+
+	const updated = await c
+		.get("db")
+		.update(messages)
+		.set({
+			...(input.read !== undefined ? { read: input.read } : {}),
+			...(input.starred !== undefined ? { starred: input.starred } : {}),
+			...(movesToFolder ? { status: "received" as const } : input.status !== undefined ? { status: input.status } : {}),
+			...(movesToSystemView ? { folderId: null } : input.folderId !== undefined ? { folderId: input.folderId } : {}),
+			...(input.snoozedUntil !== undefined
+				? { snoozedUntil: input.snoozedUntil === null ? null : new Date(input.snoozedUntil) }
+				: {}),
+		})
+		.where(eq(messages.id, message.id))
+		.returning({
+			id: messages.id,
+			read: messages.read,
+			starred: messages.starred,
+			status: messages.status,
+			folderId: messages.folderId,
+			snoozedUntil: messages.snoozedUntil,
+		})
+		.get();
+	await notifyMailbox(c.env, message.mailboxId, { type: "message.changed", mailboxId: message.mailboxId });
+	audit(c, { action: "message.mobile_update", mailboxId: message.mailboxId, messageId: message.id });
+	return c.json(updated);
 });
 
 mobileRoutes.get("/senders", requireMobileAuth, async (c) => {

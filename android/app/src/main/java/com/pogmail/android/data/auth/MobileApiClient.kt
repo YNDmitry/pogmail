@@ -6,6 +6,7 @@ import com.pogmail.android.data.cache.CachedFolder
 import com.pogmail.android.data.cache.CachedMailbox
 import com.pogmail.android.data.cache.CachedMessage
 import com.pogmail.android.data.cache.MailSyncBatch
+import java.io.File
 import java.net.URL
 import java.net.URLEncoder
 import javax.net.ssl.HttpsURLConnection
@@ -77,6 +78,38 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
         ),
     )
 
+    suspend fun updateMessage(
+        accessToken: String,
+        messageId: String,
+        read: Boolean? = null,
+        starred: Boolean? = null,
+        status: String? = null,
+        folderId: String? = null,
+        clearFolder: Boolean = false,
+        snoozedUntil: Long? = null,
+        clearSnooze: Boolean = false,
+    ): MobileMessageState = requestJson(
+        "/messages/${URLEncoder.encode(messageId, Charsets.UTF_8)}",
+        JSONObject().apply {
+            read?.let { put("read", it) }
+            starred?.let { put("starred", it) }
+            status?.let { put("status", it) }
+            if (clearFolder) put("folderId", JSONObject.NULL) else folderId?.let { put("folderId", it) }
+            if (clearSnooze) put("snoozedUntil", JSONObject.NULL) else snoozedUntil?.let { put("snoozedUntil", it) }
+        },
+        accessToken,
+        method = "PATCH",
+    ).let { response ->
+        MobileMessageState(
+            id = response.getString("id"),
+            read = response.getBoolean("read"),
+            starred = response.getBoolean("starred"),
+            status = response.getString("status"),
+            folderId = response.stringOrNull("folderId"),
+            snoozedUntil = response.stringOrNull("snoozedUntil")?.let(::parseDate),
+        )
+    }
+
     suspend fun senders(accessToken: String): List<MobileSender> =
         requestJson("/senders", body = null, accessToken = accessToken, method = "GET")
             .getJSONArray("items")
@@ -99,6 +132,47 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
                 .apply { request.replyToMessageId?.let { put("replyToMessageId", it) } },
             accessToken,
         ).let { response -> MobileSendResult(response.getString("id"), response.getString("jobId")) }
+
+    /** Downloads to app-private storage; callers expose it through FileProvider. */
+    suspend fun downloadAttachment(
+        accessToken: String,
+        messageId: String,
+        attachmentId: String,
+        destination: File,
+    ): String = withContext(Dispatchers.IO) {
+        val encodedMessageId = URLEncoder.encode(messageId, Charsets.UTF_8)
+        val encodedAttachmentId = URLEncoder.encode(attachmentId, Charsets.UTF_8)
+        val baseUrl = instanceUrlStore.requireUrl()
+        val connection = (URL("$baseUrl/api/mobile/messages/$encodedMessageId/attachments/$encodedAttachmentId").openConnection() as HttpsURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 15_000
+            readTimeout = 60_000
+            instanceFollowRedirects = false
+            setRequestProperty("Accept", "application/octet-stream")
+            setRequestProperty("User-Agent", "Pogmail-Android/${BuildConfig.VERSION_NAME}")
+            setRequestProperty("Authorization", "Bearer $accessToken")
+        }
+        try {
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                val payload = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                val message = runCatching { JSONObject(payload).optString("error") }
+                    .getOrDefault("")
+                    .ifBlank { "The server returned HTTP $status." }
+                throw MobileApiException(status, message)
+            }
+            destination.parentFile?.mkdirs()
+            connection.inputStream.use { input ->
+                destination.outputStream().buffered().use { output -> input.copyTo(output) }
+            }
+            connection.contentType?.substringBefore(";")?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+        } catch (exception: Exception) {
+            destination.delete()
+            throw exception
+        } finally {
+            connection.disconnect()
+        }
+    }
 
     private suspend fun requestSession(path: String, body: JSONObject): MobileSession =
         parseSession(requestJson(path, body))
@@ -183,7 +257,7 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
                 CachedFolder(item.getString("id"), item.getString("mailboxId"), item.getString("name"), item.stringOrNull("color"), item.getInt("position"))
             },
             messages = json.getJSONArray("messages").mapItems { item ->
-                CachedMessage(item.getString("id"), item.getString("mailboxId"), item.stringOrNull("folderId"), item.stringOrNull("subject"), item.getString("fromAddress"), item.stringOrNull("fromName"), item.stringOrNull("snippet"), parseDate(item.getString("receivedAt")), item.getBoolean("read"), item.getBoolean("starred"), item.getBoolean("hasAttachments"))
+                CachedMessage(item.getString("id"), item.getString("mailboxId"), item.stringOrNull("folderId"), item.getString("status"), item.stringOrNull("snoozedUntil")?.let(::parseDate), item.stringOrNull("subject"), item.getString("fromAddress"), item.stringOrNull("fromName"), item.stringOrNull("snippet"), parseDate(item.getString("receivedAt")), item.getBoolean("read"), item.getBoolean("starred"), item.getBoolean("hasAttachments"))
             },
             deletedMailboxIds = tombstones.filterItems { it.getString("resourceType") == "mailbox" }.map { it.getString("resourceId") },
             deletedFolderIds = tombstones.filterItems { it.getString("resourceType") == "folder" }.map { it.getString("resourceId") },
@@ -193,6 +267,14 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
 
     private fun parseMessage(json: JSONObject): MobileMessageDetail = MobileMessageDetail(
         id = json.getString("id"),
+        mailboxAddress = json.stringOrNull("mailboxAddress"),
+        toAddresses = json.getJSONArray("toAddresses").mapItems { address ->
+            MobileEmailAddress(address.getString("address"), address.stringOrNull("name"))
+        },
+        ccAddresses = json.optJSONArray("ccAddresses")?.mapItems { address ->
+            MobileEmailAddress(address.getString("address"), address.stringOrNull("name"))
+        }.orEmpty(),
+        replyTo = json.stringOrNull("replyTo"),
         bodyText = json.stringOrNull("bodyText"),
         bodyHtml = json.stringOrNull("bodyHtml"),
         attachments = json.getJSONArray("attachments").mapItems { attachment ->
@@ -213,17 +295,32 @@ data class PasskeyAuthenticationOptions(
 
 data class MobileMessageDetail(
     val id: String,
+    val mailboxAddress: String?,
+    val toAddresses: List<MobileEmailAddress>,
+    val ccAddresses: List<MobileEmailAddress>,
+    val replyTo: String?,
     val bodyText: String?,
     /** Sanitised by the Worker. The native reader uses it only as a text fallback. */
     val bodyHtml: String?,
     val attachments: List<MobileMessageAttachment>,
 )
 
+data class MobileEmailAddress(val address: String, val name: String?)
+
 data class MobileMessageAttachment(
     val id: String,
     val filename: String,
     val contentType: String,
     val sizeBytes: Long,
+)
+
+data class MobileMessageState(
+    val id: String,
+    val read: Boolean,
+    val starred: Boolean,
+    val status: String,
+    val folderId: String?,
+    val snoozedUntil: Long?,
 )
 
 data class MobileSender(

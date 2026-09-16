@@ -49,6 +49,7 @@ import com.pogmail.android.data.auth.PasskeyAuthenticator
 import com.pogmail.android.data.auth.InstanceUrlStore
 import com.pogmail.android.data.cache.MailCacheDatabase
 import com.pogmail.android.data.cache.MailSyncRepository
+import com.pogmail.android.data.mail.MobileAttachmentRepository
 import com.pogmail.android.data.mail.MobileComposeRepository
 import com.pogmail.android.data.mail.MobileMessageRepository
 import com.pogmail.android.ui.compose.ComposeDraft
@@ -176,6 +177,7 @@ fun PogmailApp(
             session = state.session,
             instanceUrl = instanceUrlStore.requireUrl(),
             sessionRepository = sessionRepository,
+            attachmentRepository = MobileAttachmentRepository(mobileApiClient, sessionRepository),
             composeRepository = MobileComposeRepository(mobileApiClient, sessionRepository),
             messageRepository = MobileMessageRepository(mobileApiClient, sessionRepository),
             syncRepository = syncRepository,
@@ -222,6 +224,7 @@ private fun AuthenticatedApp(
     session: MobileSession,
     instanceUrl: String,
     sessionRepository: MobileSessionRepository,
+    attachmentRepository: MobileAttachmentRepository,
     composeRepository: MobileComposeRepository,
     messageRepository: MobileMessageRepository,
     syncRepository: MailSyncRepository,
@@ -286,8 +289,22 @@ private fun AuthenticatedApp(
                 modifier = contentModifier,
                 message = openedMessage,
                 session = session,
+                attachmentRepository = attachmentRepository,
                 messageRepository = messageRepository,
+                folders = cache.dao().observeFolders(),
                 onSessionUpdated = onSessionUpdated,
+                onMessageStateChanged = { updated ->
+                    scope.launch {
+                        cache.dao().setMessageState(
+                            updated.id,
+                            updated.read,
+                            updated.starred,
+                            updated.status,
+                            updated.folderId,
+                            updated.snoozedUntil,
+                        )
+                    }
+                },
                 onReply = {
                     composeDraft = ComposeDraft(
                         recipient = openedMessage.senderAddress,
@@ -296,6 +313,29 @@ private fun AuthenticatedApp(
                             ?: openedMessage.subject,
                         mailboxId = openedMessage.mailboxId,
                         replyToMessageId = openedMessage.id,
+                    )
+                    selectedMessage = null
+                    destination = AppDestination.Compose
+                },
+                onReplyAll = { recipients ->
+                    composeDraft = ComposeDraft(
+                        recipient = recipients.joinToString(", "),
+                        subject = openedMessage.subject.takeUnless { it.startsWith("Re:", ignoreCase = true) }
+                            ?.let { "Re: $it" }
+                            ?: openedMessage.subject,
+                        mailboxId = openedMessage.mailboxId,
+                        replyToMessageId = openedMessage.id,
+                    )
+                    selectedMessage = null
+                    destination = AppDestination.Compose
+                },
+                onForward = { body ->
+                    composeDraft = ComposeDraft(
+                        subject = openedMessage.subject.takeUnless { it.startsWith("Fwd:", ignoreCase = true) }
+                            ?.let { "Fwd: $it" }
+                            ?: openedMessage.subject,
+                        mailboxId = openedMessage.mailboxId,
+                        body = body,
                     )
                     selectedMessage = null
                     destination = AppDestination.Compose
@@ -324,6 +364,7 @@ private fun AuthenticatedApp(
                     modifier = contentModifier,
                     accountAddress = session.user.email,
                     messages = cache.dao().observeMessages(),
+                    folders = cache.dao().observeFolders(),
                     onOpenMessage = { selectedMessage = it },
                 )
 

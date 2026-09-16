@@ -1,6 +1,7 @@
 package com.pogmail.android.ui.inbox
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,11 +59,13 @@ fun InboxScreen(
     messages: Flow<List<CachedMessage>>,
     folders: Flow<List<CachedFolder>>,
     onOpenMessage: (MailPreview) -> Unit,
+    onBulkAction: (List<String>, String) -> Unit,
 ) {
     var selectedFilter by remember { mutableStateOf(MailboxView.Inbox) }
     var selectedFolderId by remember { mutableStateOf<String?>(null) }
     val cached by messages.collectAsState(emptyList())
     val cachedFolders by folders.collectAsState(emptyList())
+    var selectedIds by remember { mutableStateOf(setOf<String>()) }
     val previews = cached
         .filter { message ->
             when {
@@ -98,7 +103,7 @@ fun InboxScreen(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item { InboxTopBar() }
+        item { InboxTopBar(selectedIds.size, onArchive = { onBulkAction(selectedIds.toList(), "archived"); selectedIds = emptySet() }, onTrash = { onBulkAction(selectedIds.toList(), "trash"); selectedIds = emptySet() }, onRead = { onBulkAction(selectedIds.toList(), "read"); selectedIds = emptySet() }) }
         item { MailboxHeading(cachedFolders.firstOrNull { it.id == selectedFolderId }?.name ?: selectedFilter.label, accountAddress, unreadCount) }
         item { FilterRow(selected = selectedFilter, onSelect = { selectedFilter = it; selectedFolderId = null }) }
         if (cachedFolders.isNotEmpty()) {
@@ -114,11 +119,15 @@ fun InboxScreen(
             )
         }
         items(previews, key = { it.id }) { message ->
-            MessageRow(message = message, onClick = { onOpenMessage(message) })
+            MessageRow(message = message, selected = message.id in selectedIds, onClick = {
+                if (selectedIds.isEmpty()) onOpenMessage(message) else selectedIds = selectedIds.toggle(message.id)
+            }, onLongClick = { selectedIds = selectedIds.toggle(message.id) })
         }
         item { Spacer(Modifier.height(16.dp)) }
     }
 }
+
+private fun Set<String>.toggle(id: String) = if (id in this) this - id else this + id
 
 @Composable
 private fun FolderRow(selectedFolderId: String?, folders: List<CachedFolder>, onSelect: (String?) -> Unit) {
@@ -133,7 +142,7 @@ private fun FolderRow(selectedFolderId: String?, folders: List<CachedFolder>, on
 }
 
 @Composable
-private fun InboxTopBar() {
+private fun InboxTopBar(selected: Int, onArchive: () -> Unit, onTrash: () -> Unit, onRead: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -142,12 +151,16 @@ private fun InboxTopBar() {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "Pogmail",
+            text = if (selected == 0) "Pogmail" else "$selected selected",
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
-        IconButton(onClick = {}) {
+        if (selected > 0) {
+            IconButton(onClick = onRead) { Icon(Icons.Outlined.Done, contentDescription = "Mark read") }
+            IconButton(onClick = onArchive) { Icon(Icons.Outlined.Archive, contentDescription = "Archive selected") }
+            IconButton(onClick = onTrash) { Icon(Icons.Outlined.Delete, contentDescription = "Trash selected") }
+        } else IconButton(onClick = {}) {
             Icon(Icons.Outlined.Search, contentDescription = "Search mail")
         }
         Surface(
@@ -225,13 +238,13 @@ private enum class MailboxView(val label: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MessageRow(message: MailPreview, onClick: () -> Unit) {
+private fun MessageRow(message: MailPreview, selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick),
-        color = if (message.unread) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else if (message.unread) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(18.dp),
         tonalElevation = if (message.unread) 1.dp else 0.dp,
     ) {

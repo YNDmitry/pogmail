@@ -110,6 +110,13 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
         )
     }
 
+    suspend fun updateMessages(accessToken: String, ids: List<String>, read: Boolean? = null, status: String? = null): List<String> =
+        requestJson("/messages/bulk", JSONObject().apply {
+            put("ids", org.json.JSONArray(ids))
+            read?.let { put("read", it) }
+            status?.let { put("status", it) }
+        }, accessToken, method = "PATCH").getJSONArray("ids").mapItems { JSONObject().put("id", it) }.map { it.getString("id") }
+
     suspend fun senders(accessToken: String): List<MobileSender> =
         requestJson("/senders", body = null, accessToken = accessToken, method = "GET")
             .getJSONArray("items")

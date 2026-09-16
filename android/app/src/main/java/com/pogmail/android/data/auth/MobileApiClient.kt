@@ -78,6 +78,27 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
         ),
     )
 
+    suspend fun updateMessage(
+        accessToken: String,
+        messageId: String,
+        read: Boolean? = null,
+        starred: Boolean? = null,
+    ): MobileMessageState = requestJson(
+        "/messages/${URLEncoder.encode(messageId, Charsets.UTF_8)}",
+        JSONObject().apply {
+            read?.let { put("read", it) }
+            starred?.let { put("starred", it) }
+        },
+        accessToken,
+        method = "PATCH",
+    ).let { response ->
+        MobileMessageState(
+            id = response.getString("id"),
+            read = response.getBoolean("read"),
+            starred = response.getBoolean("starred"),
+        )
+    }
+
     suspend fun senders(accessToken: String): List<MobileSender> =
         requestJson("/senders", body = null, accessToken = accessToken, method = "GET")
             .getJSONArray("items")
@@ -266,6 +287,12 @@ data class MobileMessageAttachment(
     val filename: String,
     val contentType: String,
     val sizeBytes: Long,
+)
+
+data class MobileMessageState(
+    val id: String,
+    val read: Boolean,
+    val starred: Boolean,
 )
 
 data class MobileSender(

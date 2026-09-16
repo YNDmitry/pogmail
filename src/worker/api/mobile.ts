@@ -10,6 +10,7 @@ import { verifyPassword } from "../auth/password";
 import { randomChallenge, toBase64Url, verifyAuthentication, verifyClientData } from "../auth/passkey";
 import { requireMobileAuth } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
+import { notifyMailbox } from "../realtime/notify";
 import { safeEmailHtml } from "../email/html-safety";
 import { canSendFrom, listAccessibleMailboxIds, listAccessibleMailboxes } from "../mailboxes/access";
 import { serveObject } from "../storage";
@@ -35,6 +36,12 @@ const mobileSendInput = z.object({
 	if (new Set(input.to.map((entry) => entry.address.toLowerCase())).size !== input.to.length) {
 		ctx.addIssue({ code: "custom", message: "Each recipient may only appear once" });
 	}
+});
+const mobileMessagePatchInput = z.object({
+	read: z.boolean().optional(),
+	starred: z.boolean().optional(),
+}).refine((input) => input.read !== undefined || input.starred !== undefined, {
+	message: "Provide at least one message change",
 });
 
 const mobileMessageColumns = {
@@ -239,6 +246,34 @@ mobileRoutes.get("/messages/:id/attachments/:attachmentId", requireMobileAuth, a
 	const response = await serveObject(c.env, attachment.r2Key, attachment.filename);
 	response.headers.set("x-content-type-options", "nosniff");
 	return response;
+});
+
+/** Narrow mobile action surface — a device may only alter state on readable mail. */
+mobileRoutes.patch("/messages/:id", requireMobileAuth, async (c) => {
+	const input = await parseBody(c, mobileMessagePatchInput);
+	const mailboxIds = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
+	if (mailboxIds.length === 0) throw new HTTPException(404, { message: "Message not found" });
+	const message = await c
+		.get("db")
+		.select({ id: messages.id, mailboxId: messages.mailboxId })
+		.from(messages)
+		.where(and(eq(messages.id, c.req.param("id")), inArray(messages.mailboxId, mailboxIds)))
+		.get();
+	if (!message) throw new HTTPException(404, { message: "Message not found" });
+
+	const updated = await c
+		.get("db")
+		.update(messages)
+		.set({
+			...(input.read !== undefined ? { read: input.read } : {}),
+			...(input.starred !== undefined ? { starred: input.starred } : {}),
+		})
+		.where(eq(messages.id, message.id))
+		.returning({ id: messages.id, read: messages.read, starred: messages.starred })
+		.get();
+	await notifyMailbox(c.env, message.mailboxId, { type: "message.changed", mailboxId: message.mailboxId });
+	audit(c, { action: "message.mobile_update", mailboxId: message.mailboxId, messageId: message.id });
+	return c.json(updated);
 });
 
 mobileRoutes.get("/senders", requireMobileAuth, async (c) => {

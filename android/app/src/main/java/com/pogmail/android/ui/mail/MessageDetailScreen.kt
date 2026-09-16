@@ -18,9 +18,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.AttachFile
-import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -44,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pogmail.android.data.auth.MobileMessageAttachment
 import com.pogmail.android.data.auth.MobileMessageDetail
+import com.pogmail.android.data.auth.MobileMessageState
 import com.pogmail.android.data.auth.MobileSession
 import com.pogmail.android.data.mail.MobileAttachmentRepository
 import com.pogmail.android.data.mail.MobileMessageRepository
@@ -58,6 +60,7 @@ fun MessageDetailScreen(
     attachmentRepository: MobileAttachmentRepository,
     messageRepository: MobileMessageRepository,
     onSessionUpdated: (MobileSession) -> Unit,
+    onMessageStateChanged: (MobileMessageState) -> Unit,
     onReply: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -67,6 +70,9 @@ fun MessageDetailScreen(
     var reloadKey by remember(message.id) { mutableIntStateOf(0) }
     var openingAttachmentId by remember(message.id) { mutableStateOf<String?>(null) }
     var attachmentError by remember(message.id) { mutableStateOf<String?>(null) }
+    var actionError by remember(message.id) { mutableStateOf<String?>(null) }
+    var starred by remember(message.id) { mutableStateOf(message.starred) }
+    var updatingStar by remember(message.id) { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -77,6 +83,13 @@ fun MessageDetailScreen(
             val loaded = messageRepository.load(session, message.id)
             detail = loaded.message
             if (loaded.session != session) onSessionUpdated(loaded.session)
+            if (message.unread) {
+                runCatching { messageRepository.update(loaded.session, message.id, read = true) }
+                    .onSuccess { updated ->
+                        if (updated.session != loaded.session) onSessionUpdated(updated.session)
+                        onMessageStateChanged(updated.message)
+                    }
+            }
         } catch (exception: Exception) {
             error = exception.message ?: "Could not load this message."
         } finally {
@@ -92,7 +105,27 @@ fun MessageDetailScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp),
     ) {
-        ReaderToolbar(onBack = onBack)
+        ReaderToolbar(
+            starred = starred,
+            updatingStar = updatingStar,
+            onToggleStar = {
+                scope.launch {
+                    updatingStar = true
+                    actionError = null
+                    try {
+                        val updated = messageRepository.update(session, message.id, starred = !starred)
+                        starred = updated.message.starred
+                        if (updated.session != session) onSessionUpdated(updated.session)
+                        onMessageStateChanged(updated.message)
+                    } catch (exception: Exception) {
+                        actionError = exception.message ?: "Could not update this message."
+                    } finally {
+                        updatingStar = false
+                    }
+                }
+            },
+            onBack = onBack,
+        )
         Text(message.subject, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         SenderHeader(message)
 
@@ -127,11 +160,17 @@ fun MessageDetailScreen(
             )
         }
         attachmentError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        actionError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     }
 }
 
 @Composable
-private fun ReaderToolbar(onBack: () -> Unit) {
+private fun ReaderToolbar(
+    starred: Boolean,
+    updatingStar: Boolean,
+    onToggleStar: () -> Unit,
+    onBack: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -140,8 +179,12 @@ private fun ReaderToolbar(onBack: () -> Unit) {
             Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back to inbox")
         }
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = {}, enabled = false) {
-            Icon(Icons.Outlined.MoreHoriz, contentDescription = "Message options")
+        IconButton(onClick = onToggleStar, enabled = !updatingStar) {
+            Icon(
+                imageVector = if (starred) Icons.Filled.Star else Icons.Outlined.Star,
+                contentDescription = if (starred) "Remove star" else "Add star",
+                tint = if (starred) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

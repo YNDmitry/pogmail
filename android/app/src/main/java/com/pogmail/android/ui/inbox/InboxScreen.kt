@@ -73,6 +73,7 @@ fun InboxScreen(
             time = "",
             unread = !message.read,
             mailboxId = message.mailboxId,
+            starred = message.starred,
         ) }
     val unreadCount = previews.count { it.unread }
 

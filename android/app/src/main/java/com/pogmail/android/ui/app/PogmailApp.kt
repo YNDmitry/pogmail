@@ -292,6 +292,12 @@ private fun AuthenticatedApp(
                 attachmentRepository = attachmentRepository,
                 messageRepository = messageRepository,
                 onSessionUpdated = onSessionUpdated,
+                onMessageStateChanged = { updated ->
+                    scope.launch {
+                        cache.dao().setMessageRead(updated.id, updated.read)
+                        cache.dao().setMessageStarred(updated.id, updated.starred)
+                    }
+                },
                 onReply = {
                     composeDraft = ComposeDraft(
                         recipient = openedMessage.senderAddress,

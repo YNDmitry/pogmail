@@ -62,6 +62,7 @@ fun SearchScreen(
                 "",
                 !message.read,
                 mailboxId = message.mailboxId,
+                starred = message.starred,
             )
         }
         .filter { message ->

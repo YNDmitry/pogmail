@@ -267,6 +267,14 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
 
     private fun parseMessage(json: JSONObject): MobileMessageDetail = MobileMessageDetail(
         id = json.getString("id"),
+        mailboxAddress = json.stringOrNull("mailboxAddress"),
+        toAddresses = json.getJSONArray("toAddresses").mapItems { address ->
+            MobileEmailAddress(address.getString("address"), address.stringOrNull("name"))
+        },
+        ccAddresses = json.optJSONArray("ccAddresses")?.mapItems { address ->
+            MobileEmailAddress(address.getString("address"), address.stringOrNull("name"))
+        }.orEmpty(),
+        replyTo = json.stringOrNull("replyTo"),
         bodyText = json.stringOrNull("bodyText"),
         bodyHtml = json.stringOrNull("bodyHtml"),
         attachments = json.getJSONArray("attachments").mapItems { attachment ->
@@ -287,11 +295,17 @@ data class PasskeyAuthenticationOptions(
 
 data class MobileMessageDetail(
     val id: String,
+    val mailboxAddress: String?,
+    val toAddresses: List<MobileEmailAddress>,
+    val ccAddresses: List<MobileEmailAddress>,
+    val replyTo: String?,
     val bodyText: String?,
     /** Sanitised by the Worker. The native reader uses it only as a text fallback. */
     val bodyHtml: String?,
     val attachments: List<MobileMessageAttachment>,
 )
+
+data class MobileEmailAddress(val address: String, val name: String?)
 
 data class MobileMessageAttachment(
     val id: String,

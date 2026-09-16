@@ -316,6 +316,29 @@ private fun AuthenticatedApp(
                     selectedMessage = null
                     destination = AppDestination.Compose
                 },
+                onReplyAll = { recipients ->
+                    composeDraft = ComposeDraft(
+                        recipient = recipients.joinToString(", "),
+                        subject = openedMessage.subject.takeUnless { it.startsWith("Re:", ignoreCase = true) }
+                            ?.let { "Re: $it" }
+                            ?: openedMessage.subject,
+                        mailboxId = openedMessage.mailboxId,
+                        replyToMessageId = openedMessage.id,
+                    )
+                    selectedMessage = null
+                    destination = AppDestination.Compose
+                },
+                onForward = { body ->
+                    composeDraft = ComposeDraft(
+                        subject = openedMessage.subject.takeUnless { it.startsWith("Fwd:", ignoreCase = true) }
+                            ?.let { "Fwd: $it" }
+                            ?: openedMessage.subject,
+                        mailboxId = openedMessage.mailboxId,
+                        body = body,
+                    )
+                    selectedMessage = null
+                    destination = AppDestination.Compose
+                },
                 onBack = { selectedMessage = null },
             )
 

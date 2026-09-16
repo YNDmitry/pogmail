@@ -189,7 +189,8 @@ export const mobileRoutes = new Hono<AppBindings>()
  * mailbox. The reader fetches one scoped message on demand instead.
  */
 mobileRoutes.get("/messages/:id", requireMobileAuth, async (c) => {
-	const mailboxIds = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
+	const accessibleMailboxes = await listAccessibleMailboxes(c.get("db"), c.get("user"));
+	const mailboxIds = accessibleMailboxes.map((mailbox) => mailbox.id);
 	if (mailboxIds.length === 0) throw new HTTPException(404, { message: "Message not found" });
 
 	const message = await c
@@ -225,7 +226,12 @@ mobileRoutes.get("/messages/:id", requireMobileAuth, async (c) => {
 		.where(eq(messageAttachments.messageId, message.id))
 		.all();
 
-	return c.json({ ...message, bodyHtml: safeEmailHtml(message.bodyHtml), attachments });
+	return c.json({
+		...message,
+		mailboxAddress: accessibleMailboxes.find((mailbox) => mailbox.id === message.mailboxId)?.address ?? null,
+		bodyHtml: safeEmailHtml(message.bodyHtml),
+		attachments,
+	});
 });
 
 /** Streams one attachment after proving the device can read its parent message. */

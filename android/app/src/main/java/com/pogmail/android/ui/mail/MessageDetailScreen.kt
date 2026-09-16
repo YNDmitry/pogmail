@@ -18,10 +18,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
+import androidx.compose.material.icons.automirrored.outlined.ReplyAll
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Forward
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Report
@@ -69,6 +71,8 @@ fun MessageDetailScreen(
     onSessionUpdated: (MobileSession) -> Unit,
     onMessageStateChanged: (MobileMessageState) -> Unit,
     onReply: () -> Unit,
+    onReplyAll: (List<String>) -> Unit,
+    onForward: (String) -> Unit,
     onBack: () -> Unit,
 ) {
     var detail by remember(message.id) { mutableStateOf<MobileMessageDetail?>(null) }
@@ -159,6 +163,22 @@ fun MessageDetailScreen(
                     }
                 }
             },
+            onReplyAll = {
+                val recipients = linkedSetOf<String>()
+                detail?.replyTo?.let(recipients::add) ?: recipients.add(message.senderAddress)
+                detail?.toAddresses.orEmpty().mapTo(recipients) { it.address }
+                detail?.ccAddresses.orEmpty().mapTo(recipients) { it.address }
+                recipients.removeAll { it.equals(session.user.email, ignoreCase = true) }
+                detail?.mailboxAddress?.let { mailboxAddress ->
+                    recipients.removeAll { it.equals(mailboxAddress, ignoreCase = true) }
+                }
+                onReplyAll(recipients.toList())
+            },
+            onForward = {
+                val body = detail?.bodyText?.takeIf { it.isNotBlank() }
+                    ?: detail?.bodyHtml?.toPlainText().orEmpty()
+                onForward("\n\n--- Forwarded message ---\nFrom: ${message.senderAddress}\nSubject: ${message.subject}\n\n$body")
+            },
             onBack = onBack,
         )
         Text(message.subject, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -199,6 +219,7 @@ fun MessageDetailScreen(
     }
 }
 
+@Suppress("DEPRECATION")
 @Composable
 private fun ReaderToolbar(
     starred: Boolean,
@@ -208,6 +229,8 @@ private fun ReaderToolbar(
     updatingAction: Boolean,
     onActionMenuChange: (Boolean) -> Unit,
     onAction: (status: String?, snoozedUntil: Long?, clearSnooze: Boolean) -> Unit,
+    onReplyAll: () -> Unit,
+    onForward: () -> Unit,
     onBack: () -> Unit,
 ) {
     Row(
@@ -233,6 +256,16 @@ private fun ReaderToolbar(
                 if (updatingAction) {
                     DropdownMenuItem(text = { Text("Updating…") }, onClick = {}, enabled = false)
                 } else {
+                    DropdownMenuItem(
+                        text = { Text("Reply all") },
+                        onClick = { onActionMenuChange(false); onReplyAll() },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Outlined.ReplyAll, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Forward") },
+                        onClick = { onActionMenuChange(false); onForward() },
+                        leadingIcon = { Icon(Icons.Outlined.Forward, contentDescription = null) },
+                    )
                     DropdownMenuItem(
                         text = { Text("Archive") },
                         onClick = { onActionMenuChange(false); onAction("archived", null, false) },

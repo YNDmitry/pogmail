@@ -366,6 +366,13 @@ private fun AuthenticatedApp(
                     messages = cache.dao().observeMessages(),
                     folders = cache.dao().observeFolders(),
                     onOpenMessage = { selectedMessage = it },
+                    onBulkAction = { ids, action ->
+                        scope.launch {
+                            val updated = messageRepository.updateMany(session, ids, read = if (action == "read") true else null, status = action.takeIf { it != "read" })
+                            if (updated != session) onSessionUpdated(updated)
+                            syncRepository.sync(updated)
+                        }
+                    },
                 )
 
                 AppDestination.Search -> SearchScreen(

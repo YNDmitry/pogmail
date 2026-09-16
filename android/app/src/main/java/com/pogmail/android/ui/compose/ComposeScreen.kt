@@ -107,7 +107,7 @@ fun ComposeScreen(
                     sending = true
                     error = null
                     try {
-                        val sent = composeRepository.send(
+                        val sent = composeRepository.sendDraft(
                             session,
                             MobileComposeRequest(
                                 mailboxId = requireNotNull(selectedSender).id,

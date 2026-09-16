@@ -11,6 +11,16 @@ class MobileMessageRepository(
     private val apiClient: MobileApiClient,
     private val sessionRepository: MobileSessionRepository,
 ) {
+    suspend fun updateMany(session: MobileSession, ids: List<String>, read: Boolean? = null, status: String? = null): MobileSession {
+        val active = sessionRepository.refreshIfExpiring(session)
+        try { apiClient.updateMessages(active.accessToken, ids, read, status); return active }
+        catch (error: MobileApiException) {
+            if (error.statusCode != 401) throw error
+            val refreshed = sessionRepository.refresh(active)
+            apiClient.updateMessages(refreshed.accessToken, ids, read, status)
+            return refreshed
+        }
+    }
     suspend fun load(session: MobileSession, messageId: String): LoadedMobileMessage {
         val activeSession = sessionRepository.refreshIfExpiring(session)
         return try {

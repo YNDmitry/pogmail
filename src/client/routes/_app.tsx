@@ -425,7 +425,7 @@ function AppLayout() {
                     <ScrollFade
                       className="h-full"
                       viewportRef={viewport}
-                      viewportClassName="h-full px-3 py-3 sm:px-5 sm:py-5 lg:px-6"
+                      viewportClassName="app-scroll-viewport h-full px-3 py-3 sm:px-5 sm:py-5 lg:px-6"
                       fadeColor="var(--pogpin-shell-panel)"
                     >
                       <Outlet />

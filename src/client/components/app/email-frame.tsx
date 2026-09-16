@@ -42,13 +42,56 @@ export function EmailFrame({
 		fitHeight();
 
 		const document = frame.current?.contentDocument;
-		if (!document || typeof ResizeObserver === "undefined") return;
+		if (!document) return;
+
+		// The frame is deliberately tall enough for the whole message, so it must
+		// never become a second vertical scroll container. Wheel gestures over an
+		// iframe belong to its browsing-context boundary, even when it only overflows
+		// by a pixel; the parent-level relay below sends them to the reader viewport.
+		document.documentElement.style.setProperty("overflow", "hidden", "important");
+		document.body.style.setProperty("overflow", "hidden", "important");
+
+		if (typeof ResizeObserver === "undefined") return;
 		observer.current = new ResizeObserver(fitHeight);
 		observer.current.observe(document.body);
 		observer.current.observe(document.documentElement);
 	}, [fitHeight]);
 
-	useEffect(() => () => observer.current?.disconnect(), []);
+	useEffect(() => {
+		const relayScroll = (event: WheelEvent) => {
+			const element = frame.current;
+			if (!element || event.ctrlKey) return;
+			const bounds = element.getBoundingClientRect();
+			const pointerIsOverFrame =
+				event.clientX >= bounds.left &&
+				event.clientX <= bounds.right &&
+				event.clientY >= bounds.top &&
+				event.clientY <= bounds.bottom;
+			if (!pointerIsOverFrame) return;
+			const scrollViewport = element.ownerDocument.querySelector<HTMLElement>(
+				".app-scroll-viewport",
+			);
+			if (!scrollViewport) return;
+			const unit =
+				event.deltaMode === WheelEvent.DOM_DELTA_LINE
+					? 16
+					: event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+							? scrollViewport.clientHeight
+							: 1;
+			event.preventDefault();
+			scrollViewport.scrollTop += event.deltaY * unit;
+			scrollViewport.scrollLeft += event.deltaX * unit;
+		};
+
+		window.addEventListener("wheel", relayScroll, {
+			capture: true,
+			passive: false,
+		});
+		return () => {
+			observer.current?.disconnect();
+			window.removeEventListener("wheel", relayScroll, true);
+		};
+	}, []);
 
 	return (
 		<iframe

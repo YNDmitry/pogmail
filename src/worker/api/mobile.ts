@@ -12,6 +12,7 @@ import { requireMobileAuth } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
 import { safeEmailHtml } from "../email/html-safety";
 import { canSendFrom, listAccessibleMailboxIds, listAccessibleMailboxes } from "../mailboxes/access";
+import { serveObject } from "../storage";
 import { composeInput, queueComposedMessage } from "./send";
 import { parseBody, parseQuery } from "./_util";
 
@@ -213,6 +214,31 @@ mobileRoutes.get("/messages/:id", requireMobileAuth, async (c) => {
 		.all();
 
 	return c.json({ ...message, bodyHtml: safeEmailHtml(message.bodyHtml), attachments });
+});
+
+/** Streams one attachment after proving the device can read its parent message. */
+mobileRoutes.get("/messages/:id/attachments/:attachmentId", requireMobileAuth, async (c) => {
+	const mailboxIds = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
+	if (mailboxIds.length === 0) throw new HTTPException(404, { message: "Attachment not found" });
+	const attachment = await c
+		.get("db")
+		.select({
+			filename: messageAttachments.filename,
+			r2Key: messageAttachments.r2Key,
+		})
+		.from(messageAttachments)
+		.innerJoin(messages, eq(messages.id, messageAttachments.messageId))
+		.where(and(
+			eq(messages.id, c.req.param("id")),
+			eq(messageAttachments.id, c.req.param("attachmentId")),
+			inArray(messages.mailboxId, mailboxIds),
+		))
+		.get();
+	if (!attachment) throw new HTTPException(404, { message: "Attachment not found" });
+
+	const response = await serveObject(c.env, attachment.r2Key, attachment.filename);
+	response.headers.set("x-content-type-options", "nosniff");
+	return response;
 });
 
 mobileRoutes.get("/senders", requireMobileAuth, async (c) => {

@@ -49,6 +49,7 @@ import com.pogmail.android.data.auth.PasskeyAuthenticator
 import com.pogmail.android.data.auth.InstanceUrlStore
 import com.pogmail.android.data.cache.MailCacheDatabase
 import com.pogmail.android.data.cache.MailSyncRepository
+import com.pogmail.android.data.mail.MobileAttachmentRepository
 import com.pogmail.android.data.mail.MobileComposeRepository
 import com.pogmail.android.data.mail.MobileMessageRepository
 import com.pogmail.android.ui.compose.ComposeDraft
@@ -176,6 +177,7 @@ fun PogmailApp(
             session = state.session,
             instanceUrl = instanceUrlStore.requireUrl(),
             sessionRepository = sessionRepository,
+            attachmentRepository = MobileAttachmentRepository(mobileApiClient, sessionRepository),
             composeRepository = MobileComposeRepository(mobileApiClient, sessionRepository),
             messageRepository = MobileMessageRepository(mobileApiClient, sessionRepository),
             syncRepository = syncRepository,
@@ -222,6 +224,7 @@ private fun AuthenticatedApp(
     session: MobileSession,
     instanceUrl: String,
     sessionRepository: MobileSessionRepository,
+    attachmentRepository: MobileAttachmentRepository,
     composeRepository: MobileComposeRepository,
     messageRepository: MobileMessageRepository,
     syncRepository: MailSyncRepository,
@@ -286,6 +289,7 @@ private fun AuthenticatedApp(
                 modifier = contentModifier,
                 message = openedMessage,
                 session = session,
+                attachmentRepository = attachmentRepository,
                 messageRepository = messageRepository,
                 onSessionUpdated = onSessionUpdated,
                 onReply = {

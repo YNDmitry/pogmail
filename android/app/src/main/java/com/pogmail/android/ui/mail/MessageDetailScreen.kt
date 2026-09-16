@@ -35,21 +35,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.pogmail.android.data.auth.MobileMessageAttachment
 import com.pogmail.android.data.auth.MobileMessageDetail
 import com.pogmail.android.data.auth.MobileSession
+import com.pogmail.android.data.mail.MobileAttachmentRepository
 import com.pogmail.android.data.mail.MobileMessageRepository
 import com.pogmail.android.ui.model.MailPreview
+import kotlinx.coroutines.launch
 
 @Composable
 fun MessageDetailScreen(
     modifier: Modifier = Modifier,
     message: MailPreview,
     session: MobileSession,
+    attachmentRepository: MobileAttachmentRepository,
     messageRepository: MobileMessageRepository,
     onSessionUpdated: (MobileSession) -> Unit,
     onReply: () -> Unit,
@@ -59,6 +65,10 @@ fun MessageDetailScreen(
     var error by remember(message.id) { mutableStateOf<String?>(null) }
     var loading by remember(message.id) { mutableStateOf(true) }
     var reloadKey by remember(message.id) { mutableIntStateOf(0) }
+    var openingAttachmentId by remember(message.id) { mutableStateOf<String?>(null) }
+    var attachmentError by remember(message.id) { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(message.id, reloadKey) {
         loading = true
@@ -95,8 +105,28 @@ fun MessageDetailScreen(
                 message = error.orEmpty(),
                 onRetry = { reloadKey += 1 },
             )
-            detail != null -> MessageBody(detail!!, onReply)
+            detail != null -> MessageBody(
+                detail = detail!!,
+                openingAttachmentId = openingAttachmentId,
+                onOpenAttachment = { attachment ->
+                    scope.launch {
+                        openingAttachmentId = attachment.id
+                        attachmentError = null
+                        try {
+                            val downloaded = attachmentRepository.download(context, session, message.id, attachment)
+                            if (downloaded.session != session) onSessionUpdated(downloaded.session)
+                            attachmentRepository.open(context, downloaded.value)
+                        } catch (exception: Exception) {
+                            attachmentError = exception.message ?: "Could not open this attachment."
+                        } finally {
+                            openingAttachmentId = null
+                        }
+                    }
+                },
+                onReply = onReply,
+            )
         }
+        attachmentError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     }
 }
 
@@ -145,7 +175,12 @@ private fun SenderHeader(message: MailPreview) {
 }
 
 @Composable
-private fun MessageBody(detail: MobileMessageDetail, onReply: () -> Unit) {
+private fun MessageBody(
+    detail: MobileMessageDetail,
+    openingAttachmentId: String?,
+    onOpenAttachment: (MobileMessageAttachment) -> Unit,
+    onReply: () -> Unit,
+) {
     val text = detail.bodyText?.takeIf { it.isNotBlank() }
         ?: detail.bodyHtml?.toPlainText()?.takeIf { it.isNotBlank() }
         ?: "This message has no readable text."
@@ -164,9 +199,14 @@ private fun MessageBody(detail: MobileMessageDetail, onReply: () -> Unit) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             detail.attachments.forEach { attachment ->
                 AssistChip(
-                    onClick = {},
-                    enabled = false,
-                    label = { Text("${attachment.filename} · ${attachment.sizeBytes.asFileSize()}") },
+                    onClick = { onOpenAttachment(attachment) },
+                    enabled = openingAttachmentId == null,
+                    label = {
+                        Text(
+                            if (openingAttachmentId == attachment.id) "Downloading ${attachment.filename}…"
+                            else "${attachment.filename} · ${attachment.sizeBytes.asFileSize()}",
+                        )
+                    },
                     leadingIcon = { Icon(Icons.Outlined.AttachFile, contentDescription = null) },
                 )
             }

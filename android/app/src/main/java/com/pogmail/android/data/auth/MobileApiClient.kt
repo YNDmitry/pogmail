@@ -6,6 +6,7 @@ import com.pogmail.android.data.cache.CachedFolder
 import com.pogmail.android.data.cache.CachedMailbox
 import com.pogmail.android.data.cache.CachedMessage
 import com.pogmail.android.data.cache.MailSyncBatch
+import java.io.File
 import java.net.URL
 import java.net.URLEncoder
 import javax.net.ssl.HttpsURLConnection
@@ -99,6 +100,47 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
                 .apply { request.replyToMessageId?.let { put("replyToMessageId", it) } },
             accessToken,
         ).let { response -> MobileSendResult(response.getString("id"), response.getString("jobId")) }
+
+    /** Downloads to app-private storage; callers expose it through FileProvider. */
+    suspend fun downloadAttachment(
+        accessToken: String,
+        messageId: String,
+        attachmentId: String,
+        destination: File,
+    ): String = withContext(Dispatchers.IO) {
+        val encodedMessageId = URLEncoder.encode(messageId, Charsets.UTF_8)
+        val encodedAttachmentId = URLEncoder.encode(attachmentId, Charsets.UTF_8)
+        val baseUrl = instanceUrlStore.requireUrl()
+        val connection = (URL("$baseUrl/api/mobile/messages/$encodedMessageId/attachments/$encodedAttachmentId").openConnection() as HttpsURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 15_000
+            readTimeout = 60_000
+            instanceFollowRedirects = false
+            setRequestProperty("Accept", "application/octet-stream")
+            setRequestProperty("User-Agent", "Pogmail-Android/${BuildConfig.VERSION_NAME}")
+            setRequestProperty("Authorization", "Bearer $accessToken")
+        }
+        try {
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                val payload = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                val message = runCatching { JSONObject(payload).optString("error") }
+                    .getOrDefault("")
+                    .ifBlank { "The server returned HTTP $status." }
+                throw MobileApiException(status, message)
+            }
+            destination.parentFile?.mkdirs()
+            connection.inputStream.use { input ->
+                destination.outputStream().buffered().use { output -> input.copyTo(output) }
+            }
+            connection.contentType?.substringBefore(";")?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+        } catch (exception: Exception) {
+            destination.delete()
+            throw exception
+        } finally {
+            connection.disconnect()
+        }
+    }
 
     private suspend fun requestSession(path: String, body: JSONObject): MobileSession =
         parseSession(requestJson(path, body))

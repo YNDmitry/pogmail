@@ -83,11 +83,19 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
         messageId: String,
         read: Boolean? = null,
         starred: Boolean? = null,
+        status: String? = null,
+        folderId: String? = null,
+        clearFolder: Boolean = false,
+        snoozedUntil: Long? = null,
+        clearSnooze: Boolean = false,
     ): MobileMessageState = requestJson(
         "/messages/${URLEncoder.encode(messageId, Charsets.UTF_8)}",
         JSONObject().apply {
             read?.let { put("read", it) }
             starred?.let { put("starred", it) }
+            status?.let { put("status", it) }
+            if (clearFolder) put("folderId", JSONObject.NULL) else folderId?.let { put("folderId", it) }
+            if (clearSnooze) put("snoozedUntil", JSONObject.NULL) else snoozedUntil?.let { put("snoozedUntil", it) }
         },
         accessToken,
         method = "PATCH",
@@ -96,6 +104,9 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
             id = response.getString("id"),
             read = response.getBoolean("read"),
             starred = response.getBoolean("starred"),
+            status = response.getString("status"),
+            folderId = response.stringOrNull("folderId"),
+            snoozedUntil = response.stringOrNull("snoozedUntil")?.let(::parseDate),
         )
     }
 
@@ -246,7 +257,7 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
                 CachedFolder(item.getString("id"), item.getString("mailboxId"), item.getString("name"), item.stringOrNull("color"), item.getInt("position"))
             },
             messages = json.getJSONArray("messages").mapItems { item ->
-                CachedMessage(item.getString("id"), item.getString("mailboxId"), item.stringOrNull("folderId"), item.stringOrNull("subject"), item.getString("fromAddress"), item.stringOrNull("fromName"), item.stringOrNull("snippet"), parseDate(item.getString("receivedAt")), item.getBoolean("read"), item.getBoolean("starred"), item.getBoolean("hasAttachments"))
+                CachedMessage(item.getString("id"), item.getString("mailboxId"), item.stringOrNull("folderId"), item.getString("status"), item.stringOrNull("snoozedUntil")?.let(::parseDate), item.stringOrNull("subject"), item.getString("fromAddress"), item.stringOrNull("fromName"), item.stringOrNull("snippet"), parseDate(item.getString("receivedAt")), item.getBoolean("read"), item.getBoolean("starred"), item.getBoolean("hasAttachments"))
             },
             deletedMailboxIds = tombstones.filterItems { it.getString("resourceType") == "mailbox" }.map { it.getString("resourceId") },
             deletedFolderIds = tombstones.filterItems { it.getString("resourceType") == "folder" }.map { it.getString("resourceId") },
@@ -293,6 +304,9 @@ data class MobileMessageState(
     val id: String,
     val read: Boolean,
     val starred: Boolean,
+    val status: String,
+    val folderId: String?,
+    val snoozedUntil: Long?,
 )
 
 data class MobileSender(

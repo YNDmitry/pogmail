@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,14 +55,19 @@ fun InboxScreen(
     messages: Flow<List<CachedMessage>>,
     onOpenMessage: (MailPreview) -> Unit,
 ) {
-    var selectedFilter by remember { mutableStateOf("Primary") }
+    var selectedFilter by remember { mutableStateOf(MailboxView.Inbox) }
     val cached by messages.collectAsState(emptyList())
     val previews = cached
         .filter { message ->
             when (selectedFilter) {
-                "Unread" -> !message.read
-                "Starred" -> message.starred
-                else -> true
+                MailboxView.Inbox -> message.status == "received" && message.folderId == null && (message.snoozedUntil == null || message.snoozedUntil <= System.currentTimeMillis())
+                MailboxView.Unread -> !message.read
+                MailboxView.Starred -> message.starred
+                MailboxView.Sent -> message.status == "sent"
+                MailboxView.Archive -> message.status == "archived"
+                MailboxView.Spam -> message.status == "spam"
+                MailboxView.Trash -> message.status == "trash"
+                MailboxView.Snoozed -> (message.snoozedUntil ?: 0) > System.currentTimeMillis()
             }
         }
         .map { message -> MailPreview(
@@ -74,6 +80,9 @@ fun InboxScreen(
             unread = !message.read,
             mailboxId = message.mailboxId,
             starred = message.starred,
+            status = message.status,
+            folderId = message.folderId,
+            snoozedUntil = message.snoozedUntil,
         ) }
     val unreadCount = previews.count { it.unread }
 
@@ -83,7 +92,7 @@ fun InboxScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item { InboxTopBar() }
-        item { MailboxHeading(accountAddress, unreadCount) }
+        item { MailboxHeading(selectedFilter.label, accountAddress, unreadCount) }
         item { FilterRow(selected = selectedFilter, onSelect = { selectedFilter = it }) }
         item {
             Text(
@@ -133,9 +142,9 @@ private fun InboxTopBar() {
 }
 
 @Composable
-private fun MailboxHeading(accountAddress: String, unreadCount: Int) {
+private fun MailboxHeading(title: String, accountAddress: String, unreadCount: Int) {
     Column(modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp)) {
-        Text("Inbox", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
+        Text(title, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
         Row(
             modifier = Modifier.padding(top = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -165,13 +174,13 @@ private fun MailboxHeading(accountAddress: String, unreadCount: Int) {
 }
 
 @Composable
-private fun FilterRow(selected: String, onSelect: (String) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("Primary", "Unread", "Starred").forEach { filter ->
+private fun FilterRow(selected: MailboxView, onSelect: (MailboxView) -> Unit) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(MailboxView.entries) { filter ->
             FilterChip(
                 selected = selected == filter,
                 onClick = { onSelect(filter) },
-                label = { Text(filter) },
+                label = { Text(filter.label) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primary,
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
@@ -179,6 +188,17 @@ private fun FilterRow(selected: String, onSelect: (String) -> Unit) {
             )
         }
     }
+}
+
+private enum class MailboxView(val label: String) {
+    Inbox("Inbox"),
+    Unread("Unread"),
+    Starred("Starred"),
+    Sent("Sent"),
+    Archive("Archive"),
+    Spam("Spam"),
+    Trash("Trash"),
+    Snoozed("Snoozed"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

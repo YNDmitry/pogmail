@@ -18,12 +18,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Reply
+import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Report
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -73,6 +80,8 @@ fun MessageDetailScreen(
     var actionError by remember(message.id) { mutableStateOf<String?>(null) }
     var starred by remember(message.id) { mutableStateOf(message.starred) }
     var updatingStar by remember(message.id) { mutableStateOf(false) }
+    var actionMenuOpen by remember(message.id) { mutableStateOf(false) }
+    var updatingAction by remember(message.id) { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -124,6 +133,32 @@ fun MessageDetailScreen(
                     }
                 }
             },
+            actionMenuOpen = actionMenuOpen,
+            updatingAction = updatingAction,
+            onActionMenuChange = { actionMenuOpen = it },
+            onAction = { status, snoozedUntil, clearSnooze ->
+                scope.launch {
+                    updatingAction = true
+                    actionError = null
+                    try {
+                        val updated = messageRepository.update(
+                            session = session,
+                            messageId = message.id,
+                            status = status,
+                            clearFolder = status != null,
+                            snoozedUntil = snoozedUntil,
+                            clearSnooze = status != null || clearSnooze,
+                        )
+                        if (updated.session != session) onSessionUpdated(updated.session)
+                        onMessageStateChanged(updated.message)
+                        if (status != null || snoozedUntil != null || clearSnooze) onBack()
+                    } catch (exception: Exception) {
+                        actionError = exception.message ?: "Could not update this message."
+                    } finally {
+                        updatingAction = false
+                    }
+                }
+            },
             onBack = onBack,
         )
         Text(message.subject, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
@@ -169,6 +204,10 @@ private fun ReaderToolbar(
     starred: Boolean,
     updatingStar: Boolean,
     onToggleStar: () -> Unit,
+    actionMenuOpen: Boolean,
+    updatingAction: Boolean,
+    onActionMenuChange: (Boolean) -> Unit,
+    onAction: (status: String?, snoozedUntil: Long?, clearSnooze: Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     Row(
@@ -185,6 +224,45 @@ private fun ReaderToolbar(
                 contentDescription = if (starred) "Remove star" else "Add star",
                 tint = if (starred) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        Box {
+            IconButton(onClick = { onActionMenuChange(true) }, enabled = !updatingAction) {
+                Icon(Icons.Outlined.MoreVert, contentDescription = "Message actions")
+            }
+            DropdownMenu(expanded = actionMenuOpen, onDismissRequest = { onActionMenuChange(false) }) {
+                if (updatingAction) {
+                    DropdownMenuItem(text = { Text("Updating…") }, onClick = {}, enabled = false)
+                } else {
+                    DropdownMenuItem(
+                        text = { Text("Archive") },
+                        onClick = { onActionMenuChange(false); onAction("archived", null, false) },
+                        leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Move to inbox") },
+                        onClick = { onActionMenuChange(false); onAction("received", null, false) },
+                        leadingIcon = { Icon(Icons.Outlined.Archive, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Snooze until tomorrow") },
+                        onClick = {
+                            onActionMenuChange(false)
+                            onAction(null, tomorrowAtNine(), false)
+                        },
+                        leadingIcon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Move to spam") },
+                        onClick = { onActionMenuChange(false); onAction("spam", null, false) },
+                        leadingIcon = { Icon(Icons.Outlined.Report, contentDescription = null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Move to trash") },
+                        onClick = { onActionMenuChange(false); onAction("trash", null, false) },
+                        leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                    )
+                }
+            }
         }
     }
 }
@@ -289,3 +367,12 @@ private fun Long.asFileSize(): String = when {
     this < 1_024 * 1_024 -> "${this / 1_024} KB"
     else -> "${"%.1f".format(this / (1_024.0 * 1_024.0))} MB"
 }
+
+private fun tomorrowAtNine(): Long = java.time.ZonedDateTime.now()
+    .plusDays(1)
+    .withHour(9)
+    .withMinute(0)
+    .withSecond(0)
+    .withNano(0)
+    .toInstant()
+    .toEpochMilli()

@@ -294,8 +294,14 @@ private fun AuthenticatedApp(
                 onSessionUpdated = onSessionUpdated,
                 onMessageStateChanged = { updated ->
                     scope.launch {
-                        cache.dao().setMessageRead(updated.id, updated.read)
-                        cache.dao().setMessageStarred(updated.id, updated.starred)
+                        cache.dao().setMessageState(
+                            updated.id,
+                            updated.read,
+                            updated.starred,
+                            updated.status,
+                            updated.folderId,
+                            updated.snoozedUntil,
+                        )
                     }
                 },
                 onReply = {

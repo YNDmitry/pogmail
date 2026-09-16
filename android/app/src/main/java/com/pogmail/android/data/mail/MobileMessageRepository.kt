@@ -27,14 +27,19 @@ class MobileMessageRepository(
         messageId: String,
         read: Boolean? = null,
         starred: Boolean? = null,
+        status: String? = null,
+        folderId: String? = null,
+        clearFolder: Boolean = false,
+        snoozedUntil: Long? = null,
+        clearSnooze: Boolean = false,
     ): UpdatedMobileMessage {
         val activeSession = sessionRepository.refreshIfExpiring(session)
         return try {
-            UpdatedMobileMessage(activeSession, apiClient.updateMessage(activeSession.accessToken, messageId, read, starred))
+            UpdatedMobileMessage(activeSession, apiClient.updateMessage(activeSession.accessToken, messageId, read, starred, status, folderId, clearFolder, snoozedUntil, clearSnooze))
         } catch (error: MobileApiException) {
             if (error.statusCode != 401) throw error
             val refreshedSession = sessionRepository.refresh(activeSession)
-            UpdatedMobileMessage(refreshedSession, apiClient.updateMessage(refreshedSession.accessToken, messageId, read, starred))
+            UpdatedMobileMessage(refreshedSession, apiClient.updateMessage(refreshedSession.accessToken, messageId, read, starred, status, folderId, clearFolder, snoozedUntil, clearSnooze))
         }
     }
 }

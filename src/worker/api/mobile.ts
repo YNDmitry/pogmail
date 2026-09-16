@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
-import { folders, messageAttachments, messages, mobileDeviceSessions, mobileSyncEvents, passkeyChallenges, passkeys, users } from "@/db/schema";
+import { folders, MESSAGE_STATUSES, messageAttachments, messages, mobileDeviceSessions, mobileSyncEvents, passkeyChallenges, passkeys, users } from "@/db/schema";
 import { mobileLoginInput, mobilePasskeyVerifyInput, mobileRefreshInput } from "@/shared/contract/mobile";
 import { z } from "zod";
 import { audit } from "../audit";
@@ -12,7 +12,7 @@ import { requireMobileAuth } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
 import { notifyMailbox } from "../realtime/notify";
 import { safeEmailHtml } from "../email/html-safety";
-import { canSendFrom, listAccessibleMailboxIds, listAccessibleMailboxes } from "../mailboxes/access";
+import { canSendFrom, getPermission, hasAtLeast, listAccessibleMailboxIds, listAccessibleMailboxes } from "../mailboxes/access";
 import { serveObject } from "../storage";
 import { composeInput, queueComposedMessage } from "./send";
 import { parseBody, parseQuery } from "./_util";
@@ -40,7 +40,12 @@ const mobileSendInput = z.object({
 const mobileMessagePatchInput = z.object({
 	read: z.boolean().optional(),
 	starred: z.boolean().optional(),
-}).refine((input) => input.read !== undefined || input.starred !== undefined, {
+	status: z.enum(MESSAGE_STATUSES).optional(),
+	/** A folder is tied to a mailbox; `null` clears a prior custom folder. */
+	folderId: z.string().min(1).nullable().optional(),
+	/** Epoch milliseconds. `null` brings a snoozed message back immediately. */
+	snoozedUntil: z.number().int().nullable().optional(),
+}).refine((input) => Object.values(input).some((value) => value !== undefined), {
 	message: "Provide at least one message change",
 });
 
@@ -248,7 +253,11 @@ mobileRoutes.get("/messages/:id/attachments/:attachmentId", requireMobileAuth, a
 	return response;
 });
 
-/** Narrow mobile action surface — a device may only alter state on readable mail. */
+/**
+ * Narrow mobile action surface. Reading a shared mailbox is distinct from
+ * changing it, so a read-only collaborator receives the same 403 as the web
+ * client rather than silently changing somebody else's mail.
+ */
 mobileRoutes.patch("/messages/:id", requireMobileAuth, async (c) => {
 	const input = await parseBody(c, mobileMessagePatchInput);
 	const mailboxIds = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
@@ -260,6 +269,24 @@ mobileRoutes.patch("/messages/:id", requireMobileAuth, async (c) => {
 		.where(and(eq(messages.id, c.req.param("id")), inArray(messages.mailboxId, mailboxIds)))
 		.get();
 	if (!message) throw new HTTPException(404, { message: "Message not found" });
+	const permission = await getPermission(c.get("db"), c.get("user"), message.mailboxId);
+	if (!hasAtLeast(permission, "full_access")) throw new HTTPException(403, { message: "Read-only access to this mailbox" });
+
+	if (input.folderId) {
+		const folder = await c
+			.get("db")
+			.select({ mailboxId: folders.mailboxId })
+			.from(folders)
+			.where(eq(folders.id, input.folderId))
+			.get();
+		if (!folder) throw new HTTPException(404, { message: "Folder not found" });
+		if (folder.mailboxId !== message.mailboxId) {
+			throw new HTTPException(422, { message: "A folder can only contain mail from its own mailbox" });
+		}
+	}
+
+	const movesToFolder = input.folderId !== undefined && input.folderId !== null;
+	const movesToSystemView = !movesToFolder && input.status !== undefined && input.status !== "received";
 
 	const updated = await c
 		.get("db")
@@ -267,9 +294,21 @@ mobileRoutes.patch("/messages/:id", requireMobileAuth, async (c) => {
 		.set({
 			...(input.read !== undefined ? { read: input.read } : {}),
 			...(input.starred !== undefined ? { starred: input.starred } : {}),
+			...(movesToFolder ? { status: "received" as const } : input.status !== undefined ? { status: input.status } : {}),
+			...(movesToSystemView ? { folderId: null } : input.folderId !== undefined ? { folderId: input.folderId } : {}),
+			...(input.snoozedUntil !== undefined
+				? { snoozedUntil: input.snoozedUntil === null ? null : new Date(input.snoozedUntil) }
+				: {}),
 		})
 		.where(eq(messages.id, message.id))
-		.returning({ id: messages.id, read: messages.read, starred: messages.starred })
+		.returning({
+			id: messages.id,
+			read: messages.read,
+			starred: messages.starred,
+			status: messages.status,
+			folderId: messages.folderId,
+			snoozedUntil: messages.snoozedUntil,
+		})
 		.get();
 	await notifyMailbox(c.env, message.mailboxId, { type: "message.changed", mailboxId: message.mailboxId });
 	audit(c, { action: "message.mobile_update", mailboxId: message.mailboxId, messageId: message.id });

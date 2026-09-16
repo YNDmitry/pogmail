@@ -63,6 +63,9 @@ fun SearchScreen(
                 !message.read,
                 mailboxId = message.mailboxId,
                 starred = message.starred,
+                status = message.status,
+                folderId = message.folderId,
+                snoozedUntil = message.snoozedUntil,
             )
         }
         .filter { message ->

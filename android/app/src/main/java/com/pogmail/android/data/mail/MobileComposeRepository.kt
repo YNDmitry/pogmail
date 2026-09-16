@@ -20,6 +20,15 @@ class MobileComposeRepository(
         apiClient.send(active.accessToken, request)
     }
 
+    /** Mobile uses the same draft-first send pipeline as the web composer. */
+    suspend fun sendDraft(session: MobileSession, request: MobileComposeRequest): AuthenticatedSend = authenticated(session) { active ->
+        // The mobile reply endpoint resolves the internal message id into RFC
+        // threading headers. New mail can already use the shared draft engine.
+        if (request.replyToMessageId != null) return@authenticated apiClient.send(active.accessToken, request)
+        val draftId = apiClient.createDraft(active.accessToken, request)
+        apiClient.sendDraft(active.accessToken, draftId)
+    }
+
     private suspend fun <T> authenticated(
         session: MobileSession,
         request: suspend (MobileSession) -> T,

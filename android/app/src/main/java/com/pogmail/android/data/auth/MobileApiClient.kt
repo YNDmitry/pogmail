@@ -140,6 +140,24 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
             accessToken,
         ).let { response -> MobileSendResult(response.getString("id"), response.getString("jobId")) }
 
+    suspend fun createDraft(accessToken: String, request: MobileComposeRequest): String = requestWorkspaceJson(
+        "/api/send/drafts",
+        JSONObject()
+            .put("mailboxId", request.mailboxId)
+            .put("to", org.json.JSONArray(request.recipients.map { JSONObject().put("address", it) }))
+            .put("cc", org.json.JSONArray())
+            .put("bcc", org.json.JSONArray())
+            .put("subject", request.subject)
+            .put("bodyText", request.bodyText),
+        accessToken,
+    ).getString("id")
+
+    suspend fun sendDraft(accessToken: String, draftId: String): MobileSendResult = requestWorkspaceJson(
+        "/api/send/drafts/${URLEncoder.encode(draftId, Charsets.UTF_8)}/send",
+        JSONObject(),
+        accessToken,
+    ).let { MobileSendResult(it.getString("id"), it.getString("jobId")) }
+
     /** Downloads to app-private storage; callers expose it through FileProvider. */
     suspend fun downloadAttachment(
         accessToken: String,
@@ -193,6 +211,9 @@ class MobileApiClient(private val instanceUrlStore: InstanceUrlStore) {
         accessToken: String? = null,
         method: String = "POST",
     ): JSONObject = requestJsonAt(instanceUrlStore.requireUrl(), "/api/mobile$path", body, accessToken, method)
+
+    private suspend fun requestWorkspaceJson(path: String, body: JSONObject?, accessToken: String): JSONObject =
+        requestJsonAt(instanceUrlStore.requireUrl(), path, body, accessToken)
 
     private suspend fun requestJsonAt(
         baseUrl: String,

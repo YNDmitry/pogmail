@@ -50,6 +50,14 @@ function patchRequest(accessToken: string, messageId: string, body: unknown) {
 	});
 }
 
+function bulkPatchRequest(accessToken: string, body: unknown) {
+	return new Request("https://pogmail.test/api/mobile/messages/bulk", {
+		method: "PATCH",
+		headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+		body: JSON.stringify(body),
+	});
+}
+
 describe("mobile message actions", () => {
 	it("marks accessible mail read and starred", async () => {
 		const { db, message, accessToken } = await seed();
@@ -114,5 +122,17 @@ describe("mobile message actions", () => {
 
 		const response = await api.fetch(patchRequest(readerSession.accessToken, message.id, { starred: true }), env);
 		expect(response.status).toBe(403);
+	});
+
+	it("updates several writable messages in one scoped request", async () => {
+		const { db, message, accessToken } = await seed();
+		const second = await db.insert(messages).values({
+			mailboxId: message.mailboxId, threadId: crypto.randomUUID(), direction: "inbound", status: "received",
+			fromAddress: "second@example.test", toAddresses: [], receivedAt: new Date(),
+		}).returning().get();
+		const response = await api.fetch(bulkPatchRequest(accessToken, { ids: [message.id, second.id], read: true, status: "archived" }), env);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({ updated: 2, ids: expect.arrayContaining([message.id, second.id]) });
+		expect(await db.select().from(messages).where(eq(messages.id, second.id)).get()).toMatchObject({ read: true, status: "archived" });
 	});
 });

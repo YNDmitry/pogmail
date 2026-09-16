@@ -48,6 +48,9 @@ const mobileMessagePatchInput = z.object({
 }).refine((input) => Object.values(input).some((value) => value !== undefined), {
 	message: "Provide at least one message change",
 });
+const mobileBulkPatchInput = mobileMessagePatchInput.extend({
+	ids: z.array(z.string().min(1)).min(1).max(100),
+});
 
 const mobileMessageColumns = {
 	id: messages.id,
@@ -264,6 +267,28 @@ mobileRoutes.get("/messages/:id/attachments/:attachmentId", requireMobileAuth, a
  * changing it, so a read-only collaborator receives the same 403 as the web
  * client rather than silently changing somebody else's mail.
  */
+mobileRoutes.patch("/messages/bulk", requireMobileAuth, async (c) => {
+	const { ids, ...input } = await parseBody(c, mobileBulkPatchInput);
+	const mailboxIds = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
+	if (mailboxIds.length === 0) return c.json({ updated: 0 });
+	const rows = await c.get("db").select({ id: messages.id, mailboxId: messages.mailboxId })
+		.from(messages).where(and(inArray(messages.id, ids), inArray(messages.mailboxId, mailboxIds))).all();
+	const writable = new Set<string>();
+	for (const mailboxId of new Set(rows.map((row) => row.mailboxId))) {
+		if (hasAtLeast(await getPermission(c.get("db"), c.get("user"), mailboxId), "full_access")) writable.add(mailboxId);
+	}
+	const targetIds = rows.filter((row) => writable.has(row.mailboxId)).map((row) => row.id);
+	if (targetIds.length === 0) return c.json({ updated: 0 });
+	const updated = await c.get("db").update(messages).set({
+		...(input.read !== undefined ? { read: input.read } : {}),
+		...(input.starred !== undefined ? { starred: input.starred } : {}),
+		...(input.status !== undefined ? { status: input.status, folderId: input.status === "received" ? undefined : null } : {}),
+	}).where(inArray(messages.id, targetIds)).returning({ id: messages.id, mailboxId: messages.mailboxId }).all();
+	await Promise.all([...new Set(updated.map((row) => row.mailboxId))].map((mailboxId) => notifyMailbox(c.env, mailboxId, { type: "message.changed", mailboxId })));
+	audit(c, { action: "message.mobile_bulk_update", metadata: { count: updated.length } });
+	return c.json({ updated: updated.length, ids: updated.map((row) => row.id) });
+});
+
 mobileRoutes.patch("/messages/:id", requireMobileAuth, async (c) => {
 	const input = await parseBody(c, mobileMessagePatchInput);
 	const mailboxIds = await listAccessibleMailboxIds(c.get("db"), c.get("user"));

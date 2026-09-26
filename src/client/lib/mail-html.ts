@@ -9,11 +9,11 @@
  */
 
 export function escapeHtml(value: string): string {
-	return value
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;");
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /**
@@ -22,16 +22,33 @@ export function escapeHtml(value: string): string {
  * plain-text draft, and it keeps a quoted reply looking the way it was typed.
  */
 export function textToHtml(text: string | null | undefined): string {
-	const value = (text ?? "").replace(/\r\n/g, "\n");
-	if (!value.trim()) return "";
+  const value = (text ?? "").replace(/\r\n/g, "\n");
+  if (!value.trim()) return "";
 
-	return value
-		.split(/\n{2,}/)
-		.map((block) => `<p>${escapeHtml(block).split("\n").join("<br>")}</p>`)
-		.join("");
+  return value
+    .split(/\n{2,}/)
+    .map((block) => `<p>${escapeHtml(block).split("\n").join("<br>")}</p>`)
+    .join("");
 }
 
 /** Whether a body carries anything a recipient would see. */
 export function htmlHasContent(html: string): boolean {
-	return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim().length > 0;
+  return (
+    html
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .trim().length > 0
+  );
+}
+
+export function toPlainText(html: unknown): string {
+  if (typeof html !== "string") {
+    return "";
+  }
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6])>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }

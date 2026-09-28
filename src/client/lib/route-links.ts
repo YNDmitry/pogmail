@@ -13,13 +13,19 @@ import type { AnyRouter } from "@tanstack/react-router";
  * ⌘-click, shift-click and the browser's own status bar keep working, because
  * those are exactly the cases this hands back.
  */
-export function interceptRouterLinks(router: AnyRouter) {
+export function interceptRouterLinks(router: AnyRouter, onNavigate?: () => void) {
 	return (event: MouseEvent<HTMLElement>) => {
 		// Anything but a plain primary click belongs to the browser.
 		if (event.defaultPrevented || event.button !== 0) return;
 		if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
-		const anchor = (event.target as HTMLElement | null)?.closest?.("a");
+		const anchor = (event.target as unknown as {
+			closest?: (selector: string) => {
+				getAttribute(name: string): string | null;
+				target: string;
+				hasAttribute(name: string): boolean;
+			} | null;
+		} | null)?.closest?.("a");
 		if (!anchor) return;
 
 		const href = anchor.getAttribute("href");
@@ -29,6 +35,7 @@ export function interceptRouterLinks(router: AnyRouter) {
 		if (!href.startsWith("/") || href.startsWith("//")) return;
 
 		event.preventDefault();
+		onNavigate?.();
 		const [pathname = "/", search = ""] = href.split("?");
 		void router.navigate({
 			to: pathname,

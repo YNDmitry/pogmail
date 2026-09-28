@@ -128,13 +128,14 @@ function Profile() {
 				<h2 className="display text-base">Your details</h2>
 
 				<Card className="p-5">
-					<div className="mb-5 flex flex-wrap items-center gap-4">
+					<div className="mb-5 flex min-w-0 flex-wrap items-center gap-4">
 						<Avatar className="size-14">
 							{session.data?.avatarKey ? <AvatarImage src={`/api/files/${encodeURIComponent(session.data.avatarKey)}`} alt="" /> : null}
 							<AvatarFallback>{initials(session.data?.name ?? "Account")}</AvatarFallback>
 						</Avatar>
-						<div className="space-y-2">
+						<div className="min-w-0 flex-1 basis-44 space-y-2">
 							<Input
+								className="max-w-full"
 								type="file"
 								aria-label="Upload profile photo"
 								accept="image/png,image/jpeg,image/webp,image/gif"
@@ -148,7 +149,7 @@ function Profile() {
 							) : null}
 						</div>
 					</div>
-					<p className="machine mb-5 text-xs text-muted-foreground">{session.data?.email}</p>
+					<p className="machine mb-5 break-all text-xs text-muted-foreground">{session.data?.email}</p>
 					{profile.data ? <form
 						className="space-y-4"
 						onSubmit={async (event) => {

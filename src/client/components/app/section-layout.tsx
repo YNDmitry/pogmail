@@ -27,14 +27,14 @@ export function SectionLayout({
   children: ReactNode;
 }) {
   return (
-    <div className="mx-auto space-y-6 px-4 py-8">
+    <div className="mx-auto min-w-0 space-y-6 px-4 py-8">
       <PageHeader
         transitionName="section-heading"
         title={title}
         description={description}
       />
 
-      <div className="grid gap-8 lg:grid-cols-[11rem_minmax(0,1fr)]">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-8 lg:grid-cols-[11rem_minmax(0,1fr)]">
         <SectionNav links={links} />
         <div className="min-w-0">{children}</div>
       </div>

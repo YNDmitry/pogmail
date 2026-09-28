@@ -1615,6 +1615,37 @@
   caret-color: var(--primary);
 }
 
+/* The actual email is composed on paper, like its sent-message preview.
+   Keep the compact settings editors on the application's dark surface. */
+.maily-compose-editor:not(.maily-editor-compact) {
+  --mly-color-white: #fff;
+  --mly-color-black: #171717;
+  --mly-color-soft-gray: #f5f5f5;
+  --mly-color-midnight-gray: #333;
+  --mly-color-gray-50: #fafafa;
+  --mly-color-gray-100: #f5f5f5;
+  --mly-color-gray-200: #e5e5e5;
+  --mly-color-gray-300: #d4d4d4;
+  --mly-color-gray-400: #a3a3a3;
+  --mly-color-gray-500: #737373;
+  --mly-color-gray-600: #525252;
+  --mly-color-gray-700: #404040;
+  --mly-color-gray-900: #171717;
+  --mly-color-gray-950: #0a0a0a;
+  --placeholder-color: #737373;
+  --bg-color: #fff;
+  --mly-body-background-color: #fff;
+  --mly-container-background-color: #fff;
+  color: #171717;
+  color-scheme: light;
+}
+
+.maily-compose-editor:not(.maily-editor-compact) #mly-editor,
+.maily-compose-editor:not(.maily-editor-compact) .maily-compose-canvas,
+.maily-compose-editor:not(.maily-editor-compact) .ProseMirror {
+  color: #171717 !important;
+}
+
 .maily-compose-editor .ProseMirror .is-editor-empty:first-child::before {
   content: "Write your message… Type / for commands" !important;
 }

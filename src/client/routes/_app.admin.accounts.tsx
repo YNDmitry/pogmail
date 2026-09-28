@@ -168,7 +168,7 @@ function Accounts() {
 						<Input name="password" type="password" required minLength={12} />
 					</Field>
 
-					<div className="grid grid-cols-2 items-end gap-3">
+					<div className="grid gap-3 sm:grid-cols-2 sm:items-end">
 						<Field label="Role">
 							<Choice
 								name="role"

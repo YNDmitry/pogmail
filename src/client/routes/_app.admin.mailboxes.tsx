@@ -148,7 +148,7 @@ function AdminMailboxes() {
 					}}
 				>
 
-					<div className="grid grid-cols-[1fr_1.2fr] gap-3">
+					<div className="grid gap-3 sm:grid-cols-[1fr_1.2fr]">
 						<Field label="Address">
 							<Input name="localPart" required placeholder="hello" className="machine" />
 						</Field>
@@ -169,7 +169,7 @@ function AdminMailboxes() {
 						<Input name="displayName" maxLength={120} />
 					</Field>
 
-					<div className="grid grid-cols-2 gap-3">
+					<div className="grid gap-3 sm:grid-cols-2">
 						<Field label="Type">
 							<Choice
 								name="type"

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { LogOut, Moon, Settings2, Shield, Sun } from "lucide-react";
@@ -31,6 +31,7 @@ export function AccountCard({
 	compact = false,
 	mobile = false,
 	onSignOut,
+	onNavigate,
 }: {
 	name?: string | null;
 	email?: string | null;
@@ -39,6 +40,7 @@ export function AccountCard({
 	compact?: boolean;
 	mobile?: boolean;
 	onSignOut: () => void;
+	onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
 	const [open, setOpen] = useState(false);
 	const { isDark, toggle, mounted } = useThemeToggle({
@@ -114,14 +116,14 @@ export function AccountCard({
 				</div>
 
 				<DropdownMenuItem asChild className="account-menu-item">
-					<Link to="/settings/profile">
+					<Link to="/settings/profile" onClick={onNavigate}>
 						<Settings2 className="size-3.5" />
 						<span>Settings</span>
 					</Link>
 				</DropdownMenuItem>
 				{isAdmin ? (
 					<DropdownMenuItem asChild className="account-menu-item">
-						<Link to="/admin/overview">
+						<Link to="/admin/overview" onClick={onNavigate}>
 							<Shield className="size-3.5" />
 							<span>Administration</span>
 						</Link>

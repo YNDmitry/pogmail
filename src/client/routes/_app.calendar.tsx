@@ -555,7 +555,7 @@ function Calendar() {
   }
 
   return (
-    <div className="mx-auto space-y-5 px-6 py-8">
+    <div className="mx-auto min-w-0 space-y-5 px-2 py-5 sm:px-6 sm:py-8">
       <PageHeader
         title="Calendar"
         description="Events you keep alongside your mail. Invitations you accept land here too."
@@ -572,7 +572,7 @@ function Calendar() {
       />
 
       {/* Where you are, how to move, and which shape you are reading it in. */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <div className="flex items-center gap-1">
           <Button
             size="icon"
@@ -610,34 +610,34 @@ function Calendar() {
         <Tabs
           value={view}
           onValueChange={(next) => show({ view: next as CalendarView })}
-          className="ml-auto"
+          className="order-last w-full sm:order-none sm:ml-auto sm:w-auto"
         >
-          <TabsList className="pogpin-shell-tabs rounded-lg p-1">
+          <TabsList className="pogpin-shell-tabs w-full rounded-lg p-1 sm:w-auto">
             <TabsTrigger
               value="month"
               title="Month (M)"
-              className="pogpin-shell-tab-trigger rounded-md px-3"
+              className="pogpin-shell-tab-trigger flex-1 rounded-md px-3 sm:flex-none"
             >
               Month
             </TabsTrigger>
             <TabsTrigger
               value="week"
               title="Week (W)"
-              className="pogpin-shell-tab-trigger rounded-md px-3"
+              className="pogpin-shell-tab-trigger flex-1 rounded-md px-3 sm:flex-none"
             >
               Week
             </TabsTrigger>
             <TabsTrigger
               value="agenda"
               title="Agenda (A)"
-              className="pogpin-shell-tab-trigger rounded-md px-3"
+              className="pogpin-shell-tab-trigger flex-1 rounded-md px-3 sm:flex-none"
             >
               Agenda
             </TabsTrigger>
           </TabsList>
         </Tabs>
 
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           <input
             ref={icsRef}
             type="file"
@@ -755,7 +755,7 @@ function Calendar() {
                     setDraft(draftForDay(day));
                   }}
                   className={cn(
-                    "min-h-24 border-r border-b border-border p-1.5 text-left transition-colors last:border-r-0",
+                    "min-h-14 min-w-0 border-r border-b border-border p-0.5 text-left transition-colors last:border-r-0 sm:min-h-24 sm:p-1.5",
                     dragOverDay === startOfDay(day).getTime() && "bg-accent",
                     weekend && "bg-[var(--pogpin-shell-fill-soft)]",
                     outside && "opacity-45",
@@ -765,7 +765,7 @@ function Calendar() {
 									    calendar has trained people to expect. */}
                   <button
                     type="button"
-                    className="flex w-full items-center justify-between rounded px-0.5 hover:text-foreground"
+                    className="flex min-h-9 w-full items-center justify-between rounded px-0.5 hover:text-foreground"
                     aria-label={`New event on ${DAY_LONG.format(day)}`}
                     onClick={() => setDraft(draftForDay(day))}
                   >
@@ -782,8 +782,16 @@ function Calendar() {
                   </button>
 
                   <ul className="mt-1 space-y-1">
+                    {dayEvents.length > 0 ? (
+                      <li className="sm:hidden">
+                        <button type="button" className="w-full rounded bg-accent px-0.5 py-1 text-center text-xs font-medium text-primary"
+                          aria-label={`${dayEvents.length} events on ${DAY_LONG.format(day)}`} onClick={() => setOpenDay(day)}>
+                          {dayEvents.length}
+                        </button>
+                      </li>
+                    ) : null}
                     {dayEvents.slice(0, 3).map((event) => (
-                      <li key={event.id}>
+                      <li key={event.id} className="hidden sm:block">
                         <EventChip
                           event={event}
                           day={day}
@@ -797,7 +805,7 @@ function Calendar() {
                     ))}
 
                     {dayEvents.length > 3 ? (
-                      <li>
+                      <li className="hidden sm:block">
                         <button
                           type="button"
                           className="w-full rounded px-1.5 py-0.5 text-left text-[0.6875rem] text-muted-foreground hover:text-foreground"

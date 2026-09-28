@@ -26,7 +26,7 @@ import { ReplyBox } from "@/client/components/app/reply-box";
 import { useToast } from "@/client/components/app/toast-host";
 import { Loader } from "@/client/components/motion/loader";
 import { api } from "@/client/lib/api";
-import { bytes, fullDate, initials, senderLabel } from "@/client/lib/format";
+import { bytes, fullDate, initials, senderLabel, shortDate } from "@/client/lib/format";
 import {
   useDeleteMessage,
   useFolders,
@@ -223,7 +223,7 @@ function Reader() {
   );
 
   return (
-    <article className="mx-auto flex flex-col gap-6 px-6 py-6">
+    <article className="mx-auto flex min-w-0 flex-col gap-6 px-4 py-5 sm:px-6 sm:py-6">
       <Link
         to="/mail/$folder"
         params={{ folder }}
@@ -240,7 +240,7 @@ function Reader() {
             {title || "(no subject)"}
           </h1>
 
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-1 sm:w-auto sm:shrink-0">
             <IconAction
               label={mail.starred ? "Remove star" : "Add star"}
               pressed={mail.starred}
@@ -366,7 +366,7 @@ function Reader() {
           </div>
         ) : null}
 
-        <div className="flex items-start gap-3 border-b border-seam pb-4">
+        <div className="flex flex-wrap items-start gap-3 border-b border-seam pb-4">
           <span
             aria-hidden
             className="grid size-9 shrink-0 place-items-center rounded-full bg-recess text-xs font-semibold text-ink-2"
@@ -383,7 +383,7 @@ function Reader() {
             </p>
             <p className="mt-1 text-xs text-ink-3">
               to{" "}
-              <Machine className="text-ink-3">
+              <Machine className="break-all text-ink-3">
                 {mail.toAddresses.map((entry) => entry.address).join(", ")}
               </Machine>
             </p>
@@ -391,7 +391,7 @@ function Reader() {
 
           <time
             dateTime={mail.receivedAt}
-            className="machine shrink-0 text-xs text-ink-3"
+            className="machine w-full shrink-0 pl-12 text-xs text-ink-3 sm:w-auto sm:pl-0"
           >
             {fullDate(mail.receivedAt)}
           </time>
@@ -532,7 +532,7 @@ function Reader() {
                       dateTime={item.receivedAt}
                       className="machine shrink-0 text-[0.6875rem] text-muted-foreground"
                     >
-                      {fullDate(item.receivedAt)}
+                      <span className="sm:hidden">{shortDate(item.receivedAt)}</span><span className="hidden sm:inline">{fullDate(item.receivedAt)}</span>
                     </time>
                     <span className="col-span-2 mt-0.5 truncate text-xs text-muted-foreground">
                       {item.snippet || "No preview"}
@@ -793,7 +793,7 @@ function ThreadRow({
         current ? "selected-row" : "hover:bg-[var(--pogpin-shell-fill-soft)]",
       )}
     >
-      <span className="flex min-w-0 items-baseline gap-2">
+      <span className="flex min-w-0 flex-wrap items-baseline gap-2">
         <span className="truncate text-[0.8125rem] font-medium text-foreground">
           {senderLabel(item.fromName, item.fromAddress)}
         </span>
@@ -810,8 +810,8 @@ function ThreadRow({
             Open above
           </span>
         ) : null}
-        <Machine className="ml-auto shrink-0 text-[0.6875rem]">
-          {fullDate(item.receivedAt)}
+        <Machine className="ml-auto w-full shrink-0 text-[0.6875rem] sm:w-auto">
+          <span className="sm:hidden">{shortDate(item.receivedAt)}</span><span className="hidden sm:inline">{fullDate(item.receivedAt)}</span>
         </Machine>
       </span>
       <span className="mt-1 block truncate text-sm text-[var(--pogpin-shell-text-soft)]">

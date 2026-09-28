@@ -78,6 +78,17 @@ export function MessageList({
 								cursorId === message.id && !selected && "ring-1 ring-[var(--pogpin-brand-border)] ring-inset",
 							)}
 						>
+							<span className={cn(
+								"absolute top-3 left-3.5 z-10 grid size-8 place-items-center opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-within/row:opacity-100 max-sm:opacity-100 [@media(hover:none)]:opacity-100",
+								(isPicked || picked.size > 0) && "opacity-100",
+							)}>
+								<Checkbox
+									checked={isPicked}
+									className="relative size-4 after:absolute after:-inset-2 after:content-['']"
+									aria-label={`Select mail from ${label}`}
+									onCheckedChange={() => onTogglePicked(message)}
+								/>
+							</span>
 							<Link
 								{...(folder === "drafts"
 									? ({ to: "/compose", search: { draftId: message.id } } as const)
@@ -87,14 +98,14 @@ export function MessageList({
 										} as const))}
 								className="flex gap-3 py-2.5 pr-3 pl-3.5"
 							>
-								{/* One gutter, two states: the sender's initials — coral while the
-								    message is unread — swapped for a tick on hover or while picking. */}
+								{/* Selection sits outside this link: touch and keyboard users can
+								    pick a row without opening the message. */}
 								<span className="relative mt-0.5 size-8 shrink-0">
 									<Avatar
 										className={cn(
 											"size-8 border border-[var(--pogpin-shell-border)] transition-opacity",
 											(isPicked || picked.size > 0) && "opacity-0",
-											"group-hover/row:opacity-0",
+											"group-hover/row:opacity-0 group-focus-within/row:opacity-0 max-sm:opacity-0 [@media(hover:none)]:opacity-0",
 										)}
 									>
 										<AvatarFallback
@@ -108,31 +119,12 @@ export function MessageList({
 											{initials(label)}
 										</AvatarFallback>
 									</Avatar>
-
-									<span
-										className={cn(
-											"absolute inset-0 grid place-items-center opacity-0 transition-opacity group-hover/row:opacity-100",
-											(isPicked || picked.size > 0) && "opacity-100",
-										)}
-										onClick={(event) => {
-											// The tick is inside the link, so it has to refuse the
-											// navigation the link would otherwise perform.
-											event.preventDefault();
-											event.stopPropagation();
-										}}
-									>
-										<Checkbox
-											checked={isPicked}
-											aria-label={`Select mail from ${label}`}
-											onCheckedChange={() => onTogglePicked(message)}
-										/>
-									</span>
 								</span>
 
 								<span className="min-w-0 flex-1">
 									{/* A starred row's star never hides, so the line reserves the
 									    width of it — otherwise the date sits under the star. */}
-									<span className={cn("flex items-baseline gap-2", message.starred && "pr-6")}>
+									<span className={cn("flex items-baseline gap-2", message.starred && "sm:pr-6")}>
 										<span
 											className={cn(
 												"min-w-0 flex-1 truncate text-[0.8125rem]",
@@ -148,13 +140,13 @@ export function MessageList({
 										{message.hasAttachments ? (
 											<Paperclip
 												aria-label="Has attachments"
-												className="size-3 shrink-0 text-muted-foreground group-hover/row:invisible"
+												className="size-3 shrink-0 text-muted-foreground group-hover/row:invisible max-sm:visible! [@media(hover:none)]:visible"
 											/>
 										) : null}
 
 										<time
 											dateTime={message.receivedAt}
-											className="machine shrink-0 text-[0.6875rem] text-muted-foreground group-hover/row:invisible"
+											className="machine shrink-0 text-[0.6875rem] text-muted-foreground group-hover/row:invisible max-sm:visible! [@media(hover:none)]:visible"
 										>
 											{shortDate(message.receivedAt)}
 										</time>
@@ -191,10 +183,10 @@ export function MessageList({
 
 							{/*
 							 * The row's own actions. Outside the link, so a click on one is not
-							 * also a click through to the message, and only on hover — a list of
-							 * fifty rows with five buttons each is not a list any more.
+							 * also a click through to the message. Touch has no hover, so its
+							 * actions get their own row below the message summary.
 							 */}
-							<div className="absolute top-1.5 right-2 flex items-center gap-0.5">
+							<div className="absolute top-1.5 right-2 flex items-center gap-0.5 max-sm:static max-sm:justify-end max-sm:border-t max-sm:border-border max-sm:px-2 max-sm:py-1 [@media(hover:none)]:static [@media(hover:none)]:justify-end [@media(hover:none)]:border-t [@media(hover:none)]:border-border [@media(hover:none)]:px-2 [@media(hover:none)]:py-1">
 								<RowAction
 									label={message.read ? "Mark as unread" : "Mark as read"}
 									className="opacity-0 group-hover/row:opacity-100"
@@ -271,7 +263,7 @@ function RowAction({
 			aria-label={label}
 			title={label}
 			aria-pressed={pressed}
-			className={cn("size-7 text-muted-foreground transition-opacity", className)}
+			className={cn("size-7 text-muted-foreground transition-opacity group-focus-within/row:opacity-100 max-sm:size-9 max-sm:opacity-100 [@media(hover:none)]:size-9 [@media(hover:none)]:opacity-100", className)}
 			onClick={onClick}
 		>
 			{children}

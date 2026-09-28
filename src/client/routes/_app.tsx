@@ -357,7 +357,7 @@ function AppLayout() {
             onOpenChange={(open) => setCompact(!open)}
             openMobile={mobileOpen}
             onOpenMobileChange={setMobileOpen}
-            className="h-dvh min-h-0 overflow-hidden text-[var(--pogpin-shell-text)]"
+            className="h-dvh min-h-0 overflow-hidden pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] text-[var(--pogpin-shell-text)]"
             style={
               {
                 "--sidebar-width": "13rem",

@@ -114,8 +114,11 @@ export function AppSidebar({
 }) {
 	const logout = useLogout();
 	const router = useRouter();
-	const navigateInApp = useMemo(() => interceptRouterLinks(router), [router]);
-	const { isMobile } = useAnimatedSidebar();
+	const { isMobile, setOpenMobile } = useAnimatedSidebar();
+	const navigateInApp = useMemo(
+		() => interceptRouterLinks(router, () => { if (isMobile) setOpenMobile(false); }),
+		[router, isMobile, setOpenMobile],
+	);
 	const navCompact = compact && !isMobile;
 	const version = useQuery({
 		queryKey: qk.adminVersion,
@@ -132,6 +135,7 @@ export function AppSidebar({
 			panelClassName="h-full border-0 bg-transparent"
 		>
 			<AnimatedSidebarHeader
+				onClickCapture={navigateInApp}
 				className={cn(
 					"gap-2 pb-3",
 					isMobile && "border-b border-[var(--pogpin-shell-border)] px-4 py-4",
@@ -158,7 +162,10 @@ export function AppSidebar({
 						currentId={currentMailboxId}
 						compact={navCompact}
 						mobile={isMobile}
-						onSelect={onSelectMailbox}
+						onSelect={(id) => {
+							onSelectMailbox(id);
+							if (isMobile) setOpenMobile(false);
+						}}
 					/>
 				) : null}
 			</AnimatedSidebarHeader>
@@ -233,6 +240,7 @@ export function AppSidebar({
 			</AnimatedSidebarContent>
 
 			<AnimatedSidebarFooter
+				onClickCapture={navigateInApp}
 				className={cn(
 					"relative z-20 flex justify-center border-0 pt-3",
 					isMobile && "border-t border-[var(--pogpin-shell-border)] p-3.5",
@@ -245,6 +253,12 @@ export function AppSidebar({
 					isAdmin={user?.role === "admin"}
 					compact={navCompact}
 					mobile={isMobile}
+					onNavigate={(event) => {
+						if (
+							isMobile && event.button === 0 && !event.defaultPrevented &&
+							!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
+						) setOpenMobile(false);
+					}}
 					onSignOut={() =>
 						logout.mutate(undefined, { onSuccess: () => location.assign("/login") })
 					}

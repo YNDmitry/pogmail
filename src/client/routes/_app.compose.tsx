@@ -663,7 +663,7 @@ function ComposeForm({
         ariaLabel="Message"
         onImageUpload={attachInlineImage}
         imagePreviewSources={imagePreviewSources}
-        className="flex-1"
+        className="my-4 min-w-0 flex-1 overflow-hidden rounded-lg border border-border bg-white p-4 sm:p-6"
       />
 
       {attachments.length > 0 ? (
@@ -782,7 +782,7 @@ function ComposeForm({
 
         <span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
           <SaveIndicator state={saveState} unsaved={unsaved} />
-          <kbd className="machine flex h-7 shrink-0 items-center justify-center rounded-md border border-border bg-[var(--pogpin-shell-fill-soft)] px-2 text-xs leading-none text-muted-foreground">
+          <kbd className="machine hidden h-7 shrink-0 items-center justify-center rounded-md border border-border bg-[var(--pogpin-shell-fill-soft)] px-2 text-xs leading-none text-muted-foreground sm:flex">
             ⌘ + ↵
           </kbd>
         </span>

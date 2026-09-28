@@ -145,7 +145,7 @@ function ApiKeys() {
 
 					<fieldset className="space-y-2">
 						<legend className="field-label">Scopes</legend>
-						<div className="grid grid-cols-2 gap-1.5">
+						<div className="grid gap-1.5 sm:grid-cols-2">
 							{SCOPES.map((scope) => (
 								<label key={scope} className="flex items-center gap-2 text-sm">
 									<Checkbox name="scopes" value={scope} />

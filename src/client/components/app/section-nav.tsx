@@ -27,9 +27,9 @@ export function SectionNav({ links }: { links: SectionLink[] }) {
     <nav
       aria-label="Section"
       style={{ viewTransitionName: "section-nav" }}
-      className="lg:sticky lg:top-0 lg:self-start"
+      className="min-w-0 lg:sticky lg:top-0 lg:self-start"
     >
-      <ul className="pogpin-shell-tabs flex gap-1.5 overflow-x-auto rounded-xl p-1.5 lg:flex-col lg:overflow-visible">
+      <ul className="pogpin-shell-tabs flex min-w-0 max-w-full gap-1.5 overflow-x-auto rounded-xl p-1.5 lg:flex-col lg:overflow-visible">
         {links.map((link) => {
           const active = pathname === link.to;
           return (

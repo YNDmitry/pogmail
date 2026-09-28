@@ -78,13 +78,13 @@ export function PageHeader({
 			style={transitionName ? { viewTransitionName: transitionName } : undefined}
 			className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4"
 		>
-			<div className="min-w-0">
+			<div className="min-w-0 flex-1">
 				<h1 className="display text-[1.375rem] text-foreground">{title}</h1>
 				{description ? (
 					<p className="mt-1.5 max-w-[68ch] text-sm text-muted-foreground">{description}</p>
 				) : null}
 			</div>
-			{actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+			{actions ? <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">{actions}</div> : null}
 		</header>
 	);
 }

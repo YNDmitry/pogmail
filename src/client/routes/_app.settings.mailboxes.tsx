@@ -63,8 +63,8 @@ function MailboxSettings() {
 						onClick={() => setSelected(mailbox.id)}
 						className={
 							mailbox.id === current
-								? "machine border-[var(--pogpin-brand-border)] bg-accent text-xs text-primary"
-								: "machine text-xs"
+								? "machine min-w-0 max-w-full truncate border-[var(--pogpin-brand-border)] bg-accent text-xs text-primary"
+								: "machine min-w-0 max-w-full truncate text-xs"
 						}
 					>
 						{mailbox.address}
@@ -234,7 +234,7 @@ function Folders({ mailboxId }: { mailboxId: string }) {
 				{mine.map((folder, index) => (
 						<li
 							key={folder.id}
-							className="flex items-center gap-2 rounded-panel border border-seam px-2.5 py-1 text-xs"
+							className="flex min-w-0 flex-wrap items-center gap-2 rounded-panel border border-seam px-2.5 py-1 text-xs"
 						>
 							{folder.color ? (
 								<span
@@ -243,7 +243,7 @@ function Folders({ mailboxId }: { mailboxId: string }) {
 									style={{ background: folder.color }}
 								/>
 							) : null}
-							{folder.name}
+							<span className="min-w-0 flex-1 truncate">{folder.name}</span>
 							<Button
 								type="button"
 								variant="ghost"
@@ -296,7 +296,7 @@ function Folders({ mailboxId }: { mailboxId: string }) {
 			)}
 
 			<form
-				className="flex items-end gap-2"
+				className="flex flex-wrap items-end gap-2"
 				onSubmit={(event) => {
 					event.preventDefault();
 					const form = event.currentTarget;
@@ -318,7 +318,7 @@ function Folders({ mailboxId }: { mailboxId: string }) {
 					);
 				}}
 			>
-				<Field label="New folder" className="flex-1">
+				<Field label="New folder" className="min-w-40 flex-1">
 					<Input name="name" required maxLength={60} />
 				</Field>
 				{/* The one native control left: no colour picker ships in the kit. */}

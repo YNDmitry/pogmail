@@ -257,9 +257,9 @@ export function WeekGrid({
 			: null;
 
 	return (
-		<div className="flex flex-col overflow-hidden">
+		<div className="overflow-x-auto overscroll-x-contain">
 			{/* Weekday header, then the all-day band, then the hours. */}
-			<div className="flex border-b border-border">
+			<div className="flex min-w-[42rem] border-b border-border">
 				<div className="w-14 shrink-0 border-r border-border" />
 				{days.map((day) => {
 					const isToday = sameDay(day, now);
@@ -290,7 +290,7 @@ export function WeekGrid({
 				})}
 			</div>
 
-			<div className="flex border-b border-border">
+			<div className="flex min-w-[42rem] border-b border-border">
 				<div className="field-label w-14 shrink-0 border-r border-border px-2 py-1.5 text-right">
 					All day
 				</div>
@@ -313,7 +313,7 @@ export function WeekGrid({
 				))}
 			</div>
 
-			<div ref={bodyRef} className="relative flex max-h-[32rem] overflow-y-auto">
+			<div ref={bodyRef} className="relative flex min-w-[42rem] max-h-[32rem] overflow-y-auto">
 				{/* The hour rail is a column of labels, not a table: the blocks are
 				    positioned against the same 48px rhythm. */}
 				<div className="w-14 shrink-0 border-r border-border">

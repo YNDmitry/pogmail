@@ -290,7 +290,7 @@ function MailFolder() {
 			 * separated by its border, not by a second tone.
 			 */}
 			<section
-				className={`${selectedId ? "hidden lg:flex" : "flex"} min-h-0 flex-col border-r border-border bg-[var(--pogpin-shell-panel)]`}
+				className={`${selectedId ? "hidden lg:flex" : "flex"} min-h-0 min-w-0 flex-col border-r border-border bg-[var(--pogpin-shell-panel)]`}
 			>
 				<header className="space-y-3 border-b border-border px-3.5 pt-3.5 pb-3">
 					{/*
@@ -299,41 +299,64 @@ function MailFolder() {
 					 * ticked — what can be done to the selection.
 					 */}
 					{picked.size > 0 ? (
-						<div className="flex flex-wrap items-center gap-1.5">
-							<span className="machine mr-1 text-[0.6875rem] text-muted-foreground">
-								{picked.size} selected
-							</span>
-							<Button
-								size="sm"
-								variant="ghost"
-								onClick={() => act([...picked], { read: true }, "Marked read")}
-							>
-								<MailOpen className="size-3.5" />
-								Read
-							</Button>
-							<Button
-								size="sm"
-								variant="ghost"
-								onClick={() => act([...picked], { status: "archived", folderId: null }, "Archived")}
-							>
-								<Archive className="size-3.5" />
-								Archive
-							</Button>
-							<Button
-								size="sm"
-								variant="ghost"
-								className="hover:text-fail"
-								onClick={() => act([...picked], { status: "trash", folderId: null }, "Moved to trash")}
-							>
-								<Trash2 className="size-3.5" />
-								Trash
-							</Button>
+						<div className="space-y-2 sm:flex sm:flex-wrap sm:items-center sm:gap-1.5 sm:space-y-0">
+							<div className="flex items-center justify-between gap-2 sm:contents">
+								<span className="machine text-xs text-muted-foreground">
+									{picked.size} selected
+								</span>
+								<Button
+									size="sm"
+									variant="ghost"
+									className="text-muted-foreground sm:order-last sm:ml-auto"
+									onClick={() => setSelection({ scope, ids: new Set() })}
+								>
+									Clear
+								</Button>
+							</div>
+							<div className="flex flex-wrap items-center gap-1">
+								<Button
+									size="sm"
+									variant="ghost"
+									onClick={() => act([...picked], { read: true }, "Marked read")}
+								>
+									<MailOpen className="size-3.5" />
+									Read
+								</Button>
+								<Button
+									size="sm"
+									variant="ghost"
+									onClick={() => act([...picked], { status: "archived", folderId: null }, "Archived")}
+								>
+									<Archive className="size-3.5" />
+									Archive
+								</Button>
+								<Button
+									size="sm"
+									variant="ghost"
+									className="hover:text-fail"
+									onClick={() => act([...picked], { status: "trash", folderId: null }, "Moved to trash")}
+								>
+									<Trash2 className="size-3.5" />
+									Trash
+								</Button>
+								{folder === "trash" ? (
+									<Button
+										size="sm"
+										variant="ghost"
+										className="text-fail hover:text-fail"
+										onClick={() => askPermanentDelete([...picked])}
+									>
+										<Trash2 className="size-3.5" />
+										Delete permanently
+									</Button>
+								) : null}
+							</div>
 							{moveTargets.length > 0 ? (
 								<Choice
 									placeholder="Move to…"
 									aria-label="Move selected mail to a folder"
 									size="sm"
-									className="w-auto min-w-32"
+									className="w-full min-w-32 sm:w-auto"
 									options={moveTargets}
 									onChange={(folderId) =>
 										act(
@@ -346,25 +369,6 @@ function MailFolder() {
 									}
 								/>
 							) : null}
-							{folder === "trash" ? (
-								<Button
-									size="sm"
-									variant="ghost"
-									className="text-fail hover:text-fail"
-									onClick={() => askPermanentDelete([...picked])}
-								>
-									<Trash2 className="size-3.5" />
-									Delete permanently
-								</Button>
-							) : null}
-							<Button
-								size="sm"
-								variant="ghost"
-								className="ml-auto text-muted-foreground"
-								onClick={() => setSelection({ scope, ids: new Set() })}
-							>
-								Clear
-							</Button>
 						</div>
 					) : (
 						<div className="flex items-baseline justify-between gap-3">
@@ -413,7 +417,7 @@ function MailFolder() {
 							onChange={(event) => setTerm(event.target.value)}
 							placeholder="Search mail"
 							aria-label="Search mail"
-							className="h-8 pl-8 text-[0.8125rem]"
+							className="h-9 pl-8 text-base md:text-[0.8125rem]"
 						/>
 					</div>
 				</header>

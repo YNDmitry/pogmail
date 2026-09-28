@@ -22,7 +22,7 @@ export function Mark({
       src={isLight ? logoLight : logoDark}
       alt={title ?? ""}
       aria-hidden={title ? undefined : true}
-      className={cn("shrink-0 rounded-[22%] p-[5%] object-contain", className)}
+      className={cn("shrink-0 rounded-[22%] object-contain", className)}
     />
   );
 }

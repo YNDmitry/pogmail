@@ -3,10 +3,14 @@ import { eq } from "drizzle-orm";
 import { appSettings, SINGLETON_ID } from "@/db/schema";
 import { brandingInput } from "@/shared/contract/settings";
 import { audit } from "../audit";
-import { requireAdmin } from "../middleware/auth";
+import { requireAdmin, requireAuth } from "../middleware/auth";
 import type { AppBindings } from "../middleware/context";
-import { deleteObject, publicKeyFor, putUpload } from "../storage";
-import { parseBody } from "./_util";
+import { deleteObject, putUpload, serveObject } from "../storage";
+import { notFound, parseBody } from "./_util";
+
+function iconUrl(key: string | null | undefined): string | null {
+	return key ? `/api/branding/icon?v=${encodeURIComponent(key)}` : null;
+}
 
 /**
  * Branding is free here. Mailflare gates it behind a paid licence; an open-source
@@ -17,13 +21,19 @@ export const brandingRoutes = new Hono<AppBindings>()
 		const row = await c.get("db").select().from(appSettings).get();
 		return c.json({
 			appName: row?.appName ?? "Pogmail",
-			iconUrl: row?.iconKey ? publicKeyFor(row.iconKey) : null,
+			iconUrl: iconUrl(row?.iconKey),
 			accentColor: row?.accentColor ?? null,
 			allowRegistration: row?.allowRegistration ?? false,
 		});
 	})
 
-	.put("/", requireAdmin, async (c) => {
+	.get("/icon", async (c) => {
+		const row = await c.get("db").select({ iconKey: appSettings.iconKey }).from(appSettings).get();
+		if (!row?.iconKey) notFound("Branding icon");
+		return serveObject(c.env, row.iconKey);
+	})
+
+	.put("/", requireAuth, requireAdmin, async (c) => {
 		const input = await parseBody(c, brandingInput);
 
 		const row = await c
@@ -37,13 +47,13 @@ export const brandingRoutes = new Hono<AppBindings>()
 		audit(c, { action: "branding.update", metadata: { appName: row.appName } });
 		return c.json({
 			appName: row.appName,
-			iconUrl: row.iconKey ? publicKeyFor(row.iconKey) : null,
+			iconUrl: iconUrl(row.iconKey),
 			accentColor: row.accentColor,
 			allowRegistration: row.allowRegistration,
 		});
 	})
 
-	.put("/icon", requireAdmin, async (c) => {
+	.put("/icon", requireAuth, requireAdmin, async (c) => {
 		const before = await c.get("db").select({ iconKey: appSettings.iconKey }).from(appSettings).get();
 
 		const key = await putUpload(c.env, "branding/icon", c.req.raw, {
@@ -60,10 +70,10 @@ export const brandingRoutes = new Hono<AppBindings>()
 		if (before?.iconKey) await deleteObject(c.env, before.iconKey);
 		audit(c, { action: "branding.icon" });
 
-		return c.json({ iconUrl: publicKeyFor(key) });
+		return c.json({ iconUrl: iconUrl(key) });
 	})
 
-	.delete("/icon", requireAdmin, async (c) => {
+	.delete("/icon", requireAuth, requireAdmin, async (c) => {
 		const before = await c.get("db").select({ iconKey: appSettings.iconKey }).from(appSettings).get();
 
 		await c.get("db").update(appSettings).set({ iconKey: null }).where(eq(appSettings.id, SINGLETON_ID));

@@ -6,7 +6,7 @@ import { Modal } from "@/client/components/app/modal";
 import { Card, Field, Tag } from "@/client/components/app/primitives";
 import { Input, Skeleton } from "@/client/components/ui";
 import { useToast } from "@/client/components/app/toast-host";
-// import { Mark } from "@/client/components/app/mark";
+import { Mark } from "@/client/components/app/mark";
 import { AnimatedNumber } from "@/client/components/motion/animated-number";
 import { useInstanceIdentity } from "@/client/lib/identity-context";
 import { api, ApiError } from "@/client/lib/api";
@@ -96,7 +96,16 @@ function Overview() {
   return (
     <div className="space-y-8">
       <header className="flex items-center gap-3.5">
-        {/*<Mark className="size-10" />*/}
+        {branding.data?.iconUrl ? (
+          <img
+            src={branding.data.iconUrl}
+            alt=""
+            aria-hidden
+            className="size-10 shrink-0 rounded-lg object-cover"
+          />
+        ) : (
+          <Mark className="size-10" />
+        )}
         <div className="min-w-0">
           <h1 className="display text-[1.375rem] text-ink">
             {branding.data?.appName ?? "Pogmail"}

@@ -10,7 +10,10 @@ function AuthRoute() {
 
 	return (
 		<IdentityProvider appName={branding.data?.appName}>
-			<AuthLayout appName={branding.data?.appName ?? "Pogmail"} />
+			<AuthLayout
+				appName={branding.data?.appName ?? "Pogmail"}
+				iconUrl={branding.data?.iconUrl ?? null}
+			/>
 		</IdentityProvider>
 	);
 }
@@ -21,14 +24,18 @@ function AuthRoute() {
  * so the identity is established before the first keystroke. The auth surface
  * is dark in both themes — it is a door, not a room.
  */
-function AuthLayout({ appName }: { appName: string }) {
+function AuthLayout({ appName, iconUrl }: { appName: string; iconUrl: string | null }) {
 	return (
 		<div className="relative min-h-svh overflow-hidden bg-[var(--pogpin-auth-bg)] text-[var(--pogpin-auth-text)] selection:bg-white/15 selection:text-white">
 			<main className="relative z-10 mx-auto flex min-h-svh w-full max-w-[30rem] items-center px-5 py-20 sm:px-6 sm:py-24">
 				<div className="pogpin-auth-card w-full">
 					<div className="pogpin-auth-card-inner px-6 py-7 sm:px-8 sm:py-8">
 						<div className="mb-7 flex items-center justify-center gap-2.5">
-							<Mark className="size-8" />
+							{iconUrl ? (
+								<img src={iconUrl} alt="" aria-hidden className="size-8 rounded-md object-cover" />
+							) : (
+								<Mark className="size-8" />
+							)}
 							<span className="text-[0.95rem] font-semibold tracking-[-0.03em]">{appName}</span>
 						</div>
 

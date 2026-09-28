@@ -4,9 +4,10 @@ import { Button } from "@/client/components/app/button";
 import { Input, Switch } from "@/client/components/ui";
 import { Card, Field } from "@/client/components/app/primitives";
 import { useToast } from "@/client/components/app/toast-host";
-import { api } from "@/client/lib/api";
+import { api, ApiError } from "@/client/lib/api";
 import { useBranding } from "@/client/lib/queries";
 import { qk } from "@/client/lib/queries/keys";
+import type { Branding as BrandingSettings } from "@/shared/contract/settings";
 
 export const Route = createFileRoute("/_app/admin/branding")({
   component: Branding,
@@ -28,16 +29,24 @@ function Branding() {
 
       <Card className="p-5">
         <form
+          key={`${branding.data?.appName ?? "loading"}|${branding.data?.allowRegistration ?? false}`}
           className="space-y-4"
           onSubmit={async (event) => {
             event.preventDefault();
             const form = new FormData(event.currentTarget);
-            await api.put("/api/branding", {
-              appName: String(form.get("appName")),
-              allowRegistration: form.get("allowRegistration") === "on",
-            });
-            await client.invalidateQueries({ queryKey: qk.branding });
-            toast.ok("Branding saved");
+            try {
+              const updated = await api.put<BrandingSettings>("/api/branding", {
+                appName: String(form.get("appName")),
+                allowRegistration: form.get("allowRegistration") === "on",
+              });
+              client.setQueryData(qk.branding, updated);
+              toast.ok("Branding saved");
+            } catch (error) {
+              toast.fail(
+                "Could not save branding",
+                error instanceof ApiError ? error.message : undefined,
+              );
+            }
           }}
         >
           <Field label="Name">
@@ -89,20 +98,29 @@ function Branding() {
             accept="image/png,image/svg+xml,image/webp,image/x-icon"
             className="h-auto py-1.5"
             onChange={async (event) => {
-              const file = event.target.files?.[0];
+              const input = event.currentTarget;
+              const file = input.files?.[0];
               if (!file) return;
 
-              // Sent as the raw body, so the Worker can check the type and size
-              // before anything reaches the bucket.
-              await fetch("/api/branding/icon", {
-                method: "PUT",
-                headers: { "content-type": file.type },
-                body: file,
-                credentials: "same-origin",
-              });
-              await client.invalidateQueries({ queryKey: qk.branding });
-              toast.ok("Icon updated");
-              event.target.value = "";
+              try {
+                // Sent as the raw body, so the Worker can check the type and size
+                // before anything reaches the bucket.
+                const { iconUrl } = await api.putFile<{ iconUrl: string }>(
+                  "/api/branding/icon",
+                  file,
+                );
+                client.setQueryData<BrandingSettings>(qk.branding, (current) =>
+                  current ? { ...current, iconUrl } : current,
+                );
+                toast.ok("Icon updated");
+              } catch (error) {
+                toast.fail(
+                  "Could not update icon",
+                  error instanceof ApiError ? error.message : undefined,
+                );
+              } finally {
+                input.value = "";
+              }
             }}
           />
         </div>

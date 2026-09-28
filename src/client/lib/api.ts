@@ -51,9 +51,14 @@ async function request<TResponse>(
  * buffers the whole thing either way — so the name travels in a header, and
  * `encodeURIComponent` keeps a non-ASCII filename inside what a header may hold.
  */
-async function upload<TResponse>(path: string, file: File, extraHeaders?: Record<string, string>): Promise<TResponse> {
+async function upload<TResponse>(
+	path: string,
+	file: File,
+	extraHeaders?: Record<string, string>,
+	method: "POST" | "PUT" = "POST",
+): Promise<TResponse> {
 	const response = await fetch(new URL(path, location.origin), {
-		method: "POST",
+		method,
 		credentials: "same-origin",
 		headers: {
 			"content-type": file.type || "application/octet-stream",
@@ -73,6 +78,8 @@ async function upload<TResponse>(path: string, file: File, extraHeaders?: Record
 
 export const api = {
 	upload,
+	putFile: <T>(path: string, file: File, extraHeaders?: Record<string, string>) =>
+		upload<T>(path, file, extraHeaders, "PUT"),
 	get: <T>(path: string, options?: RequestOptions) => request<T>("GET", path, undefined, options),
 	post: <T>(path: string, body?: unknown, options?: RequestOptions) => request<T>("POST", path, body, options),
 	patch: <T>(path: string, body?: unknown, options?: RequestOptions) => request<T>("PATCH", path, body, options),

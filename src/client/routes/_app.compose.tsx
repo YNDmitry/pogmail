@@ -257,9 +257,6 @@ function ComposeForm({
   const [previewMode, setPreviewMode] = useState<"desktop" | "mobile">(
     "desktop",
   );
-  /** URL replacement used by autosave is not a user leaving the composer. */
-  const internalNavigation = useRef(false);
-
   const templates = useList<Template>(qk.templates, "/api/templates");
   const editorRef = useRef<RichTextHandle>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -325,19 +322,12 @@ function ComposeForm({
         const row = await api.post<{ id: string }>("/api/send/drafts", payload);
         id = row.id;
         setDraftId(id);
-        // The id goes in the URL, so a reload reopens this draft rather than
-        // starting a second one beside it. This is an internal replace, not a
-        // request to leave the composer, so the blocker must stay out of its way.
-        internalNavigation.current = true;
-        try {
-          await navigate({
-            to: "/compose",
-            search: { draftId: id },
-            replace: true,
-          });
-        } finally {
-          internalNavigation.current = false;
-        }
+        // Keep the form mounted: router navigation would reload the new draft
+        // from the API and make the whole composer flash on every first save.
+        const url = new URL(window.location.href);
+        url.searchParams.delete("replyTo");
+        url.searchParams.set("draftId", id);
+        window.history.replaceState(window.history.state, "", url);
       }
 
       setSavedSnapshot(pending);
@@ -357,7 +347,6 @@ function ComposeForm({
     body,
     inReplyTo,
     threadId,
-    navigate,
     setSavedSnapshot,
   ]);
   // oxlint-enable react/memo-dependencies
@@ -388,7 +377,7 @@ function ComposeForm({
 
   /* In-app navigation gets a dialog instead, so the choice stays inside the app. */
   const blocker = useBlocker({
-    shouldBlockFn: () => unsaved && !done && !internalNavigation.current,
+    shouldBlockFn: () => unsaved && !done,
     withResolver: true,
   });
 

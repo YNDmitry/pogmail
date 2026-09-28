@@ -32,6 +32,19 @@ test.describe("Compose in dark theme", () => {
 		await expect(page.locator(".maily-compose-editor [data-tippy-root]")).toBeVisible();
 	});
 
+	test("keeps the composer mounted when autosave creates a draft", async ({ page }) => {
+		const editor = page.locator(".maily-compose-editor .ProseMirror");
+		const mountedEditor = await editor.elementHandle();
+
+		await page.getByLabel("Subject").fill("Autosave without refresh");
+		await editor.fill("Keep this editor mounted");
+		await expect(page.getByText("Draft saved")).toBeVisible();
+
+		expect(await mountedEditor?.evaluate((element) => element.isConnected)).toBe(true);
+		await expect(page).toHaveURL(/\/compose\?draftId=/);
+		await expect(editor).toContainText("Keep this editor mounted");
+	});
+
 	test("previews the current message at desktop and mobile widths", async ({ page }) => {
 		await page.getByLabel("Subject").fill("Preview subject");
 		await page.locator(".maily-compose-editor .ProseMirror").fill("Preview body");

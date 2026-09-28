@@ -289,7 +289,9 @@ function MailFolder() {
 			 * which read as a seam between the list and the bar above it. The column is
 			 * separated by its border, not by a second tone.
 			 */}
-			<section className="flex min-h-0 flex-col border-r border-border bg-[var(--pogpin-shell-panel)]">
+			<section
+				className={`${selectedId ? "hidden lg:flex" : "flex"} min-h-0 flex-col border-r border-border bg-[var(--pogpin-shell-panel)]`}
+			>
 				<header className="space-y-3 border-b border-border px-3.5 pt-3.5 pb-3">
 					{/*
 					 * The shell's bar already says which folder this is, so this row is
@@ -463,7 +465,9 @@ function MailFolder() {
 				</div>
 			</section>
 
-			<section className="hidden min-h-0 overflow-y-auto lg:block">
+			<section
+				className={`${selectedId ? "block" : "hidden"} min-h-0 overflow-y-auto lg:block`}
+			>
 				<Outlet />
 			</section>
 

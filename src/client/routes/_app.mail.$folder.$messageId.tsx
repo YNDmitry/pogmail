@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import {
   Archive,
+  ArrowLeft,
   CalendarPlus,
   CornerUpLeft,
   Download,
@@ -223,6 +224,16 @@ function Reader() {
 
   return (
     <article className="mx-auto flex flex-col gap-6 px-6 py-6">
+      <Link
+        to="/mail/$folder"
+        params={{ folder }}
+        search={(previous) => previous}
+        className="inline-flex min-h-11 w-fit items-center gap-2 text-sm text-muted-foreground lg:hidden"
+      >
+        <ArrowLeft aria-hidden className="size-4" />
+        Back to messages
+      </Link>
+
       <header className="space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h1 className="display min-w-0 flex-1 text-xl leading-snug text-ink">

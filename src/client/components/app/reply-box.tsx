@@ -77,7 +77,7 @@ export function ReplyBox({
 	return (
 		<section
 			className={cn(
-				"sticky bottom-0 rounded-xl border border-border bg-[var(--pogpin-shell-panel-alt)] p-2",
+				"rounded-xl border border-border bg-[var(--pogpin-shell-panel-alt)] p-2 lg:sticky lg:bottom-0",
 				"focus-within:border-[var(--pogpin-brand-border)]",
 			)}
 			onKeyDown={(event) => {
@@ -96,10 +96,10 @@ export function ReplyBox({
 				className="min-h-36 px-2"
 			/>
 
-			<div className="mt-1 flex items-center gap-2 px-1">
-				<Machine className="text-[0.625rem]">{to}</Machine>
+			<div className="mt-1 flex min-w-0 items-center gap-2 px-1">
+				<Machine className="min-w-0 flex-1 truncate text-[0.625rem]">{to}</Machine>
 
-				<Button asChild size="sm" variant="ghost" className="ml-auto text-muted-foreground">
+				<Button asChild size="sm" variant="ghost" className="shrink-0 text-muted-foreground">
 					<Link to="/compose" search={{ replyTo: replyToId }}>
 						<PenLine className="size-3.5" />
 						Full composer

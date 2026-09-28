@@ -56,6 +56,14 @@ export const settingsRoutes = new Hono<AppBindings>()
 		return c.json({ ok: true });
 	})
 
+	.get("/profile", async (c) => {
+		const profile = await c.get("db")
+			.select({ resetEmail: users.resetEmail, forwardingEmail: users.forwardingEmail })
+			.from(users).where(eq(users.id, c.get("user").id)).get();
+		if (!profile) throw new HTTPException(404, { message: "Account not found" });
+		return c.json(profile);
+	})
+
 	.patch("/profile", async (c) => {
 		const input = await parseBody(c, updateProfileInput);
 

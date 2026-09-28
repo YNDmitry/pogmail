@@ -241,6 +241,7 @@ export function AppSidebar({
 				<AccountCard
 					name={user?.name}
 					email={user?.email}
+					image={user?.avatarKey ? `/api/files/${encodeURIComponent(user.avatarKey)}` : null}
 					isAdmin={user?.role === "admin"}
 					compact={navCompact}
 					mobile={isMobile}

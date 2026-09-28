@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, KeyRound, List, MessagesSquare, Trash2 } from "lucide-react";
 import { Button, SubmitButton } from "@/client/components/app/button";
-import { Input } from "@/client/components/ui";
+import { Avatar, AvatarFallback, AvatarImage, Input } from "@/client/components/ui";
+import { initials } from "@/client/lib/format";
 import { Card, Field } from "@/client/components/app/primitives";
 import { cn } from "@/client/lib/utils";
 import { useToast } from "@/client/components/app/toast-host";
@@ -35,6 +36,11 @@ function Profile() {
 	const toast = useToast();
 	const client = useQueryClient();
 	const session = useSession();
+	const profile = useQuery({
+		queryKey: ["profile-settings"],
+		queryFn: () => api.get<{ resetEmail: string | null; forwardingEmail: string | null }>("/api/settings/profile"),
+	});
+	const [avatarPending, setAvatarPending] = useState(false);
 
 	const [saving, setSaving] = useState<"idle" | "loading">("idle");
 	const [changing, setChanging] = useState<"idle" | "loading">("idle");
@@ -47,6 +53,41 @@ function Profile() {
 	useEffect(() => {
 		void api.get<Passkey[]>("/api/settings/passkeys").then(setPasskeys).catch(() => undefined);
 	}, []);
+
+	async function updateAvatar(event: ChangeEvent<HTMLInputElement>) {
+		const input = event.currentTarget;
+		const file = input.files?.[0];
+		if (!file) return;
+		if (file.size > 2 * 1024 * 1024) {
+			toast.fail("Photo must be under 2 MB");
+			input.value = "";
+			return;
+		}
+		setAvatarPending(true);
+		try {
+			await api.putFile("/api/settings/avatar", file);
+			await client.invalidateQueries({ queryKey: qk.session });
+			toast.ok("Photo updated");
+		} catch (error) {
+			toast.fail("Could not update photo", error instanceof ApiError ? error.message : undefined);
+		} finally {
+			setAvatarPending(false);
+			input.value = "";
+		}
+	}
+
+	async function removeAvatar() {
+		setAvatarPending(true);
+		try {
+			await api.delete("/api/settings/avatar");
+			await client.invalidateQueries({ queryKey: qk.session });
+			toast.ok("Photo removed");
+		} catch (error) {
+			toast.fail("Could not remove photo", error instanceof ApiError ? error.message : undefined);
+		} finally {
+			setAvatarPending(false);
+		}
+	}
 
 	async function addPasskey() {
 		if (!passkeySupported) return;
@@ -87,7 +128,28 @@ function Profile() {
 				<h2 className="display text-base">Your details</h2>
 
 				<Card className="p-5">
-					<form
+					<div className="mb-5 flex flex-wrap items-center gap-4">
+						<Avatar className="size-14">
+							{session.data?.avatarKey ? <AvatarImage src={`/api/files/${encodeURIComponent(session.data.avatarKey)}`} alt="" /> : null}
+							<AvatarFallback>{initials(session.data?.name ?? "Account")}</AvatarFallback>
+						</Avatar>
+						<div className="space-y-2">
+							<Input
+								type="file"
+								aria-label="Upload profile photo"
+								accept="image/png,image/jpeg,image/webp,image/gif"
+								disabled={avatarPending}
+								onChange={updateAvatar}
+							/>
+							{session.data?.avatarKey ? (
+								<Button type="button" variant="ghost" size="sm" disabled={avatarPending} onClick={removeAvatar}>
+									Remove photo
+								</Button>
+							) : null}
+						</div>
+					</div>
+					<p className="machine mb-5 text-xs text-muted-foreground">{session.data?.email}</p>
+					{profile.data ? <form
 						className="space-y-4"
 						onSubmit={async (event) => {
 							event.preventDefault();
@@ -98,7 +160,10 @@ function Profile() {
 									name: String(form.get("name")),
 									resetEmail: String(form.get("resetEmail")) || null,
 								});
-								await client.invalidateQueries({ queryKey: qk.session });
+								await Promise.all([
+									client.invalidateQueries({ queryKey: qk.session }),
+									profile.refetch(),
+								]);
 								toast.ok("Profile saved");
 							} catch (error) {
 								toast.fail("Could not save", error instanceof ApiError ? error.message : undefined);
@@ -113,7 +178,6 @@ function Profile() {
 								defaultValue={session.data?.name}
 								required
 								maxLength={120}
-
 							/>
 						</Field>
 
@@ -121,13 +185,13 @@ function Profile() {
 							label="Recovery email"
 							hint="Where password resets go if you cannot reach your own mailbox."
 						>
-							<Input name="resetEmail" type="email" />
+							<Input name="resetEmail" type="email" defaultValue={profile.data.resetEmail ?? ""} />
 						</Field>
 
 						<SubmitButton type="submit" state={saving}>
 							Save profile
 						</SubmitButton>
-					</form>
+					</form> : <p className="text-sm text-muted-foreground">{profile.isError ? "Could not load account details. Reload to try again." : "Loading account details…"}</p>}
 				</Card>
 			</section>
 
@@ -252,7 +316,7 @@ function Profile() {
 				</p>
 
 				<Card className="p-5">
-					<form
+					{profile.data ? <form
 						className="flex flex-wrap items-end gap-3"
 						onSubmit={async (event) => {
 							event.preventDefault();
@@ -260,6 +324,7 @@ function Profile() {
 							const value = String(form.get("forwardingEmail")).trim();
 							try {
 								await api.put("/api/settings/forwarding", { forwardingEmail: value || null });
+								await profile.refetch();
 								toast.ok(value ? "Forwarding on" : "Forwarding off");
 							} catch (error) {
 								toast.fail("Could not update forwarding", String(error));
@@ -271,13 +336,13 @@ function Profile() {
 								name="forwardingEmail"
 								type="email"
 								placeholder="you@example.com"
-
+								defaultValue={profile.data?.forwardingEmail ?? ""}
 							/>
 						</Field>
 						<Button type="submit" variant="secondary">
 							Update
 						</Button>
-					</form>
+					</form> : <p className="text-sm text-muted-foreground">{profile.isError ? "Could not load forwarding settings. Reload to try again." : "Loading forwarding settings…"}</p>}
 				</Card>
 			</section>
 

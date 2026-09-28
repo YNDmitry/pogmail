@@ -2,7 +2,7 @@ import { createMimeMessage, Mailbox } from "mimetext";
 import { EmailMessage } from "cloudflare:email";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { getDb, type Database } from "@/db";
-import { contacts, domains, emailCampaigns, externalAccounts, externalFolders, mailboxes, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
+import { contacts, domains, emailCampaigns, externalAccounts, externalFolders, mailboxes, mailboxSignatures, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "./types";
 import { safeEmailHtml } from "./html-safety";
 import { nextScheduledDelay } from "./schedule";
@@ -30,8 +30,8 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 		.select({
 			job: outboundJobs,
 			message: messages,
-			signatureText: mailboxes.signature,
-			signatureHtml: mailboxes.signatureHtml,
+			signatureText: mailboxSignatures.bodyText,
+			signatureHtml: mailboxSignatures.bodyHtml,
 			mailboxSource: mailboxes.source,
 			campaignStatus: emailCampaigns.status,
 			campaignUserId: emailCampaigns.userId,
@@ -41,6 +41,7 @@ export async function processOutboundJob(env: Env, job: OutboundSendMessage): Pr
 		.from(outboundJobs)
 		.innerJoin(messages, eq(messages.id, outboundJobs.messageId))
 		.leftJoin(mailboxes, eq(mailboxes.id, messages.mailboxId))
+		.leftJoin(mailboxSignatures, and(eq(mailboxSignatures.mailboxId, mailboxes.id), eq(mailboxSignatures.isDefault, true)))
 		.leftJoin(emailCampaigns, eq(emailCampaigns.id, messages.campaignId))
 		.leftJoin(domains, eq(domains.id, mailboxes.domainId))
 		.leftJoin(externalAccounts, eq(externalAccounts.mailboxId, mailboxes.id))
@@ -395,7 +396,7 @@ function appendSignatureText(body: string | null, signature: string | null): str
 	return [body?.trim(), `-- \n${signature.trim()}`].filter(Boolean).join("\n\n");
 }
 
-function appendSignatureHtml(
+export function appendSignatureHtml(
 	bodyHtml: string | null,
 	bodyText: string | null,
 	signatureHtml: string | null,

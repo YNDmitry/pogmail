@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { id, timestamps } from "./_shared";
 import { domains } from "./domains";
@@ -53,6 +54,23 @@ export const mailboxes = sqliteTable(
 
 export const EXTERNAL_ACCOUNT_STATUSES = ["active", "paused", "needs_auth", "error"] as const;
 export type ExternalAccountStatus = (typeof EXTERNAL_ACCOUNT_STATUSES)[number];
+
+export const mailboxSignatures = sqliteTable(
+	"mailbox_signatures",
+	{
+		id: id(),
+		mailboxId: text("mailbox_id").notNull().references(() => mailboxes.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		bodyText: text("body_text").notNull().default(""),
+		bodyHtml: text("body_html").notNull().default(""),
+		isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
+		...timestamps(),
+	},
+	(t) => [
+		uniqueIndex("mailbox_signatures_name_unq").on(t.mailboxId, t.name),
+		uniqueIndex("mailbox_signatures_default_unq").on(t.mailboxId).where(sql`${t.isDefault} = 1`),
+	],
+);
 
 /**
  * One encrypted, long-lived IMAP/SMTP connection per external mailbox. Protocol

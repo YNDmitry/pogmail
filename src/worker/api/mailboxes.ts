@@ -9,6 +9,7 @@ import {
 	mailboxAccess,
 	mailboxAliases,
 	mailboxes,
+	mailboxSignatures,
 	users,
 } from "@/db/schema";
 import { audit } from "../audit";
@@ -34,8 +35,6 @@ const createInput = z.object({
 
 const updateInput = z.object({
 	displayName: z.string().max(120).nullable().optional(),
-	signature: z.string().max(5000).nullable().optional(),
-	signatureHtml: z.string().max(100_000).nullable().optional(),
 	type: z.enum(MAILBOX_TYPES).optional(),
 	useAllDomains: z.boolean().optional(),
 	disabled: z.boolean().optional(),
@@ -43,6 +42,12 @@ const updateInput = z.object({
 	autoReplySubject: z.string().max(300).optional(),
 	autoReplyBody: z.string().max(10000).optional(),
 	autoReplyHtml: z.string().max(100_000).nullable().optional(),
+});
+
+const signatureInput = z.object({
+	name: z.string().trim().min(1).max(60),
+	bodyText: z.string().max(5000),
+	bodyHtml: z.string().max(100_000),
 });
 
 const accessInput = z.object({
@@ -150,6 +155,66 @@ export const mailboxRoutes = new Hono<AppBindings>()
 
 		audit(c, { action: "mailbox.update", mailboxId: mailbox.id });
 		return c.json(row);
+	})
+
+	.get("/:id/signatures", async (c) => {
+		await loadReadable(c, c.req.param("id"));
+		return c.json({ items: await c.get("db").select().from(mailboxSignatures)
+			.where(eq(mailboxSignatures.mailboxId, c.req.param("id")))
+			.orderBy(mailboxSignatures.createdAt).all() });
+	})
+
+	.post("/:id/signatures", async (c) => {
+		const mailbox = await loadWritable(c, c.req.param("id"));
+		const input = await parseBody(c, signatureInput);
+		const db = c.get("db");
+		const existing = await db.select({ id: mailboxSignatures.id }).from(mailboxSignatures)
+			.where(and(eq(mailboxSignatures.mailboxId, mailbox.id), eq(mailboxSignatures.name, input.name))).get();
+		if (existing) throw new HTTPException(409, { message: "A signature with this name already exists" });
+		const first = await db.select({ id: mailboxSignatures.id }).from(mailboxSignatures)
+			.where(eq(mailboxSignatures.mailboxId, mailbox.id)).get();
+		const row = await db.insert(mailboxSignatures).values({ ...input, mailboxId: mailbox.id, isDefault: !first }).returning().get();
+		audit(c, { action: "mailbox.signature_create", mailboxId: mailbox.id });
+		return c.json(row, 201);
+	})
+
+	.put("/:id/signatures/default", async (c) => {
+		const mailbox = await loadWritable(c, c.req.param("id"));
+		const { signatureId } = await parseBody(c, z.object({ signatureId: z.string().nullable() }));
+		if (signatureId) {
+			const selected = await c.get("db").select({ id: mailboxSignatures.id }).from(mailboxSignatures)
+				.where(and(eq(mailboxSignatures.mailboxId, mailbox.id), eq(mailboxSignatures.id, signatureId))).get();
+			if (!selected) notFound("Signature");
+		}
+		await c.env.DB.batch([
+			c.env.DB.prepare("UPDATE mailbox_signatures SET is_default = 0 WHERE mailbox_id = ? AND is_default = 1").bind(mailbox.id),
+			...(signatureId ? [c.env.DB.prepare("UPDATE mailbox_signatures SET is_default = 1 WHERE mailbox_id = ? AND id = ?").bind(mailbox.id, signatureId)] : []),
+		]);
+		audit(c, { action: "mailbox.signature_select", mailboxId: mailbox.id });
+		return c.json({ signatureId });
+	})
+
+	.patch("/:id/signatures/:signatureId", async (c) => {
+		const mailbox = await loadWritable(c, c.req.param("id"));
+		const input = await parseBody(c, signatureInput);
+		const db = c.get("db");
+		const existing = await db.select({ id: mailboxSignatures.id }).from(mailboxSignatures)
+			.where(and(eq(mailboxSignatures.mailboxId, mailbox.id), eq(mailboxSignatures.name, input.name))).get();
+		if (existing && existing.id !== c.req.param("signatureId")) throw new HTTPException(409, { message: "A signature with this name already exists" });
+		const row = await db.update(mailboxSignatures).set(input)
+			.where(and(eq(mailboxSignatures.mailboxId, mailbox.id), eq(mailboxSignatures.id, c.req.param("signatureId")))).returning().get();
+		if (!row) notFound("Signature");
+		audit(c, { action: "mailbox.signature_update", mailboxId: mailbox.id });
+		return c.json(row);
+	})
+
+	.delete("/:id/signatures/:signatureId", async (c) => {
+		const mailbox = await loadWritable(c, c.req.param("id"));
+		const row = await c.get("db").delete(mailboxSignatures)
+			.where(and(eq(mailboxSignatures.mailboxId, mailbox.id), eq(mailboxSignatures.id, c.req.param("signatureId")))).returning().get();
+		if (!row) notFound("Signature");
+		audit(c, { action: "mailbox.signature_delete", mailboxId: mailbox.id });
+		return c.json({ ok: true });
 	})
 
 	.delete("/:id", requireMailboxManager, async (c) => {

@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Pencil, Plus, X } from "lucide-react";
 import { Button, SubmitButton } from "@/client/components/app/button";
 import { Input, Switch } from "@/client/components/ui";
 import { MailyEditor } from "@/client/components/app/maily-editor";
+import { SignatureSettings } from "@/client/components/app/signature-settings";
 import { Modal } from "@/client/components/app/modal";
 import { Card, Empty, Field, Machine, Tag } from "@/client/components/app/primitives";
 import { useToast } from "@/client/components/app/toast-host";
@@ -21,8 +22,6 @@ type MailboxDetail = {
 	id: string;
 	address: string;
 	displayName: string | null;
-	signature: string | null;
-	signatureHtml: string | null;
 	autoReplyEnabled: boolean;
 	autoReplySubject: string;
 	autoReplyBody: string;
@@ -83,7 +82,6 @@ function MailboxForm({ id }: { id: string }) {
 	const client = useQueryClient();
 	const [state, setState] = useState<"idle" | "loading">("idle");
 	const [contentMailboxId, setContentMailboxId] = useState<string | null>(null);
-	const [signature, setSignature] = useState({ html: "", text: "" });
 	const [autoReply, setAutoReply] = useState({ html: "", text: "" });
 
 	const mailbox = useQuery({
@@ -99,7 +97,6 @@ function MailboxForm({ id }: { id: string }) {
 	// they mount for a different mailbox, without clobbering edits on a refetch.
 	if (contentMailboxId !== data.id) {
 		setContentMailboxId(data.id);
-		setSignature({ html: data.signatureHtml ?? textToHtml(data.signature), text: data.signature ?? "" });
 		setAutoReply({ html: data.autoReplyHtml ?? textToHtml(data.autoReplyBody), text: data.autoReplyBody });
 		return null;
 	}
@@ -116,8 +113,6 @@ function MailboxForm({ id }: { id: string }) {
 					try {
 						await api.patch(`/api/mailboxes/${id}`, {
 							displayName: String(form.get("displayName")) || null,
-							signature: signature.text || null,
-							signatureHtml: signature.html || null,
 							autoReplyEnabled: form.get("autoReplyEnabled") === "on",
 							autoReplySubject: String(form.get("autoReplySubject")),
 							autoReplyBody: autoReply.text,
@@ -148,16 +143,6 @@ function MailboxForm({ id }: { id: string }) {
 						defaultValue={data.displayName ?? ""}
 						maxLength={120}
 
-					/>
-				</Field>
-
-				<Field label="Signature" hint="Added to every sent message with a plain-text fallback.">
-					<MailyEditor
-						initialHtml={data.signatureHtml ?? textToHtml(data.signature)}
-						onChange={(html, text) => setSignature({ html, text })}
-						ariaLabel="Signature"
-						density="compact"
-						className="rounded-panel border border-seam px-3"
 					/>
 				</Field>
 
@@ -199,6 +184,7 @@ function MailboxForm({ id }: { id: string }) {
 				</SubmitButton>
 			</form>
 
+			<SignatureSettings mailboxId={id} />
 			<Folders mailboxId={id} />
 		</Card>
 	);

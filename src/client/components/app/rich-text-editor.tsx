@@ -202,7 +202,7 @@ export function RichTextEditor({
 	className,
 }: {
 	initialHtml: string;
-	onChange: (html: string) => void;
+	onChange: (html: string, text: string) => void;
 	placeholder?: string;
 	ariaLabel: string;
 	handleRef?: Ref<RichTextHandle>;
@@ -232,7 +232,7 @@ export function RichTextEditor({
 		onUpdate: ({ editor: instance }) => {
 			// An empty document still serialises to `<p></p>`; the caller wants
 			// nothing, so the draft it saves stays empty.
-			onChange(instance.isEmpty ? "" : instance.getHTML());
+			onChange(instance.isEmpty ? "" : instance.getHTML(), instance.isEmpty ? "" : instance.getText({ blockSeparator: "\n" }));
 		},
 	});
 

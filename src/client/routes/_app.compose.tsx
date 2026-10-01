@@ -9,6 +9,7 @@ import {
   createFileRoute,
   useBlocker,
   useNavigate,
+  useRouterState,
   useSearch,
 } from "@tanstack/react-router";
 import { z } from "zod";
@@ -74,7 +75,22 @@ function formatAddresses(entries: MailAddress[] | null | undefined): string {
 }
 
 function Compose() {
-  const { replyTo, draftId } = useSearch({ from: "/_app/compose" });
+  const search = useSearch({ from: "/_app/compose" });
+  const entryKey = useRouterState({
+    // oxlint-disable-next-line no-underscore-dangle -- TanStack's history-entry identifier.
+    select: (state) => state.location.state.__TSR_key,
+  });
+  return <ComposeSession key={entryKey} search={search} />;
+}
+
+function ComposeSession({
+  search,
+}: {
+  search: { replyTo?: string; draftId?: string };
+}) {
+  // Autosave replaces the URL within this history entry. Only a real navigation
+  // starts a new form; changing draftId must not reload its initial data.
+  const [{ replyTo, draftId }] = useState(search);
   const mailboxes = useMailboxes();
   // At most one of the two: a screen is either a reply or an open draft.
   const source = useMessage(draftId ?? replyTo);
@@ -322,8 +338,8 @@ function ComposeForm({
         const row = await api.post<{ id: string }>("/api/send/drafts", payload);
         id = row.id;
         setDraftId(id);
-        // Keep the form mounted: router navigation would reload the new draft
-        // from the API and make the whole composer flash on every first save.
+        // Keep the history entry's key: the compose session owns the live form,
+        // while this URL lets a reload reopen the saved draft.
         const url = new URL(window.location.href);
         url.searchParams.delete("replyTo");
         url.searchParams.set("draftId", id);

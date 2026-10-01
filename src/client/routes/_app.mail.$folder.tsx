@@ -7,6 +7,8 @@ import {
 	useSearch,
 } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { conversationKey } from "@/client/lib/format";
 import { Archive, MailOpen, Search, Trash2, X } from "lucide-react";
 import { z } from "zod";
 import { Loader } from "@/client/components/motion/loader";
@@ -24,6 +26,8 @@ import {
 	useMailboxes,
 	useSession,
 	useMessages,
+	useMessage,
+	resolveMessageRows,
 	useMoveMessages,
 	usePatchMessage,
 	type MessageFilters,
@@ -83,7 +87,7 @@ function MailFolder() {
 	const search = useSearch({ from: "/_app/mail/$folder" });
 	const navigate = useNavigate({ from: "/mail/$folder" });
 	const patch = usePatchMessage();
-	const moveMessages = useMoveMessages();
+	const client = useQueryClient();
 	const bulk = useBulkPatch();
 	const remove = useDeleteMessage();
 	const confirm = useConfirm();
@@ -120,7 +124,11 @@ function MailFolder() {
 
 	const messages = useMessages(filters);
 	const session = useSession();
-	const conversations = session.data?.mailLayout === "conversations";
+	// Drafts and permanent deletion stay explicitly per-message.
+	const conversations = session.data?.mailLayout === "conversations" && folder !== "drafts" && folder !== "trash";
+	const moveMessages = useMoveMessages(conversations);
+	const selectedMessage = useMessage(conversations ? selectedId : undefined);
+	const selectedConversationKey = selectedMessage.data ? conversationKey(selectedMessage.data) : undefined;
 
 	/*
 	 * Conversation mode collapses a thread into its newest message and counts the
@@ -136,17 +144,18 @@ function MailFolder() {
 		const heads = new Map<string, MessageSummary>();
 		const sizes = new Map<string, number>();
 		for (const message of page) {
-			const head = heads.get(message.threadId);
-			sizes.set(message.threadId, (sizes.get(message.threadId) ?? 0) + 1);
+			const key = conversationKey(message);
+			const head = heads.get(key);
+			sizes.set(key, (sizes.get(key) ?? 0) + 1);
 
 			if (!head) {
-				heads.set(message.threadId, message);
+				heads.set(key, message);
 				continue;
 			}
 
 			// The row shows the newest message, but carries the thread's state: one
 			// unread message makes the conversation unread, one star stars it.
-			heads.set(message.threadId, {
+			heads.set(key, {
 				...(new Date(message.receivedAt) > new Date(head.receivedAt) ? message : head),
 				read: head.read && message.read,
 				starred: head.starred || message.starred,
@@ -167,7 +176,7 @@ function MailFolder() {
 	 * when the folder, mailbox or search term changes, the selection carries the
 	 * list it was made in: a selection from another list is simply not this one's.
 	 */
-	const scope = `${folder}|${search.mailboxId ?? ""}|${search.q ?? ""}`;
+	const scope = JSON.stringify([folder, search.mailboxId, search.q, conversations]);
 	const picked = selection.scope === scope ? selection.ids : EMPTY_SELECTION;
 	const mailboxes = useMailboxes();
 	const folders = useFolders();
@@ -193,7 +202,7 @@ function MailFolder() {
 	 * One place decides what an action means, so the row buttons, the bulk bar and
 	 * the keyboard cannot drift apart.
 	 */
-	function act(
+	async function act(
 		ids: string[],
 		change: { status?: MessageStatus; read?: boolean; starred?: boolean; folderId?: string | null },
 		said: string,
@@ -204,12 +213,20 @@ function MailFolder() {
 				.then(() => setSelection({ scope, ids: new Set() })).catch(() => {});
 			return;
 		}
-		if (ids.length === 1 && ids[0]) {
-			patch.mutate({ id: ids[0], patch: change }, { onSuccess: () => toast.ok(said) });
-		} else {
-			bulk.mutate({ ids, ...change }, { onSuccess: () => toast.ok(`${said} · ${ids.length}`) });
+		let rows: MessageSummary[];
+		try {
+			rows = await resolveMessageRows(client, items.filter((row) => ids.includes(row.id)), conversations);
+		} catch (error) {
+			toast.fail("Could not load the conversation", error instanceof Error ? error.message : undefined);
+			return;
 		}
-		setSelection({ scope, ids: new Set() });
+		try {
+			if (rows.length === 1) await patch.mutateAsync({ id: rows[0]!.id, patch: change });
+			else if (rows.length) await bulk.mutateAsync({ ids: rows.map((row) => row.id), ...change });
+			else return;
+			toast.ok(said);
+			setSelection({ scope, ids: new Set() });
+		} catch { /* Mutation errors are reported by the shared hooks. */ }
 	}
 
 	function askPermanentDelete(ids: string[]) {
@@ -249,7 +266,7 @@ function MailFolder() {
 			if (event.key === "Enter" && target?.closest("a")) return;
 			if (items.length === 0) return;
 
-			const index = items.findIndex((item) => item.id === (cursorId ?? selectedId));
+			const index = items.findIndex((item) => item.id === (cursorId ?? selectedId) || (!cursorId && selectedConversationKey === conversationKey(item)));
 			const current = items[index] ?? items[0];
 			if (!current) return;
 
@@ -460,11 +477,12 @@ function MailFolder() {
 							messages={items}
 							folder={folder}
 							selectedId={selectedId}
+							selectedConversationKey={selectedConversationKey}
 							picked={picked}
 							threadSizes={threadSizes}
 							cursorId={cursorId ?? undefined}
 							onToggleStar={(message) =>
-								patch.mutate({ id: message.id, patch: { starred: !message.starred } })
+								void act([message.id], { starred: !message.starred }, message.starred ? "Star removed" : "Starred")
 							}
 							onTogglePicked={(message) => toggle(message.id)}
 							onArchive={(message) => act([message.id], { status: "archived", folderId: null }, "Archived")}
@@ -502,7 +520,7 @@ function MailFolder() {
 				</div>
 			</section>
 
-			<section
+			<section data-reader-scroll aria-label="Message reader"
 				className={`${selectedId ? "block" : "hidden"} min-h-0 overflow-y-auto lg:block`}
 			>
 				<Outlet />

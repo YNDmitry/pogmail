@@ -1,3 +1,16 @@
+import type { MessageDetail, MessageSummary } from "@/shared/contract/mail";
+
+export function conversationKey(mail: Pick<MessageSummary, "mailboxId" | "threadId" | "status" | "id">): string {
+	return JSON.stringify([mail.mailboxId, mail.threadId, mail.status === "draft" ? mail.id : null]);
+}
+
+/** Sent-mail replies use its recipients rather than blindly using its From address. */
+export function replyAddress(mail: Pick<MessageDetail, "direction" | "replyTo" | "fromAddress" | "toAddresses">, ownAddress = mail.fromAddress): string {
+	if (mail.direction === "inbound") return mail.replyTo || mail.fromAddress;
+	return mail.toAddresses.find((entry) => entry.address.toLowerCase() !== ownAddress.toLowerCase())?.address
+		?? mail.toAddresses[0]?.address ?? "";
+}
+
 /** Mail lists are scanned, not read: today shows a clock, this year a date. */
 export function shortDate(value: string | Date): string {
 	const date = typeof value === "string" ? new Date(value) : value;

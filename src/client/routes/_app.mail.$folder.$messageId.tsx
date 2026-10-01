@@ -1,20 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import {
   createFileRoute,
   Link,
   useNavigate,
   useParams,
+  useSearch,
 } from "@tanstack/react-router";
 import {
   Archive,
   ArrowLeft,
   CalendarPlus,
+  ChevronDown,
   CornerUpLeft,
   Download,
   MailWarning,
   Paperclip,
   Star,
-  Timer,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/client/components/app/button";
@@ -26,8 +27,9 @@ import { ReplyBox } from "@/client/components/app/reply-box";
 import { useToast } from "@/client/components/app/toast-host";
 import { Loader } from "@/client/components/motion/loader";
 import { api } from "@/client/lib/api";
-import { bytes, fullDate, initials, senderLabel, shortDate } from "@/client/lib/format";
+import { bytes, conversationKey, fullDate, initials, replyAddress, senderLabel, shortDate } from "@/client/lib/format";
 import {
+  useBulkPatch,
   useDeleteMessage,
   useFolders,
   useMailboxes,
@@ -39,6 +41,7 @@ import {
 } from "@/client/lib/queries";
 import { canSend } from "@/shared/contract/permissions";
 import { cn } from "@/client/lib/utils";
+import { htmlHasContent } from "@/client/lib/mail-html";
 import type {
   Attachment,
   MessageDetail,
@@ -129,19 +132,27 @@ function Reader() {
     from: "/_app/mail/$folder/$messageId",
   });
   const navigate = useNavigate();
+  const search = useSearch({ from: "/_app/mail/$folder" });
   const toast = useToast();
 
   const session = useSession();
   const mailboxes = useMailboxes();
   const folders = useFolders();
-  const conversations = session.data?.mailLayout === "conversations";
+  const conversations = session.data?.mailLayout === "conversations" && folder !== "drafts";
 
   const [purging, setPurging] = useState(false);
 
   const message = useMessage(messageId);
   const thread = useThread(messageId);
+  const history = thread.data?.filter((item) => item.status !== "draft");
+  const latestIncoming = conversations ? history?.findLast((item) => item.direction === "inbound" && item.status !== "draft") : undefined;
+  const correspondent = useMessage(latestIncoming && latestIncoming.id !== messageId ? latestIncoming.id : undefined);
+  const replySource = latestIncoming && latestIncoming.id !== messageId ? correspondent.data : message.data;
+  const [previousReply, setPreviousReply] = useState<MessageDetail | null>(null);
+  if (thread.data && replySource && previousReply !== replySource) setPreviousReply(replySource);
   const patch = usePatchMessage();
-  const moveMessages = useMoveMessages();
+  const bulk = useBulkPatch();
+  const moveMessages = useMoveMessages(conversations);
   const remove = useDeleteMessage();
 
   // Opening a message is what marks it read; there is no separate action for it.
@@ -150,11 +161,11 @@ function Reader() {
   const marked = useRef<string | null>(null);
   useEffect(() => {
     const mail = message.data;
-    if (!mail || mail.read || marked.current === mail.id) return;
+    if (conversations || !mail || mail.read || marked.current === mail.id) return;
 
     marked.current = mail.id;
     patch.mutate({ id: mail.id, patch: { read: true } });
-  }, [message.data, patch]);
+  }, [message.data, patch, conversations]);
 
   const canReply = canSend(
     (mailboxes.data ?? []).find(
@@ -162,7 +173,21 @@ function Reader() {
     )?.permission ?? "read_only",
   );
 
-  const hasThread = (thread.data?.length ?? 0) > 1;
+  const hasThread = (history?.length ?? 0) > 1;
+  const conversationList = useRef<HTMLOListElement>(null);
+  const focused = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    const mail = message.data;
+    if (!conversations || !mail || !thread.data || focused.current === mail.id) return;
+    const focusId = mail.id === history?.at(-1)?.id ? (history.find((item) => !item.read)?.id ?? mail.id) : mail.id;
+    const list = conversationList.current;
+    const viewport = list?.closest<HTMLElement>("[data-reader-scroll]");
+    const target = list?.querySelector<HTMLElement>(`[data-thread-message="${CSS.escape(focusId)}"]`);
+    if (!viewport || !target) return;
+    const toolbar = viewport.querySelector<HTMLElement>("[data-conversation-toolbar]");
+    viewport.scrollTop += target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - (toolbar?.offsetHeight ?? 0) - 16;
+    focused.current = mail.id;
+  }, [conversations, message.data, thread.data, history]);
 
   if (message.isPending) {
     return (
@@ -178,11 +203,19 @@ function Reader() {
   }
   if (!message.data) return null;
   const mail = message.data;
-  const threadPosition =
-    (thread.data?.findIndex((item) => item.id === mail.id) ?? -1) + 1;
-  const isLatest = threadPosition > 0 && threadPosition === thread.data?.length;
+  // Keep the editor mounted while a newly arrived correspondent's details load.
+  const replyTarget = replySource ?? (previousReply?.mailboxId === mail.mailboxId && previousReply.threadId === mail.threadId ? previousReply : undefined);
+  const mailboxAddress = mailboxes.data?.find((entry) => entry.id === mail.mailboxId)?.address;
+  const recipient = replyTarget ? replyAddress(replyTarget, mailboxAddress) : "";
+  const actionRows = conversations ? (thread.data ?? [mail]).filter((item) => item.status === mail.status && item.folderId === mail.folderId) : [mail];
+  const starred = actionRows.some((item) => item.starred);
+
+  function updateRows(change: { starred?: boolean; snoozedUntil?: number }, onSuccess?: () => void) {
+    if (actionRows.length > 1) bulk.mutate({ ids: actionRows.map((item) => item.id), ...change }, { onSuccess });
+    else if (actionRows[0]) patch.mutate({ id: actionRows[0].id, patch: change }, { onSuccess });
+  }
   const title = conversations
-    ? (thread.data?.[0]?.subject ?? mail.subject)
+    ? (history?.[0]?.subject ?? mail.subject)
     : mail.subject;
   const outboundSummary = mail.delivery ? deliverySummary(mail.delivery) : null;
 
@@ -214,22 +247,22 @@ function Reader() {
         Back to messages
       </Link>
 
-      <header className="space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <h1 className="display min-w-0 flex-1 text-xl leading-snug text-ink">
+      <header className={conversations ? "contents" : "space-y-4"}>
+        <div data-conversation-toolbar={conversations ? "" : undefined}
+          className={cn("flex flex-wrap items-start justify-between gap-3", conversations && "sticky top-0 z-10 bg-[var(--pogpin-shell-panel)] py-2")}>
+          <h1 title={title || "(no subject)"} className={cn("display min-w-0 flex-1 break-words text-xl leading-snug text-ink", conversations && "line-clamp-2")}>
             {title || "(no subject)"}
           </h1>
 
           <div className="flex w-full min-w-0 flex-wrap items-center gap-1 sm:w-auto sm:shrink-0">
             <IconAction
-              label={mail.starred ? "Remove star" : "Add star"}
-              pressed={mail.starred}
-              onClick={() =>
-                patch.mutate({ id: mail.id, patch: { starred: !mail.starred } })
-              }
+              label={starred ? "Remove star" : "Add star"}
+              pressed={starred}
+              disabled={conversations && !thread.data}
+              onClick={() => updateRows({ starred: !starred })}
             >
               <Star
-                className={cn("size-4", mail.starred && "fill-wait text-wait")}
+                className={cn("size-4", starred && "fill-wait text-wait")}
               />
             </IconAction>
 
@@ -267,7 +300,7 @@ function Reader() {
             {moveTargets.length > 0 ? (
               <Choice
                 placeholder="Move to…"
-                aria-label="Move this message to a folder"
+                aria-label={conversations ? "Move this conversation to a folder" : "Move this message to a folder"}
                 size="sm"
                 className="w-auto min-w-32"
                 options={[
@@ -285,9 +318,7 @@ function Reader() {
 
         {conversations && hasThread ? (
           <p className="text-xs text-muted-foreground">
-            {isLatest
-              ? `Viewing latest message · ${thread.data?.length} in thread`
-              : `Viewing message ${threadPosition} of ${thread.data?.length} · latest is below`}
+            {history?.length} messages · oldest first
           </p>
         ) : null}
 
@@ -346,7 +377,7 @@ function Reader() {
           </div>
         ) : null}
 
-        <div className="flex flex-wrap items-start gap-3 border-b border-seam pb-4">
+        {!conversations ? <div className="flex flex-wrap items-start gap-3 border-b border-seam pb-4">
           <span
             aria-hidden
             className="grid size-9 shrink-0 place-items-center rounded-full bg-recess text-xs font-semibold text-ink-2"
@@ -375,7 +406,7 @@ function Reader() {
           >
             {fullDate(mail.receivedAt)}
           </time>
-        </div>
+        </div> : null}
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Read as a conversation, the reply box at the end of the thread is
@@ -432,34 +463,15 @@ function Reader() {
             Add to calendar
           </Button>
 
-          {SNOOZE_OPTIONS.map((option) => {
-            const when = option.at();
-            return (
-              <Button
-                key={option.label}
-                size="sm"
-                variant="ghost"
-                // The button says roughly when; the tooltip and the toast say
-                // exactly when, so nobody has to guess what "next week" meant.
-                title={`Back at ${SNOOZE_FORMAT.format(when)}`}
-                onClick={() =>
-                  patch.mutate(
-                    { id: mail.id, patch: { snoozedUntil: when.getTime() } },
-                    {
-                      onSuccess: () =>
-                        toast.ok(
-                          "Snoozed",
-                          `Back in your inbox on ${SNOOZE_FORMAT.format(when)}.`,
-                        ),
-                    },
-                  )
-                }
-              >
-                <Timer className="size-3.5" />
-                {option.label}
-              </Button>
-            );
-          })}
+          <Choice aria-label="Snooze" placeholder="Snooze…" value="" size="sm" className="w-32"
+            disabled={conversations && !thread.data}
+            options={SNOOZE_OPTIONS.map((option, index) => ({ value: String(index), label: option.label }))}
+            onChange={(value) => {
+              const when = SNOOZE_OPTIONS[Number(value)]?.at();
+              if (!when) return;
+              updateRows({ snoozedUntil: when.getTime() }, () =>
+                toast.ok("Snoozed", `Back in your inbox on ${SNOOZE_FORMAT.format(when)}.`));
+            }} />
         </div>
       </header>
 
@@ -478,12 +490,12 @@ function Reader() {
               Thread
             </h2>
             <span className="text-xs text-muted-foreground">
-              {thread.data?.length} messages · latest at top
+              {history?.length} messages · latest at top
             </span>
           </div>
 
           <ol className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-            {(thread.data ?? []).toReversed().map((item, index) => {
+            {(history ?? []).toReversed().map((item, index) => {
               const current = item.id === mail.id;
               return (
                 <li key={item.id}>
@@ -530,99 +542,15 @@ function Reader() {
         </section>
       ) : null}
 
-      {mail.attachments.length > 0 ? (
-        <section className="space-y-2">
-          <h2 className="field-label">
-            {mail.attachments.length} attachment
-            {mail.attachments.length === 1 ? "" : "s"}
-          </h2>
-          <ul className="grid gap-2 sm:grid-cols-2">
-            {mail.attachments.map((attachment) => (
-              <li key={attachment.id}>
-                <a
-                  href={`/api/messages/${mail.id}/attachments/${attachment.id}`}
-                  className="flex items-center gap-2 rounded-panel border border-seam bg-panel px-3 py-2 text-sm transition-colors hover:border-primary"
-                >
-                  <Paperclip
-                    aria-hidden
-                    className="size-4 shrink-0 text-ink-3"
-                  />
-                  <span className="min-w-0 flex-1 truncate">
-                    {attachment.filename}
-                  </span>
-                  <Machine className="shrink-0 text-xs">
-                    {bytes(attachment.sizeBytes)}
-                  </Machine>
-                  <Download
-                    aria-hidden
-                    className="size-3.5 shrink-0 text-ink-3"
-                  />
-                </a>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      <MessageBody
-        html={mail.bodyHtml}
-        text={mail.bodyText}
-        messageId={mail.id}
-        attachments={mail.attachments}
-      />
-
-      <footer className="flex flex-wrap items-center gap-3 border-t border-seam pt-4 text-xs text-ink-3">
-        <Tag tone={mail.direction === "inbound" ? "accent" : "neutral"}>
-          {mail.direction === "inbound" ? "Received" : "Sent"}
-        </Tag>
-        {mail.messageId ? (
-          <Machine className="truncate text-[0.6875rem]">
-            {mail.messageId}
-          </Machine>
-        ) : null}
-        <a
-          href={`/api/mail/export/${mail.id}/eml`}
-          className="ml-auto underline underline-offset-2 hover:text-ink-2"
-        >
-          Download original
-        </a>
-      </footer>
-
-      {conversations && hasThread ? (
-        /*
-         * Read as a conversation, the thread is the page: the messages either
-         * side of this one are laid out in order, mine on the right and theirs
-         * on the left, so a back-and-forth reads as one.
-         */
-        <section
-          aria-labelledby="conversation-thread-heading"
-          className="space-y-2"
-        >
-          <div className="flex items-baseline justify-between gap-3">
-            <h2
-              id="conversation-thread-heading"
-              className="text-sm font-medium text-foreground"
-            >
-              Thread
-            </h2>
-            <span className="text-xs text-muted-foreground">
-              {thread.data?.length ?? 0} messages · oldest → latest
-            </span>
-          </div>
-          <ol className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-            {(thread.data ?? []).map((item, index, items) => (
-              <li key={item.id}>
-                <ThreadRow
-                  item={item}
-                  folder={folder}
-                  current={item.id === mail.id}
-                  latest={index === items.length - 1}
-                />
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
+      {conversations ? (
+        <ol ref={conversationList} aria-label="Conversation messages" className="divide-y divide-border" key={conversationKey(mail)}>
+          {(history?.length ? history : [mail]).map((item, index, items) => (
+            <ConversationMessage key={item.id} item={item} selectedId={mail.id}
+              initiallyOpen={item.id === mail.id || !item.read || index === items.length - 1}
+              latest={index === items.length - 1} foldQuotes={!search.q} />
+          ))}
+        </ol>
+      ) : <MessageContents key={mail.id} mail={mail} />}
 
       <Modal
         open={purging}
@@ -662,64 +590,73 @@ function Reader() {
        * old reply paths let someone write the whole answer before the server
        * refused it. The box is only offered where the answer can actually go.
        */}
-      {conversations && mail.status !== "draft" ? (
-        canReply ? (
+      {conversations && thread.data && mail.status !== "draft" ? (
+        canReply && replyTarget && recipient ? (
           <ReplyBox
+            key={conversationKey(mail)}
             mailboxId={mail.mailboxId}
-            to={mail.replyTo ?? mail.fromAddress}
-            subject={mail.subject}
-            inReplyTo={mail.messageId}
+            to={recipient}
+            subject={replyTarget.subject}
+            inReplyTo={replyTarget.messageId}
             threadId={mail.threadId}
-            replyToId={mail.id}
+            replyToId={replyTarget.id}
           />
-        ) : (
+        ) : canReply && !replyTarget && correspondent.isPending ? <Loader /> : !canReply ? (
           <p className="rounded-xl border border-border bg-[var(--pogpin-shell-panel-alt)] px-3 py-2 text-xs text-muted-foreground">
             You can read this mailbox, but not send from it — ask its owner for
             send access to reply here.
           </p>
-        )
+        ) : correspondent.isError ? (
+          <div role="alert" className="space-y-2 text-sm">
+            <p>Could not load the reply recipient</p>
+            <Button variant="secondary" size="sm" onClick={() => void correspondent.refetch()}>Retry reply</Button>
+          </div>
+        ) : null
       ) : null}
     </article>
   );
 }
 
-/**
- * HTML mail is hostile by default: remote images track the reader and scripts are
- * scripts. It renders inside a sandboxed iframe with no origin and no script
- * execution, so nothing in a message can reach the app or the network.
- */
+/** Email HTML stays in the script-disabled sandbox, never in the app DOM. */
 function MessageBody({
-  html,
-  text,
-  messageId,
-  attachments,
+  html, text, messageId, attachments, foldQuotes = false, compact = false,
 }: {
   html: string | null;
   text: string | null;
   messageId: string;
   attachments: Attachment[];
+  foldQuotes?: boolean;
+  compact?: boolean;
 }) {
-  if (html) {
-    const body = attachments.reduce((result, attachment) => {
-      if (attachment.disposition !== "inline" || !attachment.contentId)
-        return result;
-      return result.replaceAll(
-        `cid:${attachment.contentId}`,
-        `/api/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachment.id)}`,
-      );
-    }, html);
-    return (
-      <EmailFrame
-        title="Message body"
-        html={body}
-        className="rounded-panel border border-seam"
-      />
+  const [showQuotes, setShowQuotes] = useState(false);
+  // ponytail: common quote markers only; keep the original toggle, add a parser if false positives matter.
+  const quoteStart = text?.search(/\n(?:>|On .+ wrote:)/) ?? -1;
+  const htmlQuoteStart = html?.search(/<(?:blockquote\b|[^>]+\bclass\s*=\s*["'][^"']*\b(?:gmail_quote|yahoo_quoted)\b)/i) ?? -1;
+  const htmlPrefix = html?.slice(0, htmlQuoteStart).replace(/<(head|style|script)\b[^>]*>[\s\S]*?<\/\1>/gi, "") ?? "";
+  const hasQuotes = foldQuotes && (html
+    ? htmlQuoteStart >= 0 && htmlHasContent(htmlPrefix)
+    : quoteStart >= 0 && Boolean(text?.slice(0, quoteStart).trim()));
+  const hidden = hasQuotes && !showQuotes;
+  const body = html ? attachments.reduce((result, attachment) => {
+    if (attachment.disposition !== "inline" || !attachment.contentId) return result;
+    return result.replaceAll(
+      `cid:${attachment.contentId}`,
+      `/api/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachment.id)}`,
     );
-  }
+  }, html) : null;
 
   return (
-    <div className="text-sm leading-relaxed whitespace-pre-wrap text-ink">
-      {text ?? <span className="text-ink-3">This message has no body.</span>}
+    <div className="space-y-2">
+      {body ? <EmailFrame title="Message body" minHeight={compact ? 80 : undefined}
+        html={hidden ? `${body}<style>blockquote,.gmail_quote,.yahoo_quoted{display:none!important}</style>` : body}
+        className={compact ? undefined : "rounded-panel border border-seam"} /> : (
+        <div dir="auto" className="text-base leading-relaxed whitespace-pre-wrap break-words text-ink sm:text-sm">
+          {hidden ? text?.slice(0, quoteStart).trimEnd() : text ?? <span className="text-ink-3">This message has no body.</span>}
+        </div>
+      )}
+      {hasQuotes ? <Button variant="ghost" size="sm" aria-expanded={showQuotes} onClick={() => setShowQuotes(!showQuotes)}>
+        {showQuotes ? "Hide quoted text" : "Show quoted text"}
+      </Button> : null}
     </div>
   );
 }
@@ -730,12 +667,14 @@ function IconAction({
   onClick,
   pressed,
   destructive,
+  disabled,
 }: {
   label: string;
   children: React.ReactNode;
   onClick: () => void;
   pressed?: boolean;
   destructive?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <Button
@@ -745,6 +684,7 @@ function IconAction({
       aria-label={label}
       title={label}
       aria-pressed={pressed}
+      disabled={disabled}
       onClick={onClick}
       className={cn(
         "text-ink-2",
@@ -756,52 +696,81 @@ function IconAction({
   );
 }
 
-/** A stable row in the thread timeline; only its state changes when another message opens. */
-function ThreadRow({
-  item,
-  folder,
-  current,
-  latest,
-}: {
-  item: MessageSummary;
-  folder: string;
-  current: boolean;
-  latest: boolean;
+function ConversationMessage({ item, initiallyOpen, latest, selectedId, foldQuotes }: {
+  item: MessageSummary; initiallyOpen: boolean; latest: boolean; selectedId: string; foldQuotes: boolean;
 }) {
+  const [view, setView] = useState({ selectedId, expanded: initiallyOpen });
+  if (view.selectedId !== selectedId) setView({ selectedId, expanded: view.expanded || item.id === selectedId });
+  const expanded = view.expanded;
+  const panelId = useId();
+  const message = useMessage(expanded ? item.id : undefined);
+  const patch = usePatchMessage();
+  const marked = useRef(false);
+  useEffect(() => {
+    if (!expanded || !message.data || message.data.read || marked.current) return;
+    marked.current = true;
+    patch.mutate({ id: item.id, patch: { read: true } });
+  }, [expanded, message.data, item.id, patch]);
+  const label = senderLabel(item.fromName, item.fromAddress);
+
   return (
-    <Link
-      to="/mail/$folder/$messageId"
-      params={{ folder, messageId: item.id }}
-      aria-current={current ? "page" : undefined}
-      className={cn(
-        "block min-w-0 px-3 py-2.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-        current ? "selected-row" : "hover:bg-[var(--pogpin-shell-fill-soft)]",
-      )}
-    >
-      <span className="flex min-w-0 flex-wrap items-baseline gap-2">
-        <span className="truncate text-[0.8125rem] font-medium text-foreground">
-          {senderLabel(item.fromName, item.fromAddress)}
+    <li data-thread-message={item.id} className="min-w-0">
+      <Button variant="ghost" aria-expanded={expanded} aria-controls={panelId}
+        aria-label={`${expanded ? "Collapse" : "Expand"} message from ${label}, ${fullDate(item.receivedAt)}`}
+        onClick={() => setView({ selectedId, expanded: !expanded })}
+        className="h-auto w-full min-w-0 items-start justify-start gap-3 rounded-none px-0 py-4 text-left">
+        <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-full bg-recess text-xs font-semibold text-ink-2">
+          {initials(label)}
         </span>
-        <span className="shrink-0 text-[0.6875rem] text-muted-foreground">
-          {item.direction === "outbound" ? "Sent" : "Received"}
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className={cn("min-w-0 truncate text-sm text-ink", !item.read && "font-semibold")}>{label}</span>
+            {latest ? <span className="text-xs text-ink-3">Latest</span> : null}
+            {!item.read ? <span className="text-xs text-ink-2">Unread</span> : null}
+            <time dateTime={item.receivedAt} className="machine ml-auto shrink-0 text-xs text-ink-3">
+              <span className="sm:hidden">{shortDate(item.receivedAt)}</span><span className="hidden sm:inline">{fullDate(item.receivedAt)}</span>
+            </time>
+          </span>
+          {!expanded ? <span className="mt-1 block truncate text-xs text-ink-3">{item.snippet || "No preview"}</span> : null}
         </span>
-        {latest ? (
-          <span className="shrink-0 text-[0.6875rem] font-medium text-muted-foreground">
-            Latest
-          </span>
-        ) : null}
-        {current ? (
-          <span className="shrink-0 text-[0.6875rem] font-medium text-primary">
-            Open above
-          </span>
-        ) : null}
-        <Machine className="ml-auto w-full shrink-0 text-[0.6875rem] sm:w-auto">
-          <span className="sm:hidden">{shortDate(item.receivedAt)}</span><span className="hidden sm:inline">{fullDate(item.receivedAt)}</span>
-        </Machine>
-      </span>
-      <span className="mt-1 block truncate text-sm text-[var(--pogpin-shell-text-soft)]">
-        {item.snippet || "No preview"}
-      </span>
-    </Link>
+        <ChevronDown aria-hidden className={cn("size-4 shrink-0 self-center text-ink-3 transition-transform", expanded && "rotate-180")} />
+      </Button>
+      <div id={panelId} hidden={!expanded} className="space-y-4 pb-5">
+        {expanded ? message.data ? <>
+          <p className="break-all text-xs text-ink-3">
+            <Machine>{message.data.fromAddress}</Machine>{" · to "}
+            <Machine>{message.data.toAddresses.map((entry) => entry.address).join(", ")}</Machine>
+          </p>
+          <MessageContents mail={message.data} foldQuotes={foldQuotes} compact />
+        </> : message.isError ? <div role="alert" className="space-y-2 text-sm">
+          <p>Could not load this message</p>
+          <Button variant="secondary" size="sm" onClick={() => void message.refetch()}>Retry</Button>
+        </div> : <Loader /> : null}
+      </div>
+    </li>
   );
+}
+
+function MessageContents({ mail, foldQuotes = false, compact = false }: { mail: MessageDetail; foldQuotes?: boolean; compact?: boolean }) {
+  return <div className="space-y-4">
+    {mail.attachments.length > 0 ? <section className="space-y-2">
+      <h2 className="field-label">{mail.attachments.length} attachment{mail.attachments.length === 1 ? "" : "s"}</h2>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {mail.attachments.map((attachment) => <li key={attachment.id}>
+          <a href={`/api/messages/${mail.id}/attachments/${attachment.id}`}
+            className="flex items-center gap-2 rounded-panel border border-seam bg-panel px-3 py-2 text-sm transition-colors hover:border-primary">
+            <Paperclip aria-hidden className="size-4 shrink-0 text-ink-3" />
+            <span className="min-w-0 flex-1 truncate">{attachment.filename}</span>
+            <Machine className="shrink-0 text-xs">{bytes(attachment.sizeBytes)}</Machine>
+            <Download aria-hidden className="size-3.5 shrink-0 text-ink-3" />
+          </a>
+        </li>)}
+      </ul>
+    </section> : null}
+    <MessageBody html={mail.bodyHtml} text={mail.bodyText} messageId={mail.id} attachments={mail.attachments} foldQuotes={foldQuotes} compact={compact} />
+    <footer className="flex min-w-0 flex-wrap items-center gap-3 text-xs text-ink-3">
+      <span>{mail.direction === "inbound" ? "Received" : "Sent"}</span>
+      <a href={`/api/mail/export/${mail.id}/eml`} className="ml-auto underline underline-offset-2 hover:text-ink-2">Download original</a>
+    </footer>
+  </div>;
 }

@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import { qk } from "./keys";
 import { useToast } from "@/client/components/app/toast-host";
@@ -161,13 +161,38 @@ export function useBulkPatch() {
 	});
 }
 
+/** Conversation actions affect members in the selected location, not other locations or mailboxes. */
+export async function resolveMessageRows(client: QueryClient, rows: MessageSummary[], conversations: boolean): Promise<MessageSummary[]> {
+	if (!conversations) return rows;
+	const groups = new Map(rows.map((row) => [JSON.stringify([row.mailboxId, row.threadId, row.status, row.folderId, row.status === "draft" ? row.id : null]), row]));
+	const members = await Promise.all([...groups.values()].map(async (row) => {
+		if (row.status === "draft") return [row];
+		const thread = await client.fetchQuery({
+			queryKey: qk.thread(row.id),
+			queryFn: async () => (await api.get<List<MessageSummary>>(`/api/messages/${row.id}/thread`)).items,
+			staleTime: 30_000,
+		});
+		const matches = thread.filter((item) => item.mailboxId === row.mailboxId && item.status === row.status && item.folderId === row.folderId);
+		if (!matches.length) throw new Error("This conversation moved. Refresh before trying again.");
+		return matches;
+	}));
+	return [...new Map(members.flat().map((row) => [row.id, row])).values()];
+}
+
 /** One reversible move path for row, reader, keyboard and bulk actions. */
-export function useMoveMessages() {
+export function useMoveMessages(conversations = false) {
+	const client = useQueryClient();
 	const patch = usePatchMessage();
 	const bulk = useBulkPatch();
 	const toast = useToast();
 	return async (rows: MessageSummary[], location: { status: MessageStatus; folderId: string | null }, title: string) => {
 		if (!rows.length) return;
+		try {
+			rows = await resolveMessageRows(client, rows, conversations);
+		} catch (error) {
+			toast.fail("Could not load the conversation", error instanceof Error ? error.message : undefined);
+			throw error;
+		}
 		const previous = rows.map(({ id, status, folderId }) => ({ id, status, folderId }));
 		if (rows.length === 1) await patch.mutateAsync({ id: rows[0]!.id, patch: location });
 		else await bulk.mutateAsync({ ids: rows.map((row) => row.id), ...location });

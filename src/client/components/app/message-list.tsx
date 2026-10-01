@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Archive, MailOpen, Paperclip, Star, Trash2 } from "lucide-react";
 import { Avatar, AvatarFallback, Checkbox } from "@/client/components/ui";
 import { Button } from "@/client/components/app/button";
-import { initials, senderLabel, shortDate } from "@/client/lib/format";
+import { conversationKey, initials, senderLabel, shortDate } from "@/client/lib/format";
 import { cn } from "@/client/lib/utils";
 import type { MessageSummary } from "@/shared/contract/mail";
 
@@ -19,6 +19,7 @@ export function MessageList({
 	messages,
 	folder,
 	selectedId,
+	selectedConversationKey,
 	/** Ids ticked for a bulk action; empty until the first checkbox is used. */
 	picked,
 	/** How many messages each thread holds; empty unless reading conversations. */
@@ -34,6 +35,7 @@ export function MessageList({
 	messages: MessageSummary[];
 	folder: string;
 	selectedId?: string | undefined;
+	selectedConversationKey?: string | undefined;
 	picked: ReadonlySet<string>;
 	threadSizes?: ReadonlyMap<string, number>;
 	cursorId?: string | undefined;
@@ -47,13 +49,13 @@ export function MessageList({
 	return (
 		<ul>
 			{messages.map((message, index) => {
-				const selected = message.id === selectedId;
+				const selected = message.id === selectedId || conversationKey(message) === selectedConversationKey;
 				const unread = !message.read;
 				const isPicked = picked.has(message.id);
 				const label = senderLabel(message.fromName, message.fromAddress);
 				const group = groupFor(message.receivedAt);
 				const showGroup = group !== groupFor(messages[index - 1]?.receivedAt);
-				const size = threadSizes?.get(message.threadId) ?? 1;
+				const size = threadSizes?.get(conversationKey(message)) ?? 1;
 
 				return (
 					<li key={message.id} data-message={message.id}>
@@ -90,12 +92,13 @@ export function MessageList({
 								/>
 							</span>
 							<Link
-								{...(folder === "drafts"
+								{...(message.status === "draft"
 									? ({ to: "/compose", search: { draftId: message.id } } as const)
 									: ({
 											to: "/mail/$folder/$messageId",
 											params: { folder, messageId: message.id },
 										} as const))}
+								aria-current={selected ? "page" : undefined}
 								className="flex gap-3 py-2.5 pr-3 pl-3.5"
 							>
 								{/* Selection sits outside this link: touch and keyboard users can

@@ -27,7 +27,7 @@ import { Loader } from "@/client/components/motion/loader";
 import { useMailboxes, useMessage } from "@/client/lib/queries";
 import { useList } from "@/client/lib/queries/crud";
 import { qk } from "@/client/lib/queries/keys";
-import { bytes } from "@/client/lib/format";
+import { bytes, replyAddress } from "@/client/lib/format";
 import { escapeHtml, htmlHasContent, textToHtml } from "@/client/lib/mail-html";
 import { MailyEditor } from "@/client/components/app/maily-editor";
 import type { RichTextHandle } from "@/client/components/app/rich-text-editor";
@@ -136,6 +136,7 @@ function ComposeSession({
 
   const draft = draftId ? source.data : undefined;
   const reply = draftId ? undefined : source.data;
+  const recipient = reply ? replyAddress(reply, sendable.find((entry) => entry.id === reply.mailboxId)?.address) : null;
 
   return (
     <ComposeForm
@@ -148,14 +149,14 @@ function ComposeSession({
         to: draft
           ? formatAddresses(draft.toAddresses)
           : reply
-            ? (reply.replyTo ?? reply.fromAddress)
+            ? (recipient ?? "")
             : "",
         cc: draft ? formatAddresses(draft.ccAddresses) : "",
         bcc: draft ? formatAddresses(draft.bccAddresses) : "",
         subject: draft
           ? (draft.subject ?? "")
           : reply
-            ? reply.subject?.startsWith("Re:")
+            ? reply.subject && /^re:/i.test(reply.subject)
               ? reply.subject
               : `Re: ${reply.subject ?? ""}`.trim()
             : "",
@@ -168,7 +169,7 @@ function ComposeSession({
       initialAttachments={draft?.attachments ?? []}
       inReplyTo={reply?.messageId ?? null}
       threadId={reply?.threadId ?? null}
-      replyingTo={reply ? (reply.replyTo ?? reply.fromAddress) : null}
+      replyingTo={recipient}
     />
   );
 }

@@ -17,10 +17,12 @@ export function EmailFrame({
 	title,
 	html,
 	className,
+	minHeight = MIN_HEIGHT,
 }: {
 	title: string;
 	html: string;
 	className?: string;
+	minHeight?: number;
 }) {
 	const frame = useRef<HTMLIFrameElement>(null);
 	const observer = useRef<ResizeObserver | null>(null);
@@ -29,13 +31,15 @@ export function EmailFrame({
 		const element = frame.current;
 		const document = element?.contentDocument;
 		if (!document) return;
+		// Reset the viewport before measuring so hiding quotes can also shrink the frame.
+		element.style.height = `${minHeight}px`;
 		const height = Math.max(
-			MIN_HEIGHT,
+			minHeight,
 			document.body.scrollHeight,
 			document.documentElement.scrollHeight,
 		);
 		element.style.height = `${height}px`;
-	}, []);
+	}, [minHeight]);
 
 	const observeHeight = useCallback(() => {
 		observer.current?.disconnect();
@@ -100,7 +104,8 @@ export function EmailFrame({
 			sandbox="allow-same-origin"
 			referrerPolicy="no-referrer"
 			onLoad={observeHeight}
-			className={cn("block min-h-96 w-full bg-white", className)}
+			className={cn("block w-full bg-white", className)}
+			style={{ minHeight, height: minHeight }}
 			srcDoc={html}
 		/>
 	);

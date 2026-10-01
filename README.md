@@ -21,6 +21,9 @@ gated behind a licence key.
   out-of-office replies with real loop guards.
 - **Sharing** — mailboxes can be shared with read, send-as, send-on-behalf or full
   access, independent of who owns them.
+- **Reading** — choose individual messages or conversations in Settings → Profile.
+  Expand messages in place, fold quoted history, and reply without leaving the
+  thread. Opening the full composer carries your reply into a saved draft.
 - **Search** — full-text over subject, body and sender, via SQLite FTS5 in D1.
   Combine text or quoted phrases with `from:sender`, `has:attachment`,
   `is:unread` or `is:read`. Load older results with **Load more**.

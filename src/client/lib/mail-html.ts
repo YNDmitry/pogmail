@@ -34,7 +34,7 @@ export function textToHtml(text: string | null | undefined): string {
 /** Whether a body carries anything a recipient would see. */
 export function htmlHasContent(html: string): boolean {
   return (
-    html
+    /<img\b/i.test(html) || html
       .replace(/<[^>]*>/g, "")
       .replace(/&nbsp;/g, " ")
       .trim().length > 0

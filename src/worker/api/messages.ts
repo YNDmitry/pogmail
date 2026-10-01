@@ -293,7 +293,7 @@ export const messageRoutes = new Hono<AppBindings>()
 			.select(summaryColumns)
 			.from(messages)
 			.where(and(eq(messages.mailboxId, message.mailboxId), eq(messages.threadId, message.threadId)))
-			.orderBy(messages.receivedAt)
+			.orderBy(messages.receivedAt, messages.id)
 			.all();
 
 		return c.json({ items: rows });

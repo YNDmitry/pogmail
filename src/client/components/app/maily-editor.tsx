@@ -45,6 +45,7 @@ export function MailyEditor({
   handleRef,
   className,
   density = "compose",
+  autoFocus = false,
   onImageUpload,
   imagePreviewSources,
 }: {
@@ -56,6 +57,7 @@ export function MailyEditor({
   className?: string;
   /** Settings and inline replies need the same editor, just less vertical chrome. */
   density?: "compose" | "compact";
+  autoFocus?: boolean;
   /** Provides a local preview URL while keeping the HTML's `cid:` source intact. */
   onImageUpload?: (file: Blob) => Promise<ImageUploadResult>;
   /** Existing CID references mapped to their private, authenticated preview URLs. */
@@ -114,6 +116,7 @@ export function MailyEditor({
             hideContextMenu: true,
             spellCheck: true,
             immediatelyRender: false,
+            autofocus: autoFocus ? "start" : false,
             wrapClassName: cn(
               "maily-compose-editor flex min-h-0 flex-1 flex-col",
               density === "compact" && "maily-editor-compact",

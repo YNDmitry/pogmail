@@ -22,13 +22,13 @@ const LAYOUTS = [
 		value: "conversations" as const,
 		label: "Conversations",
 		icon: MessagesSquare,
-		hint: "A thread is one row, and opening it stacks every message in it, oldest first.",
+		hint: "One row per conversation. Read and expand messages in place; older read mail starts collapsed.",
 	},
 	{
 		value: "messages" as const,
 		label: "Individual messages",
 		icon: List,
-		hint: "One row per message, in the order it arrived — closer to a log of what the server did.",
+		hint: "One row per message. Open messages separately, with links to related mail.",
 	},
 ];
 

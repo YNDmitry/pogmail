@@ -16,15 +16,16 @@ export function mail(overrides: Partial<MessageDetail> = {}): MessageDetail {
 /** Mock only the HTTP boundary; never sends mail or needs a real account. */
 export async function mailApp(page: Page, items = [mail()]) {
 	const state = {
-		items, failList: false, failNext: false, failRead: false, failSave: false, failPatch: false,
+		items, mailLayout: "messages" as "messages" | "conversations",
+		failList: false, failNext: false, failRead: false, failSave: false, failPatch: false, failSend: false,
 		saveGate: undefined as Promise<void> | undefined,
-		creates: 0, writes: [] as Array<Record<string, unknown>>, searches: [] as string[],
+		creates: 0, writes: [] as Array<Record<string, unknown>>, sentWrites: [] as Array<Record<string, unknown>>, searches: [] as string[],
 		searchResults: undefined as MessageDetail[] | undefined,
 	};
 	const responses: Record<string, unknown> = {
 		"/api/auth/me": {
 			id: "reader", email: "reader@example.test", name: "Reader", role: "user",
-			avatarKey: null, mailLayout: "messages", telegramChatId: null, canManageMailboxes: false,
+			avatarKey: null, get mailLayout() { return state.mailLayout; }, telegramChatId: null, canManageMailboxes: false,
 		},
 		"/api/branding": { appName: "Pogmail" },
 		"/api/mailboxes": { items: [{
@@ -41,6 +42,14 @@ export async function mailApp(page: Page, items = [mail()]) {
 		const path = url.pathname;
 		const method = request.method();
 		const fail = () => route.fulfill({ status: 503, json: { error: "Temporarily unavailable" } });
+		if (path === "/api/send" && method === "POST") {
+			const payload = request.postDataJSON();
+			state.sentWrites.push(payload);
+			if (state.failSend) return fail();
+			state.items.push(mail({ ...payload, id: `sent-${state.sentWrites.length}`, direction: "outbound", status: "sent",
+				fromAddress: "reader@example.test", fromName: "Reader", toAddresses: payload.to, receivedAt: new Date().toISOString() }));
+			return route.fulfill({ json: { ok: true } });
+		}
 		if (path.startsWith("/api/send/drafts") && (method === "POST" || method === "PUT")) {
 			const payload = request.postDataJSON();
 			if (method === "POST") state.creates++;
@@ -48,9 +57,10 @@ export async function mailApp(page: Page, items = [mail()]) {
 			await state.saveGate;
 			if (state.failSave) return fail();
 			const id = method === "POST" ? `draft-${state.creates}` : path.split("/").at(-1)!;
+			const fields = { ...payload, toAddresses: payload.to ?? [], ccAddresses: payload.cc ?? [], bccAddresses: payload.bcc ?? [] };
 			const existing = state.items.find((item) => item.id === id);
-			if (existing) Object.assign(existing, payload);
-			else state.items.push(mail({ ...payload, id, status: "draft" }));
+			if (existing) Object.assign(existing, fields);
+			else state.items.push(mail({ ...fields, id, direction: "outbound", status: "draft", fromAddress: "reader@example.test", fromName: "Reader" }));
 			return route.fulfill({ json: { id } });
 		}
 		if (path === "/api/messages" && method === "GET") {
@@ -76,17 +86,23 @@ export async function mailApp(page: Page, items = [mail()]) {
 			if (method === "PATCH") {
 				if (state.failPatch) return fail();
 				const payload = request.postDataJSON();
+				const fields = { ...payload, ...("snoozedUntil" in payload ? {
+					snoozedUntil: payload.snoozedUntil == null ? null : new Date(payload.snoozedUntil).toISOString(),
+				} : {}) };
 				if (id === "bulk") {
-					for (const entry of state.items) if (payload.ids.includes(entry.id)) Object.assign(entry, payload);
+					for (const entry of state.items) if (payload.ids.includes(entry.id)) Object.assign(entry, fields);
 					return route.fulfill({ json: { updated: payload.ids.length } });
 				}
 				if (item) {
-					Object.assign(item, payload);
+					Object.assign(item, fields);
 					return route.fulfill({ json: item });
 				}
 			}
 			if (state.failRead) return fail();
-			if (item) return route.fulfill({ json: path.endsWith("/thread") ? { items: [item] } : item });
+			if (item) return route.fulfill({ json: path.endsWith("/thread") ? {
+				items: state.items.filter((entry) => entry.mailboxId === item.mailboxId && entry.threadId === item.threadId)
+					.toSorted((a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+			} : item });
 			return route.fulfill({ status: 404, json: { error: "Message not found" } });
 		}
 		if (responses[path]) return route.fulfill({ json: responses[path] });

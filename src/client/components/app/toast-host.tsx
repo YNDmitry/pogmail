@@ -29,7 +29,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 	return (
 		<>
 			{children}
-			<Toaster />
+			<Toaster closeButton />
 		</>
 	);
 }

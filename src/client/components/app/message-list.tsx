@@ -124,7 +124,10 @@ export function MessageList({
 								<span className="min-w-0 flex-1">
 									{/* A starred row's star never hides, so the line reserves the
 									    width of it — otherwise the date sits under the star. */}
-									<span className={cn("flex items-baseline gap-2", message.starred && "sm:pr-6")}>
+									<span className={cn(
+										"flex items-baseline gap-2 group-hover/row:pr-30 group-focus-within/row:pr-30 max-sm:pr-0! [@media(hover:none)]:pr-0!",
+										message.starred && "sm:pr-6",
+									)}>
 										<span
 											className={cn(
 												"min-w-0 flex-1 truncate text-[0.8125rem]",
@@ -134,19 +137,18 @@ export function MessageList({
 											{label}
 										</span>
 
-										{/* The paperclip and the date both step aside for the
-										    actions on hover: a row is either being read or being
-										    acted on. */}
+										{/* Metadata yields to the toolbar on hover and keyboard focus.
+										    Touch actions sit below, so metadata stays visible. */}
 										{message.hasAttachments ? (
 											<Paperclip
 												aria-label="Has attachments"
-												className="size-3 shrink-0 text-muted-foreground group-hover/row:invisible max-sm:visible! [@media(hover:none)]:visible"
+												className="size-3 shrink-0 text-muted-foreground group-hover/row:hidden group-focus-within/row:hidden max-sm:block! [@media(hover:none)]:block!"
 											/>
 										) : null}
 
 										<time
 											dateTime={message.receivedAt}
-											className="machine shrink-0 text-[0.6875rem] text-muted-foreground group-hover/row:invisible max-sm:visible! [@media(hover:none)]:visible"
+											className="machine shrink-0 text-[0.6875rem] text-muted-foreground group-hover/row:hidden group-focus-within/row:hidden max-sm:block! [@media(hover:none)]:block!"
 										>
 											{shortDate(message.receivedAt)}
 										</time>

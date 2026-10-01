@@ -22,6 +22,10 @@ gated behind a licence key.
 - **Sharing** — mailboxes can be shared with read, send-as, send-on-behalf or full
   access, independent of who owns them.
 - **Search** — full-text over subject, body and sender, via SQLite FTS5 in D1.
+  Combine text or quoted phrases with `from:sender`, `has:attachment`,
+  `is:unread` or `is:read`. Load older results with **Load more**.
+- **Reversible moves** — archive, trash and folder moves offer **Undo** for
+  eight seconds. Permanent deletion still asks for confirmation.
 - **Webhooks** — HMAC-signed POSTs on delivery, with retry history and a test
   button; endpoints that keep failing are switched off automatically.
 - **Telegram alerts** — opt-in new-mail notifications for each user and their

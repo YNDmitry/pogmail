@@ -20,7 +20,7 @@ import {
 import { Button } from "@/client/components/app/button";
 import { Choice } from "@/client/components/app/choice";
 import { EmailFrame } from "@/client/components/app/email-frame";
-import { Machine, Tag, type Tone } from "@/client/components/app/primitives";
+import { Empty, Machine, Tag, type Tone } from "@/client/components/app/primitives";
 import { Modal } from "@/client/components/app/modal";
 import { ReplyBox } from "@/client/components/app/reply-box";
 import { useToast } from "@/client/components/app/toast-host";
@@ -32,6 +32,7 @@ import {
   useFolders,
   useMailboxes,
   useMessage,
+  useMoveMessages,
   usePatchMessage,
   useSession,
   useThread,
@@ -140,6 +141,7 @@ function Reader() {
   const message = useMessage(messageId);
   const thread = useThread(messageId);
   const patch = usePatchMessage();
+  const moveMessages = useMoveMessages();
   const remove = useDeleteMessage();
 
   // Opening a message is what marks it read; there is no separate action for it.
@@ -170,6 +172,10 @@ function Reader() {
     );
   }
 
+  if (message.isError && !message.data) {
+    return <Empty title="Could not load the message" body={message.error.message}
+      action={<Button variant="secondary" onClick={() => void message.refetch()}>Retry</Button>} />;
+  }
   if (!message.data) return null;
   const mail = message.data;
   const threadPosition =
@@ -181,41 +187,15 @@ function Reader() {
   const outboundSummary = mail.delivery ? deliverySummary(mail.delivery) : null;
 
   function move(status: MessageStatus, done: string) {
-    patch.mutate(
-      { id: mail.id, patch: { status, folderId: null } },
-      {
-        onSuccess: () => {
-          toast.ok(done);
-          void navigate({ to: "/mail/$folder", params: { folder } });
-        },
-        onError: (error) =>
-          toast.fail("Could not move the message", String(error)),
-      },
-    );
+    void moveMessages([mail], { status, folderId: null }, done)
+      .then(() => navigate({ to: "/mail/$folder", params: { folder } })).catch(() => {});
   }
 
   function moveToFolder(folderId: string) {
     const destination = folderId === "inbox" ? "inbox" : folderId;
-    patch.mutate(
-      {
-        id: mail.id,
-        patch: {
-          status: "received",
-          folderId: folderId === "inbox" ? null : folderId,
-        },
-      },
-      {
-        onSuccess: () => {
-          toast.ok(folderId === "inbox" ? "Moved to inbox" : "Moved to folder");
-          void navigate({
-            to: "/mail/$folder",
-            params: { folder: destination },
-          });
-        },
-        onError: (error) =>
-          toast.fail("Could not move the message", String(error)),
-      },
-    );
+    void moveMessages([mail], { status: "received", folderId: folderId === "inbox" ? null : folderId },
+      folderId === "inbox" ? "Moved to inbox" : "Moved to folder")
+      .then(() => navigate({ to: "/mail/$folder", params: { folder: destination } })).catch(() => {});
   }
 
   const moveTargets = (folders.data ?? []).filter(
@@ -482,6 +462,11 @@ function Reader() {
           })}
         </div>
       </header>
+
+      {thread.isError ? <div role="alert" className="space-y-2 text-sm">
+        <p>Could not load the conversation</p>
+        <Button variant="secondary" size="sm" onClick={() => void thread.refetch()}>Retry conversation</Button>
+      </div> : null}
 
       {!conversations && hasThread ? (
         <section aria-labelledby="thread-heading" className="space-y-2">

@@ -7,12 +7,17 @@ type ToastApi = {
 	ok: (title: string, description?: string) => void;
 	/** States what went wrong and, where possible, what to do about it. */
 	fail: (title: string, description?: string) => void;
+	undo: (title: string, action: () => Promise<void>) => void;
 };
 
 const api: ToastApi = {
 	ok: (title, description) => void sonner.success(title, { description }),
 	// Failures stay up longer: they usually contain an instruction.
 	fail: (title, description) => void sonner.error(title, { description, duration: 8000 }),
+	undo: (title, action) => void sonner.success(title, {
+		id: "message-move", duration: 8000,
+		action: { label: "Undo", onClick: () => { void action().catch(() => {}); } },
+	}),
 };
 
 /**

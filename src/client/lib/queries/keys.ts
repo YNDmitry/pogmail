@@ -8,7 +8,8 @@ export const qk = {
 	mailbox: (id: string) => ["mailboxes", id] as const,
 	externalAccounts: ["external-accounts"] as const,
 
-	messages: (filters: Record<string, unknown>) => ["messages", filters] as const,
+	messageLists: ["messages", "list"] as const,
+	messages: (filters: Record<string, unknown>) => ["messages", "list", filters] as const,
 	message: (id: string) => ["messages", id] as const,
 	thread: (id: string) => ["messages", id, "thread"] as const,
 	counts: ["messages", "counts"] as const,

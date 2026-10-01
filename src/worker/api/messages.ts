@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
-import { and, count, desc, eq, inArray, isNotNull, isNull, like, lt, or } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
+import { HTTPException } from "hono/http-exception";
 import { emailDeliveryEvents, folders, MESSAGE_STATUSES, messageAttachments, messages, outboundDeliveries, outboundJobs } from "@/db/schema";
 import type { OutboundSendMessage } from "../email/types";
 import { messageSnippet, needsSnippetRepair } from "../email/snippet";
@@ -26,7 +27,9 @@ const listQuery = z.object({
 	unread: z.enum(["true", "false"]).optional(),
 	search: z.string().trim().max(200).optional(),
 	/** Keyset cursor: `receivedAt` epoch ms of the last row on the previous page. */
-	cursor: z.coerce.number().int().optional(),
+	cursor: z.coerce.number().int().min(0).max(8_640_000_000_000_000).optional(),
+	/** Break ties without dropping messages received at the same instant. */
+	cursorId: z.string().min(1).max(128).optional(),
 	limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
@@ -37,9 +40,10 @@ const patchInput = z.object({
 	folderId: z.string().nullable().optional(),
 	/** Epoch ms; null clears the snooze. */
 	snoozedUntil: z.number().int().nullable().optional(),
+	expectedLocation: z.object({ status: z.enum(MESSAGE_STATUSES), folderId: z.string().nullable() }).optional(),
 });
 
-const bulkInput = patchInput.extend({ ids: z.array(z.string().min(1)).min(1).max(500) });
+const bulkInput = patchInput.omit({ expectedLocation: true }).extend({ ids: z.array(z.string().min(1)).min(1).max(500) });
 
 /** Columns the list view needs. Bodies are deliberately excluded — they are large. */
 const summaryColumns = {
@@ -68,7 +72,7 @@ export const messageRoutes = new Hono<AppBindings>()
 		const scope = await resolveMailboxScope(c.get("db"), c.get("user"), query.mailboxId);
 		if (scope.length === 0) return c.json({ items: [], nextCursor: null });
 
-		const term = query.search ? `%${query.search}%` : null;
+		const search = messageSearch(query.search);
 
 		const rows = await c
 			.get("db")
@@ -83,17 +87,14 @@ export const messageRoutes = new Hono<AppBindings>()
 					query.starred ? eq(messages.starred, query.starred === "true") : undefined,
 					query.unread ? eq(messages.read, query.unread !== "true") : undefined,
 					query.snoozed === "true" ? isNotNull(messages.snoozedUntil) : undefined,
-					term
-						? or(
-								like(messages.subject, term),
-								like(messages.fromAddress, term),
-								like(messages.snippet, term),
-							)
-						: undefined,
-					query.cursor ? lt(messages.receivedAt, new Date(query.cursor)) : undefined,
+					...search,
+					query.cursor !== undefined ? or(
+						lt(messages.receivedAt, new Date(query.cursor)),
+						query.cursorId ? and(eq(messages.receivedAt, new Date(query.cursor)), lt(messages.id, query.cursorId)) : undefined,
+					) : undefined,
 				),
 			)
-			.orderBy(desc(messages.receivedAt))
+			.orderBy(desc(messages.receivedAt), desc(messages.id))
 			.limit(query.limit)
 			.all();
 
@@ -102,6 +103,7 @@ export const messageRoutes = new Hono<AppBindings>()
 		return c.json({
 			items,
 			nextCursor: rows.length === query.limit && last ? last.receivedAt.getTime() : null,
+			nextCursorId: rows.length === query.limit && last ? last.id : null,
 		});
 	})
 
@@ -170,7 +172,14 @@ export const messageRoutes = new Hono<AppBindings>()
 
 		// Filter to messages the caller may actually write, then update in one statement.
 		const scope = await listAccessibleMailboxIds(c.get("db"), c.get("user"));
-		if (scope.length === 0) return c.json({ updated: 0 });
+		const selected = scope.length ? await c.get("db").select({ id: messages.id, mailboxId: messages.mailboxId })
+			.from(messages).where(and(inArray(messages.id, ids), inArray(messages.mailboxId, scope))).all() : [];
+		if (selected.length !== new Set(ids).size) notFound("Message");
+		for (const mailboxId of new Set(selected.map((row) => row.mailboxId))) {
+			if (!hasAtLeast(await getPermission(c.get("db"), c.get("user"), mailboxId), "full_access")) {
+				forbidden("Read-only access to this mailbox");
+			}
+		}
 		await assertFolderMatchesMessages(c, patch.folderId, ids, scope);
 
 		const result = await c
@@ -326,10 +335,17 @@ export const messageRoutes = new Hono<AppBindings>()
 			.get("db")
 			.update(messages)
 			.set(toUpdate(input))
-			.where(eq(messages.id, message.id))
+			.where(and(
+				eq(messages.id, message.id),
+				input.expectedLocation ? and(
+					eq(messages.status, input.expectedLocation.status),
+					input.expectedLocation.folderId === null ? isNull(messages.folderId) : eq(messages.folderId, input.expectedLocation.folderId),
+				) : undefined,
+			))
 			.returning()
 			.get();
 
+		if (!row) throw new HTTPException(409, { message: "This message moved again. Refresh before undoing." });
 		await notifyMailbox(c.env, message.mailboxId, { type: "message.changed", mailboxId: message.mailboxId });
 		return c.json(row);
 	})
@@ -389,6 +405,41 @@ export const messageRoutes = new Hono<AppBindings>()
 		audit(c, { action: "message.delete", messageId: message.id, mailboxId: message.mailboxId });
 		return c.json({ ok: true });
 	});
+
+/** Quote FTS literals rather than accepting SQL or FTS query syntax from callers. */
+function messageSearch(query = ""): Array<SQL | undefined> {
+	const conditions: Array<SQL | undefined> = [];
+	const text: string[] = [];
+	for (const token of query.match(/(?:[^\s"]+|"[^"]*")+/gu) ?? []) {
+		const colon = token.indexOf(":");
+		const field = token.slice(0, colon).toLowerCase();
+		const value = token.slice(colon + 1).replace(/^"|"$/gu, "");
+		if (colon >= 0 && field === "from") {
+			if (!value) throw new HTTPException(400, { message: "from: needs a sender address or name" });
+			conditions.push(or(
+				sql`instr(lower(${messages.fromAddress}), lower(${value})) > 0`,
+				sql`instr(lower(${messages.fromName}), lower(${value})) > 0`,
+			));
+		} else if (colon >= 0 && field === "has") {
+			if (value !== "attachment") throw new HTTPException(400, { message: "Use has:attachment" });
+			conditions.push(eq(messages.hasAttachments, true));
+		} else if (colon >= 0 && field === "is") {
+			if (value !== "unread" && value !== "read") throw new HTTPException(400, { message: "Use is:unread or is:read" });
+			conditions.push(eq(messages.read, value === "read"));
+		} else {
+			text.push(token.replace(/^"|"$/gu, ""));
+		}
+	}
+	if (text.length) {
+		const match = text.map((term) => `"${term.replaceAll('"', '""')}"*`).join(" AND ");
+		conditions.push(or(
+			sql`${messages}.rowid in (select rowid from messages_fts where messages_fts match ${match})`,
+			// ponytail: unindexed legacy HTML fallback; normalize bodyText if these imports become common.
+			and(isNull(messages.bodyText), ...text.map((term) => sql`instr(lower(${messages.bodyHtml}), lower(${term})) > 0`)),
+		));
+	}
+	return conditions;
+}
 
 function toUpdate(patch: z.infer<typeof patchInput>) {
 	// A message has one location. Filing it puts it in the received stream; a

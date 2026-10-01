@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { api } from "../api";
 import { qk } from "./keys";
+import { useToast } from "@/client/components/app/toast-host";
 import type { SessionUser } from "@/shared/contract/auth";
 import type { Branding } from "@/shared/contract/settings";
 import type {
@@ -13,7 +14,8 @@ import type {
 } from "@/shared/contract/mail";
 
 type List<T> = { items: T[] };
-type Paged<T> = { items: T[]; nextCursor: number | null };
+type Paged<T> = { items: T[]; nextCursor: number | null; nextCursorId?: string | null };
+type MessageCursor = { cursor: number; cursorId?: string } | null;
 
 export function useSession() {
 	return useQuery({
@@ -66,9 +68,15 @@ export type MessageFilters = {
 };
 
 export function useMessages(filters: MessageFilters) {
-	return useQuery({
+	return useInfiniteQuery({
 		queryKey: qk.messages(filters),
-		queryFn: () => api.get<Paged<MessageSummary>>("/api/messages", { query: filters }),
+		initialPageParam: null as MessageCursor,
+		queryFn: ({ pageParam, signal }) => api.get<Paged<MessageSummary>>("/api/messages", {
+			query: { ...filters, ...pageParam }, signal,
+		}),
+		getNextPageParam: (page): MessageCursor | undefined => page.nextCursor === null ? undefined : {
+			cursor: page.nextCursor, ...(page.nextCursorId ? { cursorId: page.nextCursorId } : {}),
+		},
 	});
 }
 
@@ -94,6 +102,7 @@ export type MessagePatch = {
 	status?: MessageStatus;
 	folderId?: string | null;
 	snoozedUntil?: number | null;
+	expectedLocation?: { status: MessageStatus; folderId: string | null };
 };
 
 /**
@@ -102,6 +111,7 @@ export type MessagePatch = {
  */
 export function usePatchMessage() {
 	const client = useQueryClient();
+	const toast = useToast();
 
 	return useMutation({
 		mutationFn: ({ id, patch }: { id: string; patch: MessagePatch }) =>
@@ -109,21 +119,24 @@ export function usePatchMessage() {
 
 		onMutate: async ({ id, patch }) => {
 			await client.cancelQueries({ queryKey: ["messages"] });
-			const snapshot = client.getQueriesData<Paged<MessageSummary>>({ queryKey: ["messages"] });
-
-			for (const [key, page] of snapshot) {
-				if (!page?.items) continue;
+			const snapshot = client.getQueriesData<InfiniteData<Paged<MessageSummary>>>({ queryKey: qk.messageLists });
+			const detail = client.getQueryData<MessageDetail>(qk.message(id));
+			for (const [key, data] of snapshot) {
+				if (!data) continue;
 				client.setQueryData(key, {
-					...page,
-					items: page.items.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+					...data, pages: data.pages.map((page) => ({
+						...page, items: page.items.map((item) => item.id === id ? { ...item, ...patch } : item),
+					})),
 				});
 			}
-
-			return { snapshot };
+			if (detail) client.setQueryData(qk.message(id), { ...detail, ...patch });
+			return { snapshot, detail, id };
 		},
 
-		onError: (_error, _variables, context) => {
-			for (const [key, page] of context?.snapshot ?? []) client.setQueryData(key, page);
+		onError: (error, _variables, context) => {
+			for (const [key, data] of context?.snapshot ?? []) client.setQueryData(key, data);
+			if (context?.detail) client.setQueryData(qk.message(context.id), context.detail);
+			toast.fail("Could not update the message", error.message);
 		},
 
 		onSettled: () => {
@@ -135,10 +148,12 @@ export function usePatchMessage() {
 
 export function useBulkPatch() {
 	const client = useQueryClient();
+	const toast = useToast();
 
 	return useMutation({
 		mutationFn: (input: MessagePatch & { ids: string[] }) =>
 			api.patch<{ updated: number }>("/api/messages/bulk", input),
+		onError: (error) => toast.fail("Could not update the messages", error.message),
 		onSuccess: () => {
 			void client.invalidateQueries({ queryKey: ["messages"] });
 			void client.invalidateQueries({ queryKey: qk.counts });
@@ -146,11 +161,32 @@ export function useBulkPatch() {
 	});
 }
 
+/** One reversible move path for row, reader, keyboard and bulk actions. */
+export function useMoveMessages() {
+	const patch = usePatchMessage();
+	const bulk = useBulkPatch();
+	const toast = useToast();
+	return async (rows: MessageSummary[], location: { status: MessageStatus; folderId: string | null }, title: string) => {
+		if (!rows.length) return;
+		const previous = rows.map(({ id, status, folderId }) => ({ id, status, folderId }));
+		if (rows.length === 1) await patch.mutateAsync({ id: rows[0]!.id, patch: location });
+		else await bulk.mutateAsync({ ids: rows.map((row) => row.id), ...location });
+		toast.undo(rows.length === 1 ? title : `${title} · ${rows.length}`, async () => {
+			await Promise.all(previous.map(({ id, ...original }) => patch.mutateAsync({
+				id, patch: { ...original, expectedLocation: location },
+			})));
+			toast.ok("Move undone");
+		});
+	};
+}
+
 export function useDeleteMessage() {
 	const client = useQueryClient();
+	const toast = useToast();
 
 	return useMutation({
 		mutationFn: (id: string) => api.delete<{ ok: true }>(`/api/messages/${id}`),
+		onError: (error) => toast.fail("Could not delete the message", error.message),
 		onSuccess: () => {
 			void client.invalidateQueries({ queryKey: ["messages"] });
 			void client.invalidateQueries({ queryKey: qk.counts });

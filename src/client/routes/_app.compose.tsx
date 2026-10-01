@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -19,7 +20,7 @@ import { EmailFrame } from "@/client/components/app/email-frame";
 import { Input } from "@/client/components/ui";
 import { Choice } from "@/client/components/app/choice";
 import { Modal } from "@/client/components/app/modal";
-import { Machine, PageHeader, Tag } from "@/client/components/app/primitives";
+import { Empty, Machine, PageHeader, Tag } from "@/client/components/app/primitives";
 import { useToast } from "@/client/components/app/toast-host";
 import { api, ApiError } from "@/client/lib/api";
 import { Loader } from "@/client/components/motion/loader";
@@ -108,6 +109,14 @@ function ComposeSession({
         <Loader />
       </div>
     );
+  }
+
+  if (mailboxes.isError || ((replyTo || draftId) && source.isError)) {
+    return <Empty title="Could not load the composer" body="Your mailbox or draft could not be loaded. Try again."
+      action={<Button variant="secondary" onClick={() => {
+        void mailboxes.refetch();
+        if (replyTo || draftId) void source.refetch();
+      }}>Retry</Button>} />;
   }
 
   if (sendable.length === 0) {
@@ -299,10 +308,15 @@ function ComposeForm({
 
   /** The last snapshot the server confirmed; an unchanged form never saves twice. */
   const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
-  /** Set once the message is on its way — leaving then loses nothing. */
-  const [done, setDone] = useState(false);
+  /** All save callers share one writer and the latest committed form values. */
+  const latestValues = useRef(values);
+  const savedSnapshotRef = useRef(snapshot);
+  const draftIdRef = useRef(initialDraftId);
+  const saving = useRef<Promise<string> | null>(null);
+  const done = useRef(false);
+  useLayoutEffect(() => { latestValues.current = values; });
 
-  const unsaved = snapshot !== savedSnapshot && hasContent(values);
+  const unsaved = snapshot !== savedSnapshot && Boolean(draftId || hasContent(values));
 
   // A reply already has its recipient and subject; the only thing left to do is
   // write, so the caret starts above the quoted original rather than in `To`.
@@ -314,57 +328,47 @@ function ComposeForm({
   /** Saves and returns the draft id, creating the draft on first use. */
   // oxlint-disable react/memo-dependencies -- React Compiler requires setSavedSnapshot to preserve this callback.
   const saveDraft = useCallback(async (): Promise<string> => {
-    const pending = JSON.stringify({ mailboxId, to, cc, bcc, subject, body });
-    const payload = {
-      mailboxId,
-      to: parseAddresses(to),
-      cc: parseAddresses(cc),
-      bcc: parseAddresses(bcc),
-      subject,
-      // Every message carries both parts: the HTML the editor holds, and the
-      // plain text a client that refuses HTML — and the folder snippet — read.
-      bodyText: editorRef.current?.getText() ?? "",
-      bodyHtml: body || null,
-      ...(inReplyTo ? { inReplyTo } : {}),
-      ...(threadId ? { threadId } : {}),
-    };
-
-    setSaveState("saving");
-    try {
-      let id = draftId;
-      if (id) {
-        await api.put(`/api/send/drafts/${id}`, payload);
-      } else {
-        const row = await api.post<{ id: string }>("/api/send/drafts", payload);
-        id = row.id;
-        setDraftId(id);
-        // Keep the history entry's key: the compose session owns the live form,
-        // while this URL lets a reload reopen the saved draft.
-        const url = new URL(window.location.href);
-        url.searchParams.delete("replyTo");
-        url.searchParams.set("draftId", id);
-        window.history.replaceState(window.history.state, "", url);
+    if (saving.current) return saving.current;
+    const persist = async () => {
+      setSaveState("saving");
+      try {
+        do {
+          const current = latestValues.current;
+          const pending = JSON.stringify(current);
+          const payload = {
+            mailboxId: current.mailboxId,
+            to: parseAddresses(current.to), cc: parseAddresses(current.cc), bcc: parseAddresses(current.bcc),
+            subject: current.subject,
+            bodyText: editorRef.current?.getText() ?? "",
+            bodyHtml: current.body || null,
+            ...(inReplyTo ? { inReplyTo } : {}), ...(threadId ? { threadId } : {}),
+          };
+          if (draftIdRef.current) {
+            await api.put(`/api/send/drafts/${draftIdRef.current}`, payload);
+          } else {
+            const row = await api.post<{ id: string }>("/api/send/drafts", payload);
+            draftIdRef.current = row.id;
+            setDraftId(row.id);
+            // Preserve this history entry and the live form; reloads reopen the draft.
+            const url = new URL(window.location.href);
+            url.searchParams.delete("replyTo");
+            url.searchParams.set("draftId", row.id);
+            window.history.replaceState(window.history.state, "", url);
+          }
+          savedSnapshotRef.current = pending;
+          setSavedSnapshot(pending);
+          // Typing during a slow request must reach the server before send or leave.
+        } while (JSON.stringify(latestValues.current) !== savedSnapshotRef.current);
+        setSaveState("saved");
+        return draftIdRef.current!;
+      } catch (error) {
+        setSaveState("error");
+        throw error;
       }
-
-      setSavedSnapshot(pending);
-      setSaveState("saved");
-      return id;
-    } catch (error) {
-      setSaveState("error");
-      throw error;
-    }
-  }, [
-    draftId,
-    mailboxId,
-    to,
-    cc,
-    bcc,
-    subject,
-    body,
-    inReplyTo,
-    threadId,
-    setSavedSnapshot,
-  ]);
+    };
+    saving.current = persist().finally(() => { saving.current = null; });
+    return saving.current;
+  }, [inReplyTo, threadId, setSavedSnapshot]);
   // oxlint-enable react/memo-dependencies
 
   /*
@@ -373,7 +377,7 @@ function ComposeForm({
    * off, so a slow round-trip cannot start a second one on top of itself.
    */
   useEffect(() => {
-    if (!unsaved || saveState === "saving") return;
+    if (!unsaved || saveState === "saving" || saveState === "error") return;
     const timer = setTimeout(() => {
       void saveDraft().catch(() => {
         // The indicator already says "Not saved"; a toast on every pause in
@@ -382,6 +386,16 @@ function ComposeForm({
     }, AUTOSAVE_DELAY);
     return () => clearTimeout(timer);
   }, [unsaved, saveState, saveDraft]);
+
+  useEffect(() => {
+    const retry = () => {
+      if (JSON.stringify(latestValues.current) !== savedSnapshotRef.current) {
+        void saveDraft().catch(() => {}); // The indicator keeps unsaved changes visible.
+      }
+    };
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, [saveDraft]);
 
   // The browser's own guard, for a tab close the router never sees.
   useEffect(() => {
@@ -393,7 +407,9 @@ function ComposeForm({
 
   /* In-app navigation gets a dialog instead, so the choice stays inside the app. */
   const blocker = useBlocker({
-    shouldBlockFn: () => unsaved && !done,
+    shouldBlockFn: () => !done.current &&
+      JSON.stringify(latestValues.current) !== savedSnapshotRef.current &&
+      Boolean(draftIdRef.current || hasContent(latestValues.current)),
     withResolver: true,
   });
 
@@ -520,6 +536,7 @@ function ComposeForm({
   }
 
   async function submit(mode: "send" | "draft") {
+    if (state === "loading") return;
     setState("loading");
     try {
       // Both paths go through the draft row, because that is what the
@@ -527,12 +544,12 @@ function ComposeForm({
       const id = await saveDraft();
 
       if (mode === "draft") {
-        setDone(true);
+        done.current = true;
         toast.ok("Draft saved");
         await navigate({ to: "/mail/$folder", params: { folder: "drafts" } });
       } else {
         await api.post(`/api/send/drafts/${id}/send`);
-        setDone(true);
+        done.current = true;
         toast.ok("Message sent");
         await navigate({ to: "/mail/$folder", params: { folder: "sent" } });
       }
@@ -551,6 +568,7 @@ function ComposeForm({
   return (
     <form
       className="mx-auto flex h-auto max-w-3xl flex-col"
+      aria-busy={state === "loading"}
       onSubmit={(event) => {
         event.preventDefault();
         void submit("send");
@@ -566,6 +584,8 @@ function ComposeForm({
         if (state !== "loading") void submit("send");
       }}
     >
+      {/* Explicit send/close freezes editing; background autosave never does. */}
+      <div className="contents" inert={state === "loading"}>
       {replyingTo ? (
         <p className="pb-3 text-[0.8125rem] text-muted-foreground">
           Replying to{" "}
@@ -797,12 +817,16 @@ function ComposeForm({
         ) : null}
 
         <span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
-          <SaveIndicator state={saveState} unsaved={unsaved} />
+          <span role="status" aria-live="polite"><SaveIndicator state={saveState} unsaved={unsaved} /></span>
+          {saveState === "error" ? <Button type="button" size="sm" variant="ghost" onClick={() => {
+            void saveDraft().catch((error) => toast.fail("Could not save the draft", String(error)));
+          }}>Retry save</Button> : null}
           <kbd className="machine hidden h-7 shrink-0 items-center justify-center rounded-md border border-border bg-[var(--pogpin-shell-fill-soft)] px-2 text-xs leading-none text-muted-foreground sm:flex">
             ⌘ + ↵
           </kbd>
         </span>
       </footer>
+      </div>
 
       {/*
        * Autosave covers the common case, but the keystrokes inside the debounce
@@ -833,6 +857,7 @@ function ComposeForm({
                   "Could not save the draft",
                   error instanceof ApiError ? error.message : undefined,
                 );
+                return;
               }
               blocker.proceed?.();
             }}

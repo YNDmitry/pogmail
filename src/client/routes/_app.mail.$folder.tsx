@@ -24,6 +24,7 @@ import {
 	useMailboxes,
 	useSession,
 	useMessages,
+	useMoveMessages,
 	usePatchMessage,
 	type MessageFilters,
 } from "@/client/lib/queries";
@@ -82,6 +83,7 @@ function MailFolder() {
 	const search = useSearch({ from: "/_app/mail/$folder" });
 	const navigate = useNavigate({ from: "/mail/$folder" });
 	const patch = usePatchMessage();
+	const moveMessages = useMoveMessages();
 	const bulk = useBulkPatch();
 	const remove = useDeleteMessage();
 	const confirm = useConfirm();
@@ -96,7 +98,12 @@ function MailFolder() {
 
 	// Typing must not fire a query per keystroke, but the term still has to reach the
 	// URL so the view is shareable and survives a refresh.
-	const [term, setTerm] = useState(search.q ?? "");
+	const [input, setInput] = useState({ query: search.q ?? "", value: search.q ?? "" });
+	if (input.query !== (search.q ?? "")) {
+		setInput({ query: search.q ?? "", value: search.q ?? "" });
+	}
+	const term = input.query === (search.q ?? "") ? input.value : search.q ?? "";
+	const setTerm = (value: string) => setInput({ query: search.q ?? "", value });
 	useEffect(() => {
 		const timer = setTimeout(() => {
 			if ((search.q ?? "") === term) return;
@@ -122,7 +129,8 @@ function MailFolder() {
 	 * arrives, which is the honest trade for not asking the database to group.
 	 */
 	const { items, threadSizes } = useMemo(() => {
-		const page = messages.data?.items ?? [];
+		const page = [...new Map((messages.data?.pages.flatMap((entry) => entry.items) ?? [])
+			.map((message) => [message.id, message])).values()];
 		if (!conversations) return { items: page, threadSizes: new Map<string, number>() };
 
 		const heads = new Map<string, MessageSummary>();
@@ -191,6 +199,11 @@ function MailFolder() {
 		said: string,
 	) {
 		if (ids.length === 0) return;
+		if (change.status) {
+			void moveMessages(items.filter((row) => ids.includes(row.id)), { status: change.status, folderId: change.folderId ?? null }, said)
+				.then(() => setSelection({ scope, ids: new Set() })).catch(() => {});
+			return;
+		}
 		if (ids.length === 1 && ids[0]) {
 			patch.mutate({ id: ids[0], patch: change }, { onSuccess: () => toast.ok(said) });
 		} else {
@@ -209,7 +222,7 @@ function MailFolder() {
 				void Promise.all(ids.map((id) => remove.mutateAsync(id))).then(() => {
 					setSelection({ scope, ids: new Set() });
 					toast.ok(ids.length === 1 ? "Deleted permanently" : `${ids.length} messages deleted permanently`);
-				});
+				}).catch(() => {});
 			},
 		});
 	}
@@ -232,7 +245,8 @@ function MailFolder() {
 		function onKeyDown(event: KeyboardEvent) {
 			if (event.metaKey || event.ctrlKey || event.altKey) return;
 			const target = event.target as HTMLElement | null;
-			if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
+			if (target?.closest("input, textarea, select, button, [role=button], [role=dialog], [contenteditable=true]")) return;
+			if (event.key === "Enter" && target?.closest("a")) return;
 			if (items.length === 0) return;
 
 			const index = items.findIndex((item) => item.id === (cursorId ?? selectedId));
@@ -377,7 +391,7 @@ function MailFolder() {
 							</span>
 							{messages.data ? (
 								<span className="machine text-[0.6875rem] text-muted-foreground">
-									{items.length}
+									{items.length}{messages.hasNextPage ? "+" : ""}
 									{search.q ? " found" : ""}
 								</span>
 							) : null}
@@ -418,12 +432,26 @@ function MailFolder() {
 							placeholder="Search mail"
 							aria-label="Search mail"
 							className="h-9 pl-8 text-base md:text-[0.8125rem]"
+							aria-describedby="mail-search-help"
 						/>
 					</div>
+					<p id="mail-search-help" className="text-xs text-muted-foreground">Search text, from:sender, has:attachment or is:unread.</p>
 				</header>
 
 				<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-					{messages.isPending ? (
+					{messages.isError && messages.data ? (
+						<div role="alert" className="space-y-2 border-b border-border p-3.5 text-sm">
+							<p>{messages.isFetchNextPageError ? "Could not load more mail" : "Could not refresh mail"}</p>
+							<Button size="sm" variant="secondary" disabled={messages.isFetching} onClick={() => {
+								void (messages.isFetchNextPageError ? messages.fetchNextPage() : messages.refetch());
+							}}>{messages.isFetchNextPageError ? "Retry loading more" : "Retry"}</Button>
+						</div>
+					) : null}
+					{messages.fetchStatus === "paused" ? <p role="status" className="p-3.5 text-sm text-muted-foreground">Offline. Mail will refresh when you reconnect.</p> : null}
+					{messages.isError && !messages.data ? (
+						<Empty title="Could not load mail" body={messages.error.message}
+							action={<Button variant="secondary" disabled={messages.isFetching} onClick={() => void messages.refetch()}>Retry</Button>} />
+					) : messages.isPending ? (
 						<div className="grid place-items-center py-16">
 							<Loader />
 						</div>
@@ -466,6 +494,11 @@ function MailFolder() {
 					) : (
 						<Empty title={empty.title} body={empty.body} />
 					)}
+					{messages.hasNextPage && !messages.isError ? (
+						<div className="p-3.5"><Button variant="secondary" className="w-full" disabled={messages.isFetching} onClick={() => void messages.fetchNextPage()}>
+							{messages.isFetchingNextPage ? "Loading…" : "Load more"}
+						</Button></div>
+					) : null}
 				</div>
 			</section>
 
